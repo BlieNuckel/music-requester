@@ -22,6 +22,7 @@ import usersRoutes from "./routes/users";
 import purchasesRoutes from "./routes/purchases";
 import wantedRoutes from "./routes/wanted";
 import followedRoutes from "./routes/followed";
+import discoverRoutes from "./routes/discover";
 import { startFollowedArtistPoller } from "./services/followed/poller";
 import { startRequestStatusPoller } from "./services/requests/statusPoller";
 import { startProfileRegenPoller } from "./services/profile/regenPoller";
@@ -60,6 +61,7 @@ app.use("/api/requests", requestsRoutes);
 app.use("/api/purchases", purchasesRoutes);
 app.use("/api/wanted", wantedRoutes);
 app.use("/api/followed", followedRoutes);
+app.use("/api/discover", requireAuth, discoverRoutes);
 
 if (process.env.NODE_ENV === "production") {
   app.use(express.static(path.join(__dirname, "..", "build")));

@@ -10,15 +10,13 @@ import {
 } from "typeorm";
 import { FollowedArtist } from "./FollowedArtist";
 
-export type ReleaseSource = "musicbrainz" | "deezer" | "apple";
-
-@Entity("seen_releases")
-@Unique("uq_seen_follow_release", ["followed_artist_id", "release_key"])
-export class SeenRelease {
+@Entity("followed_releases")
+@Unique("uq_followed_release", ["followed_artist_id", "release_key"])
+export class FollowedRelease {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  @Index("idx_seen_followed_artist_id")
+  @Index("idx_followed_release_artist_id")
   @Column({ type: "integer" })
   followed_artist_id!: number;
 
@@ -30,16 +28,26 @@ export class SeenRelease {
   release_key!: string;
 
   @Column({ type: "text" })
-  source!: ReleaseSource;
-
-  @Column({ type: "text" })
   album_title!: string;
 
   @Column({ type: "text", nullable: true })
   release_date!: string | null;
 
   @Column({ type: "text", nullable: true })
-  external_id!: string | null;
+  release_group_mbid!: string | null;
+
+  @Column({ type: "text", nullable: true })
+  cover_url!: string | null;
+
+  @Column({ type: "text", nullable: true })
+  release_type!: string | null;
+
+  /** JSON-encoded string[] of MusicBrainz secondary types. */
+  @Column({ type: "text", nullable: true })
+  secondary_types!: string | null;
+
+  @Column({ type: "text", nullable: true })
+  viewed_at!: string | null;
 
   @CreateDateColumn({ type: "text" })
   notified_at!: string;

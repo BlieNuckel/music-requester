@@ -4,9 +4,9 @@ import useFollowedArtists from "@/hooks/useFollowedArtists";
 import FollowArtistButton from "@/components/FollowArtistButton";
 import Skeleton from "@/components/Skeleton";
 import { SearchIcon } from "@/components/icons";
-import type { SeenReleaseItem } from "@/types";
+import type { FollowedReleaseItem } from "@/types";
 
-function buildSearchHref(release: SeenReleaseItem): string {
+function buildSearchHref(release: FollowedReleaseItem): string {
   const query = `${release.artistName} ${release.albumTitle}`.trim();
   const params = new URLSearchParams({ q: query });
   return `/search?${params.toString()}`;
@@ -20,7 +20,7 @@ function formatChecked(iso: string | null): string {
 }
 
 function ReleaseFeed() {
-  const [items, setItems] = useState<SeenReleaseItem[]>([]);
+  const [items, setItems] = useState<FollowedReleaseItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,7 +31,7 @@ function ReleaseFeed() {
         if (!res.ok) throw new Error("Failed to load recent releases");
         return res.json();
       })
-      .then((data: SeenReleaseItem[]) => {
+      .then((data: FollowedReleaseItem[]) => {
         if (active) {
           setItems(data);
           setLoading(false);

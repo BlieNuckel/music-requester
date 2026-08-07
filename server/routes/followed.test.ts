@@ -3,18 +3,20 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockFollow = vi.fn();
 const mockUnfollow = vi.fn();
 const mockGetFollowed = vi.fn();
-const mockGetSeen = vi.fn();
+const mockGetReleases = vi.fn();
 const mockGetUnseen = vi.fn();
 const mockMarkViewed = vi.fn();
+const mockMarkOneViewed = vi.fn();
 const mockRunPoll = vi.fn();
 
 vi.mock("../services/followed/followedService", () => ({
   followArtist: (...args: unknown[]) => mockFollow(...args),
   unfollowArtist: (...args: unknown[]) => mockUnfollow(...args),
   getFollowedArtists: (...args: unknown[]) => mockGetFollowed(...args),
-  getSeenReleasesForUser: (...args: unknown[]) => mockGetSeen(...args),
+  getFollowedReleasesForUser: (...args: unknown[]) => mockGetReleases(...args),
   getUnseenReleaseCount: (...args: unknown[]) => mockGetUnseen(...args),
   markFollowedReleasesViewed: (...args: unknown[]) => mockMarkViewed(...args),
+  markFollowedReleaseViewed: (...args: unknown[]) => mockMarkOneViewed(...args),
 }));
 
 vi.mock("../services/followed/poller", () => ({
@@ -86,18 +88,19 @@ describe("GET /", () => {
 });
 
 describe("GET /releases", () => {
-  it("returns sanitized seen releases", async () => {
-    mockGetSeen.mockResolvedValue([
+  it("returns sanitized followed releases", async () => {
+    mockGetReleases.mockResolvedValue([
       {
         id: 5,
         followed_artist_id: 1,
         artist_mbid: "mbid-1",
         artist_name: "Artist",
         release_key: "k",
-        source: "musicbrainz",
         album_title: "Album",
         release_date: "2025-04-01",
-        external_id: "rg-1",
+        release_group_mbid: "rg-1",
+        cover_url: "https://caa/rg-1",
+        viewed_at: null,
         notified_at: "2025-04-02",
       },
     ]);
@@ -110,25 +113,48 @@ describe("GET /releases", () => {
       artistMbid: "mbid-1",
       artistName: "Artist",
       releaseKey: "k",
-      source: "musicbrainz",
       albumTitle: "Album",
       releaseDate: "2025-04-01",
-      externalId: "rg-1",
+      releaseGroupMbid: "rg-1",
+      coverUrl: "https://caa/rg-1",
+      viewedAt: null,
       notifiedAt: "2025-04-02",
     });
-    expect(mockGetSeen).toHaveBeenCalledWith(1, 10);
+    expect(mockGetReleases).toHaveBeenCalledWith(1, 10);
   });
 
   it("clamps limit to default when missing", async () => {
-    mockGetSeen.mockResolvedValue([]);
+    mockGetReleases.mockResolvedValue([]);
     await request(app).get("/releases");
-    expect(mockGetSeen).toHaveBeenCalledWith(1, 50);
+    expect(mockGetReleases).toHaveBeenCalledWith(1, 50);
   });
 
   it("clamps oversized limit", async () => {
-    mockGetSeen.mockResolvedValue([]);
+    mockGetReleases.mockResolvedValue([]);
     await request(app).get("/releases?limit=99999");
-    expect(mockGetSeen).toHaveBeenCalledWith(1, 200);
+    expect(mockGetReleases).toHaveBeenCalledWith(1, 200);
+  });
+});
+
+describe("POST /releases/:id/viewed", () => {
+  it("marks a single release viewed", async () => {
+    mockMarkOneViewed.mockResolvedValue(true);
+    const res = await request(app).post("/releases/42/viewed");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ status: "ok" });
+    expect(mockMarkOneViewed).toHaveBeenCalledWith(1, 42);
+  });
+
+  it("returns 404 when the release isn't the user's", async () => {
+    mockMarkOneViewed.mockResolvedValue(false);
+    const res = await request(app).post("/releases/42/viewed");
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 400 for a non-numeric id", async () => {
+    const res = await request(app).post("/releases/abc/viewed");
+    expect(res.status).toBe(400);
+    expect(mockMarkOneViewed).not.toHaveBeenCalled();
   });
 });
 

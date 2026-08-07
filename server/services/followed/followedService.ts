@@ -1,10 +1,4 @@
-import {
-  getDataSource,
-  FollowedArtist,
-  SeenRelease,
-  User,
-  type ReleaseSource,
-} from "../../db/index";
+import { getDataSource, FollowedArtist, FollowedRelease } from "../../db/index";
 import { createLogger } from "../../logger";
 
 type AddFollowResult =
@@ -12,23 +6,53 @@ type AddFollowResult =
 
 type RemoveFollowResult = { status: "removed" } | { status: "not_found" };
 
-type RecordSeenInput = {
+type RecordReleaseInput = {
   followed_artist_id: number;
   release_key: string;
-  source: ReleaseSource;
   album_title: string;
   release_date: string | null;
-  external_id: string | null;
+  release_group_mbid: string | null;
+  cover_url: string | null;
+  release_type: string | null;
+  secondary_types: string[] | null;
+};
+
+type ReleaseMetadataPatch = {
+  release_group_mbid: string;
+  cover_url: string | null;
+  release_type: string | null;
+  secondary_types: string[] | null;
+};
+
+export type FollowedReleaseWithArtist = FollowedRelease & {
+  artist_name: string;
+  artist_mbid: string;
 };
 
 const log = createLogger("followed");
+
+function serializeSecondaryTypes(types: string[] | null): string | null {
+  return types === null ? null : JSON.stringify(types);
+}
+
+export function parseSecondaryTypes(json: string | null): string[] | null {
+  if (json === null) return null;
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((t) => typeof t === "string")
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 function getFollowedRepo() {
   return getDataSource().getRepository(FollowedArtist);
 }
 
-function getSeenRepo() {
-  return getDataSource().getRepository(SeenRelease);
+function getReleaseRepo() {
+  return getDataSource().getRepository(FollowedRelease);
 }
 
 export async function followArtist(
@@ -95,39 +119,58 @@ export async function getAllFollowedArtists(): Promise<FollowedArtist[]> {
   return repo.find({ order: { created_at: "ASC" } });
 }
 
-export async function hasSeenRelease(
+export async function findFollowedRelease(
   followedArtistId: number,
   releaseKey: string
-): Promise<boolean> {
-  const repo = getSeenRepo();
-  const existing = await repo.findOne({
+): Promise<FollowedRelease | null> {
+  const repo = getReleaseRepo();
+  return repo.findOne({
     where: { followed_artist_id: followedArtistId, release_key: releaseKey },
   });
-  return existing !== null;
 }
 
-export async function recordSeenRelease(
-  input: RecordSeenInput
-): Promise<SeenRelease> {
-  const repo = getSeenRepo();
-  const row = repo.create(input);
+export async function recordFollowedRelease(
+  input: RecordReleaseInput
+): Promise<FollowedRelease> {
+  const repo = getReleaseRepo();
+  const row = repo.create({
+    ...input,
+    secondary_types: serializeSecondaryTypes(input.secondary_types),
+  });
   return repo.save(row);
 }
 
-export async function getSeenReleasesForUser(
+/** Fills MB-derived metadata onto a release first seen from Deezer. */
+export async function backfillReleaseMetadata(
+  releaseId: number,
+  patch: ReleaseMetadataPatch
+): Promise<void> {
+  const repo = getReleaseRepo();
+  await repo.update(
+    { id: releaseId },
+    {
+      release_group_mbid: patch.release_group_mbid,
+      cover_url: patch.cover_url,
+      release_type: patch.release_type,
+      secondary_types: serializeSecondaryTypes(patch.secondary_types),
+    }
+  );
+}
+
+export async function getFollowedReleasesForUser(
   userId: number,
   limit = 50
-): Promise<(SeenRelease & { artist_name: string; artist_mbid: string })[]> {
+): Promise<FollowedReleaseWithArtist[]> {
   const ds = getDataSource();
   const rows = (await ds.query(
-    `SELECT sr.*, fa.artist_name as artist_name, fa.artist_mbid as artist_mbid
-     FROM seen_releases sr
-     INNER JOIN followed_artists fa ON sr.followed_artist_id = fa.id
+    `SELECT fr.*, fa.artist_name as artist_name, fa.artist_mbid as artist_mbid
+     FROM followed_releases fr
+     INNER JOIN followed_artists fa ON fr.followed_artist_id = fa.id
      WHERE fa.user_id = ?
-     ORDER BY sr.release_date IS NULL, sr.release_date DESC, sr.notified_at DESC
+     ORDER BY fr.release_date IS NULL, fr.release_date DESC, fr.notified_at DESC
      LIMIT ?`,
     [userId, limit]
-  )) as (SeenRelease & { artist_name: string; artist_mbid: string })[];
+  )) as FollowedReleaseWithArtist[];
   return rows;
 }
 
@@ -145,13 +188,10 @@ export async function updateLastCheckedAt(
 export async function getUnseenReleaseCount(userId: number): Promise<number> {
   const ds = getDataSource();
   const rows = (await ds.query(
-    `SELECT COUNT(sr.id) as count
-     FROM seen_releases sr
-     INNER JOIN followed_artists fa ON sr.followed_artist_id = fa.id
-     LEFT JOIN users u ON u.id = fa.user_id
-     WHERE fa.user_id = ?
-       AND (u.followed_last_viewed_at IS NULL
-            OR sr.notified_at > u.followed_last_viewed_at)`,
+    `SELECT COUNT(fr.id) as count
+     FROM followed_releases fr
+     INNER JOIN followed_artists fa ON fr.followed_artist_id = fa.id
+     WHERE fa.user_id = ? AND fr.viewed_at IS NULL`,
     [userId]
   )) as { count: number }[];
   return rows[0]?.count ?? 0;
@@ -160,9 +200,37 @@ export async function getUnseenReleaseCount(userId: number): Promise<number> {
 export async function markFollowedReleasesViewed(
   userId: number
 ): Promise<void> {
-  const repo = getDataSource().getRepository(User);
-  await repo.update(
-    { id: userId },
-    { followed_last_viewed_at: new Date().toISOString() }
+  const ds = getDataSource();
+  await ds.query(
+    `UPDATE followed_releases
+     SET viewed_at = ?
+     WHERE viewed_at IS NULL
+       AND followed_artist_id IN (
+         SELECT id FROM followed_artists WHERE user_id = ?
+       )`,
+    [new Date().toISOString(), userId]
   );
+}
+
+/** Marks a single release viewed; returns false when the row isn't the user's. */
+export async function markFollowedReleaseViewed(
+  userId: number,
+  releaseId: number
+): Promise<boolean> {
+  const ds = getDataSource();
+  const rows = (await ds.query(
+    `SELECT fr.id
+     FROM followed_releases fr
+     INNER JOIN followed_artists fa ON fr.followed_artist_id = fa.id
+     WHERE fr.id = ? AND fa.user_id = ?`,
+    [releaseId, userId]
+  )) as { id: number }[];
+
+  if (rows.length === 0) return false;
+
+  await getReleaseRepo().update(
+    { id: releaseId },
+    { viewed_at: new Date().toISOString() }
+  );
+  return true;
 }

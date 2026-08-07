@@ -1,5 +1,6 @@
 import ArtistsSection from "./components/sections/ArtistsSection";
 import SpotlightSection from "./components/sections/SpotlightSection";
+import NewReleasesSection from "./components/sections/NewReleasesSection";
 import type { SectionDefinition } from "./types";
 
 /**
@@ -20,8 +21,16 @@ export const SECTION_DEFINITIONS: readonly SectionDefinition[] = [
     id: "artists",
     span: { cols: 2, rows: 2 },
     desktopOrder: 2,
-    mobileOrder: 2,
+    mobileOrder: 3,
     whenEmpty: "hide",
     Component: ArtistsSection,
+  },
+  {
+    id: "newReleases",
+    span: { cols: 4, rows: 1 },
+    desktopOrder: 3,
+    mobileOrder: 2,
+    whenEmpty: "hide",
+    Component: NewReleasesSection,
   },
 ];

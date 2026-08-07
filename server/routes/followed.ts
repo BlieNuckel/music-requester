@@ -4,9 +4,10 @@ import {
   followArtist,
   unfollowArtist,
   getFollowedArtists,
-  getSeenReleasesForUser,
+  getFollowedReleasesForUser,
   getUnseenReleaseCount,
   markFollowedReleasesViewed,
+  markFollowedReleaseViewed,
 } from "../services/followed/followedService";
 import { runPollOnce } from "../services/followed/poller";
 
@@ -32,7 +33,7 @@ router.get("/releases", async (req: Request, res: Response) => {
     Math.max(parseInt(String(req.query.limit ?? "50"), 10) || 50, 1),
     200
   );
-  const rows = await getSeenReleasesForUser(req.user!.id, limit);
+  const rows = await getFollowedReleasesForUser(req.user!.id, limit);
   res.json(
     rows.map((r) => ({
       id: r.id,
@@ -40,13 +41,28 @@ router.get("/releases", async (req: Request, res: Response) => {
       artistMbid: r.artist_mbid,
       artistName: r.artist_name,
       releaseKey: r.release_key,
-      source: r.source,
       albumTitle: r.album_title,
       releaseDate: r.release_date,
-      externalId: r.external_id,
+      releaseGroupMbid: r.release_group_mbid,
+      coverUrl: r.cover_url,
+      viewedAt: r.viewed_at,
       notifiedAt: r.notified_at,
     }))
   );
+});
+
+router.post("/releases/:id/viewed", async (req: Request, res: Response) => {
+  const releaseId = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(releaseId) || releaseId <= 0) {
+    return res.status(400).json({ error: "Invalid release id" });
+  }
+
+  const marked = await markFollowedReleaseViewed(req.user!.id, releaseId);
+  if (!marked) {
+    return res.status(404).json({ error: "Release not found" });
+  }
+
+  res.json({ status: "ok" });
 });
 
 router.post("/", async (req: Request, res: Response) => {

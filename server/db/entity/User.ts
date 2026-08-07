@@ -54,7 +54,4 @@ export class User {
 
   @Column({ type: "text", default: "local" })
   user_type!: UserType;
-
-  @Column({ type: "text", nullable: true })
-  followed_last_viewed_at!: string | null;
 }

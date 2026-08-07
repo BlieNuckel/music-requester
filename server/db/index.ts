@@ -49,8 +49,7 @@ export { WantedItem } from "./entity/WantedItem";
 export { Purchase } from "./entity/Purchase";
 export { Config } from "./entity/Config";
 export { FollowedArtist } from "./entity/FollowedArtist";
-export type { ReleaseSource } from "./entity/SeenRelease";
-export { SeenRelease } from "./entity/SeenRelease";
+export { FollowedRelease } from "./entity/FollowedRelease";
 export type { DerivedProfile } from "./entity/UserProfile";
 export {
   UserProfile,

@@ -1,15 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockGetAll = vi.fn();
-const mockHasSeen = vi.fn();
+const mockFindRelease = vi.fn();
 const mockRecord = vi.fn();
+const mockBackfill = vi.fn();
 const mockUpdateChecked = vi.fn();
 const mockAggregate = vi.fn();
 
 vi.mock("./followedService", () => ({
   getAllFollowedArtists: () => mockGetAll(),
-  hasSeenRelease: (...args: unknown[]) => mockHasSeen(...args),
-  recordSeenRelease: (...args: unknown[]) => mockRecord(...args),
+  findFollowedRelease: (...args: unknown[]) => mockFindRelease(...args),
+  recordFollowedRelease: (...args: unknown[]) => mockRecord(...args),
+  backfillReleaseMetadata: (...args: unknown[]) => mockBackfill(...args),
   updateLastCheckedAt: (...args: unknown[]) => mockUpdateChecked(...args),
 }));
 
@@ -22,6 +24,20 @@ vi.mock("../../logger", () => ({
 }));
 
 import { runPollOnce } from "./poller";
+
+function makeAggregated(overrides: Record<string, unknown> = {}) {
+  return {
+    release_key: "key-1",
+    source: "musicbrainz",
+    album_title: "New Album",
+    release_date: "2025-04-01",
+    release_group_mbid: "rg-1",
+    cover_url: "https://caa/rg-1",
+    release_type: "Album",
+    secondary_types: [],
+    ...overrides,
+  };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -38,31 +54,69 @@ describe("runPollOnce", () => {
         last_checked_at: "2025-01-01T00:00:00.000Z",
       },
     ]);
-    mockAggregate.mockResolvedValue([
-      {
-        release_key: "key-1",
-        source: "musicbrainz",
-        album_title: "New Album",
-        release_date: "2025-04-01",
-        external_id: "rg-1",
-      },
-    ]);
-    mockHasSeen.mockResolvedValue(false);
+    mockAggregate.mockResolvedValue([makeAggregated()]);
+    mockFindRelease.mockResolvedValue(null);
 
     await runPollOnce();
 
     expect(mockRecord).toHaveBeenCalledWith({
       followed_artist_id: 1,
       release_key: "key-1",
-      source: "musicbrainz",
       album_title: "New Album",
       release_date: "2025-04-01",
-      external_id: "rg-1",
+      release_group_mbid: "rg-1",
+      cover_url: "https://caa/rg-1",
+      release_type: "Album",
+      secondary_types: [],
     });
     expect(mockUpdateChecked).toHaveBeenCalledTimes(1);
   });
 
-  it("skips releases already in seen_releases", async () => {
+  it("skips releases already recorded with an MBID", async () => {
+    mockGetAll.mockResolvedValue([
+      {
+        id: 1,
+        user_id: 10,
+        artist_mbid: "mbid-1",
+        artist_name: "X",
+        last_checked_at: "2025-01-01",
+      },
+    ]);
+    mockAggregate.mockResolvedValue([makeAggregated()]);
+    mockFindRelease.mockResolvedValue({ id: 4, release_group_mbid: "rg-1" });
+
+    await runPollOnce();
+
+    expect(mockRecord).not.toHaveBeenCalled();
+    expect(mockBackfill).not.toHaveBeenCalled();
+    expect(mockUpdateChecked).toHaveBeenCalledTimes(1);
+  });
+
+  it("backfills MB metadata onto a release first seen from Deezer", async () => {
+    mockGetAll.mockResolvedValue([
+      {
+        id: 1,
+        user_id: 10,
+        artist_mbid: "mbid-1",
+        artist_name: "X",
+        last_checked_at: "2025-01-01",
+      },
+    ]);
+    mockAggregate.mockResolvedValue([makeAggregated()]);
+    mockFindRelease.mockResolvedValue({ id: 4, release_group_mbid: null });
+
+    await runPollOnce();
+
+    expect(mockRecord).not.toHaveBeenCalled();
+    expect(mockBackfill).toHaveBeenCalledWith(4, {
+      release_group_mbid: "rg-1",
+      cover_url: "https://caa/rg-1",
+      release_type: "Album",
+      secondary_types: [],
+    });
+  });
+
+  it("does not backfill when the aggregated release has no MBID either", async () => {
     mockGetAll.mockResolvedValue([
       {
         id: 1,
@@ -73,20 +127,13 @@ describe("runPollOnce", () => {
       },
     ]);
     mockAggregate.mockResolvedValue([
-      {
-        release_key: "key-1",
-        source: "musicbrainz",
-        album_title: "A",
-        release_date: "2025-04-01",
-        external_id: "rg-1",
-      },
+      makeAggregated({ source: "deezer", release_group_mbid: null }),
     ]);
-    mockHasSeen.mockResolvedValue(true);
+    mockFindRelease.mockResolvedValue({ id: 4, release_group_mbid: null });
 
     await runPollOnce();
 
-    expect(mockRecord).not.toHaveBeenCalled();
-    expect(mockUpdateChecked).toHaveBeenCalledTimes(1);
+    expect(mockBackfill).not.toHaveBeenCalled();
   });
 
   it("records every new release on first run regardless of date", async () => {
@@ -100,22 +147,14 @@ describe("runPollOnce", () => {
       },
     ]);
     mockAggregate.mockResolvedValue([
-      {
-        release_key: "key-old",
-        source: "musicbrainz",
-        album_title: "Old Album",
-        release_date: "2010-01-01",
-        external_id: "rg-old",
-      },
-      {
+      makeAggregated({ release_key: "key-old", release_date: "2010-01-01" }),
+      makeAggregated({
         release_key: "key-new",
         source: "deezer",
-        album_title: "New Album",
-        release_date: "2025-04-01",
-        external_id: "1",
-      },
+        release_group_mbid: null,
+      }),
     ]);
-    mockHasSeen.mockResolvedValue(false);
+    mockFindRelease.mockResolvedValue(null);
 
     await runPollOnce();
 
@@ -142,16 +181,8 @@ describe("runPollOnce", () => {
     ]);
     mockAggregate
       .mockRejectedValueOnce(new Error("boom"))
-      .mockResolvedValueOnce([
-        {
-          release_key: "k",
-          source: "musicbrainz",
-          album_title: "Z",
-          release_date: "2025-04-01",
-          external_id: "rg",
-        },
-      ]);
-    mockHasSeen.mockResolvedValue(false);
+      .mockResolvedValueOnce([makeAggregated({ release_key: "k" })]);
+    mockFindRelease.mockResolvedValue(null);
 
     await runPollOnce();
 

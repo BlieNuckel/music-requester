@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { createDataSource } from "./dataSource";
 import { RenamePlexPlays1717000000000 } from "./migration/9_RenamePlexPlays";
+import { FollowedReleases1718000000000 } from "./migration/10_FollowedReleases";
 import type { DataSource } from "typeorm";
 
 let ds: DataSource | null = null;
@@ -43,7 +44,6 @@ describe("InitialSchema migration", () => {
       "plex_username",
       "plex_token",
       "user_type",
-      "followed_last_viewed_at",
     ]);
   });
 
@@ -177,7 +177,7 @@ describe("constraint enforcement", () => {
 });
 
 describe("FollowedArtists migration", () => {
-  it("creates followed_artists and seen_releases tables", async () => {
+  it("creates followed_artists and followed_releases tables", async () => {
     const db = await initTestDb();
 
     const followedCols = (await db.query(
@@ -192,18 +192,21 @@ describe("FollowedArtists migration", () => {
       "created_at",
     ]);
 
-    const seenCols = (await db.query("PRAGMA table_info(seen_releases)")) as {
-      name: string;
-    }[];
-    expect(seenCols.map((c) => c.name)).toEqual([
+    const releaseCols = (await db.query(
+      "PRAGMA table_info(followed_releases)"
+    )) as { name: string }[];
+    expect(releaseCols.map((c) => c.name)).toEqual([
       "id",
       "followed_artist_id",
       "release_key",
-      "source",
       "album_title",
       "release_date",
-      "external_id",
       "notified_at",
+      "release_group_mbid",
+      "cover_url",
+      "release_type",
+      "secondary_types",
+      "viewed_at",
     ]);
   });
 
@@ -228,7 +231,7 @@ describe("FollowedArtists migration", () => {
     ).rejects.toThrow();
   });
 
-  it("cascades seen_releases when followed_artist is deleted", async () => {
+  it("cascades followed_releases when followed_artist is deleted", async () => {
     const db = await initTestDb();
     await db.query("INSERT INTO users (username) VALUES (?)", ["bob"]);
     const [{ id: userId }] = (await db.query(
@@ -246,17 +249,102 @@ describe("FollowedArtists migration", () => {
     )) as { id: number }[];
 
     await db.query(
-      "INSERT INTO seen_releases (followed_artist_id, release_key, source, album_title) VALUES (?, ?, ?, ?)",
-      [followedId, "key-1", "musicbrainz", "Album"]
+      "INSERT INTO followed_releases (followed_artist_id, release_key, album_title) VALUES (?, ?, ?)",
+      [followedId, "key-1", "Album"]
     );
 
     await db.query("DELETE FROM followed_artists WHERE id = ?", [followedId]);
 
     const rows = (await db.query(
-      "SELECT * FROM seen_releases WHERE followed_artist_id = ?",
+      "SELECT * FROM followed_releases WHERE followed_artist_id = ?",
       [followedId]
     )) as unknown[];
     expect(rows).toHaveLength(0);
+  });
+
+  it("FollowedReleases migration backfills MBIDs and viewed_at from legacy rows", async () => {
+    const db = await initTestDb();
+
+    const runner = db.createQueryRunner();
+    const migration = new FollowedReleases1718000000000();
+    await migration.down(runner);
+
+    await db.query("INSERT INTO users (username) VALUES (?)", ["erin"]);
+    const [{ id: userId }] = (await db.query(
+      "SELECT id FROM users WHERE username = ?",
+      ["erin"]
+    )) as { id: number }[];
+    await db.query(
+      "UPDATE users SET followed_last_viewed_at = ? WHERE id = ?",
+      ["2025-06-01T00:00:00.000Z", userId]
+    );
+
+    await db.query(
+      "INSERT INTO followed_artists (user_id, artist_mbid, artist_name) VALUES (?, ?, ?)",
+      [userId, "mbid-1", "Artist"]
+    );
+    const [{ id: followedId }] = (await db.query(
+      "SELECT id FROM followed_artists WHERE artist_mbid = ?",
+      ["mbid-1"]
+    )) as { id: number }[];
+
+    await db.query(
+      `INSERT INTO seen_releases
+         (followed_artist_id, release_key, source, album_title, external_id, notified_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        followedId,
+        "old-mb|2025-04",
+        "musicbrainz",
+        "Old MB",
+        "rg-old",
+        "2025-05-01T00:00:00.000Z",
+      ]
+    );
+    await db.query(
+      `INSERT INTO seen_releases
+         (followed_artist_id, release_key, source, album_title, external_id, notified_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        followedId,
+        "new-dz|2025-06",
+        "deezer",
+        "New Deezer",
+        "12345",
+        "2025-07-01T00:00:00.000Z",
+      ]
+    );
+
+    await migration.up(runner);
+    await runner.release();
+
+    const rows = (await db.query(
+      "SELECT * FROM followed_releases ORDER BY id"
+    )) as {
+      album_title: string;
+      release_group_mbid: string | null;
+      cover_url: string | null;
+      viewed_at: string | null;
+    }[];
+
+    const oldMb = rows.find((r) => r.album_title === "Old MB")!;
+    expect(oldMb.release_group_mbid).toBe("rg-old");
+    expect(oldMb.cover_url).toBe(
+      "https://coverartarchive.org/release-group/rg-old/front-500"
+    );
+    expect(oldMb.viewed_at).toBe("2025-06-01T00:00:00.000Z");
+
+    const newDz = rows.find((r) => r.album_title === "New Deezer")!;
+    expect(newDz.release_group_mbid).toBeNull();
+    expect(newDz.cover_url).toBeNull();
+    expect(newDz.viewed_at).toBeNull();
+
+    const userCols = (await db.query("PRAGMA table_info(users)")) as {
+      name: string;
+    }[];
+    expect(userCols.map((c) => c.name)).not.toContain(
+      "followed_last_viewed_at"
+    );
   });
 
   it("cascades followed_artists when user is deleted", async () => {

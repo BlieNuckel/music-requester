@@ -1,19 +1,34 @@
 import { fetchReleaseGroupsForArtist } from "../../api/musicbrainz/releaseGroups";
 import { getArtistAlbumsByName as getDeezerAlbums } from "../../api/deezer/albums";
 import { createLogger } from "../../logger";
-import type { ReleaseSource } from "../../db/index";
+
+/** Where a release surfaced during aggregation — used only for dedup ranking. */
+type ReleaseSource = "musicbrainz" | "deezer";
 
 export type AggregatedRelease = {
   release_key: string;
   source: ReleaseSource;
   album_title: string;
   release_date: string | null;
-  external_id: string | null;
+  release_group_mbid: string | null;
+  cover_url: string | null;
+  release_type: string | null;
+  secondary_types: string[] | null;
 };
 
 const log = createLogger("releaseAggregator");
 
 const TITLE_NOISE = /[\s.,!?'"()[\]{}\-_:;]+/g;
+
+const DEEZER_RECORD_TYPE_MAP: Record<
+  string,
+  { release_type: string; secondary_types: string[] }
+> = {
+  album: { release_type: "Album", secondary_types: [] },
+  ep: { release_type: "EP", secondary_types: [] },
+  single: { release_type: "Single", secondary_types: [] },
+  compilation: { release_type: "Album", secondary_types: ["Compilation"] },
+};
 
 function normalizeTitle(title: string): string {
   return title.toLowerCase().replace(TITLE_NOISE, "").trim();
@@ -24,8 +39,16 @@ function yearMonth(date: string | null | undefined): string {
   return date.slice(0, 7);
 }
 
-function buildKey(title: string, date: string | null | undefined): string {
+/** The dedup key shared by the poller pipeline and the discover blend. */
+export function buildReleaseKey(
+  title: string,
+  date: string | null | undefined
+): string {
   return `${normalizeTitle(title)}|${yearMonth(date)}`;
+}
+
+export function coverArtUrlForReleaseGroup(releaseGroupMbid: string): string {
+  return `https://coverartarchive.org/release-group/${releaseGroupMbid}/front-500`;
 }
 
 async function fetchFromMusicBrainz(
@@ -34,11 +57,14 @@ async function fetchFromMusicBrainz(
   try {
     const groups = await fetchReleaseGroupsForArtist(artistMbid, "background");
     return groups.map((rg) => ({
-      release_key: buildKey(rg.title, rg["first-release-date"]),
+      release_key: buildReleaseKey(rg.title, rg["first-release-date"]),
       source: "musicbrainz" as const,
       album_title: rg.title,
       release_date: rg["first-release-date"] || null,
-      external_id: rg.id,
+      release_group_mbid: rg.id,
+      cover_url: coverArtUrlForReleaseGroup(rg.id),
+      release_type: rg["primary-type"] || null,
+      secondary_types: rg["secondary-types"] ?? [],
     }));
   } catch (error) {
     log.error(`MB fetch failed for ${artistMbid}`, error);
@@ -50,13 +76,21 @@ async function fetchFromDeezer(
   artistName: string
 ): Promise<AggregatedRelease[]> {
   const albums = await getDeezerAlbums(artistName);
-  return albums.map((a) => ({
-    release_key: buildKey(a.title, a.release_date),
-    source: "deezer" as const,
-    album_title: a.title,
-    release_date: a.release_date ?? null,
-    external_id: String(a.id),
-  }));
+  return albums.map((a) => {
+    const mapped = a.record_type
+      ? DEEZER_RECORD_TYPE_MAP[a.record_type.toLowerCase()]
+      : undefined;
+    return {
+      release_key: buildReleaseKey(a.title, a.release_date),
+      source: "deezer" as const,
+      album_title: a.title,
+      release_date: a.release_date ?? null,
+      release_group_mbid: null,
+      cover_url: a.cover_xl ?? a.cover ?? null,
+      release_type: mapped?.release_type ?? null,
+      secondary_types: mapped?.secondary_types ?? null,
+    };
+  });
 }
 
 /**

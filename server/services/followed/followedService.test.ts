@@ -8,27 +8,22 @@ const mockRemove = vi.fn();
 const mockUpdate = vi.fn();
 const mockQuery = vi.fn();
 
-const mockSeenFind = vi.fn();
-const mockSeenFindOne = vi.fn();
-const mockSeenCreate = vi.fn();
-const mockSeenSave = vi.fn();
-
-const mockUserUpdate = vi.fn();
+const mockReleaseFind = vi.fn();
+const mockReleaseFindOne = vi.fn();
+const mockReleaseCreate = vi.fn();
+const mockReleaseSave = vi.fn();
+const mockReleaseUpdate = vi.fn();
 
 vi.mock("../../db/index", () => ({
   getDataSource: () => ({
     getRepository: (entity: string) => {
-      if (entity === "SeenRelease") {
+      if (entity === "FollowedRelease") {
         return {
-          find: (...args: unknown[]) => mockSeenFind(...args),
-          findOne: (...args: unknown[]) => mockSeenFindOne(...args),
-          create: (...args: unknown[]) => mockSeenCreate(...args),
-          save: (...args: unknown[]) => mockSeenSave(...args),
-        };
-      }
-      if (entity === "User") {
-        return {
-          update: (...args: unknown[]) => mockUserUpdate(...args),
+          find: (...args: unknown[]) => mockReleaseFind(...args),
+          findOne: (...args: unknown[]) => mockReleaseFindOne(...args),
+          create: (...args: unknown[]) => mockReleaseCreate(...args),
+          save: (...args: unknown[]) => mockReleaseSave(...args),
+          update: (...args: unknown[]) => mockReleaseUpdate(...args),
         };
       }
       return {
@@ -43,8 +38,7 @@ vi.mock("../../db/index", () => ({
     query: (...args: unknown[]) => mockQuery(...args),
   }),
   FollowedArtist: "FollowedArtist",
-  SeenRelease: "SeenRelease",
-  User: "User",
+  FollowedRelease: "FollowedRelease",
 }));
 
 vi.mock("../../logger", () => ({
@@ -60,12 +54,15 @@ import {
   unfollowArtist,
   getFollowedArtists,
   getAllFollowedArtists,
-  hasSeenRelease,
-  recordSeenRelease,
-  getSeenReleasesForUser,
+  findFollowedRelease,
+  recordFollowedRelease,
+  backfillReleaseMetadata,
+  getFollowedReleasesForUser,
   updateLastCheckedAt,
   getUnseenReleaseCount,
   markFollowedReleasesViewed,
+  markFollowedReleaseViewed,
+  parseSecondaryTypes,
 } from "./followedService";
 
 beforeEach(() => {
@@ -139,54 +136,112 @@ describe("getAllFollowedArtists", () => {
   });
 });
 
-describe("seen releases", () => {
-  it("hasSeenRelease returns true when row exists", async () => {
-    mockSeenFindOne.mockResolvedValue({ id: 1 });
-    const result = await hasSeenRelease(1, "key-1");
-    expect(result).toBe(true);
-    expect(mockSeenFindOne).toHaveBeenCalledWith({
+describe("followed releases", () => {
+  it("findFollowedRelease returns the row when it exists", async () => {
+    const row = { id: 1, release_group_mbid: null };
+    mockReleaseFindOne.mockResolvedValue(row);
+    const result = await findFollowedRelease(1, "key-1");
+    expect(result).toBe(row);
+    expect(mockReleaseFindOne).toHaveBeenCalledWith({
       where: { followed_artist_id: 1, release_key: "key-1" },
     });
   });
 
-  it("hasSeenRelease returns false when row missing", async () => {
-    mockSeenFindOne.mockResolvedValue(null);
-    const result = await hasSeenRelease(1, "key-1");
-    expect(result).toBe(false);
+  it("findFollowedRelease returns null when row missing", async () => {
+    mockReleaseFindOne.mockResolvedValue(null);
+    const result = await findFollowedRelease(1, "key-1");
+    expect(result).toBeNull();
   });
 
-  it("recordSeenRelease inserts a row", async () => {
-    mockSeenCreate.mockImplementation((input) => input);
-    mockSeenSave.mockImplementation(async (input) => ({ ...input, id: 7 }));
+  it("recordFollowedRelease inserts a row with JSON secondary types", async () => {
+    mockReleaseCreate.mockImplementation((input) => input);
+    mockReleaseSave.mockImplementation(async (input) => ({ ...input, id: 7 }));
 
-    const result = await recordSeenRelease({
+    const result = await recordFollowedRelease({
       followed_artist_id: 1,
       release_key: "key-1",
-      source: "musicbrainz",
       album_title: "Album",
       release_date: "2025-01-01",
-      external_id: "ext-1",
+      release_group_mbid: "rg-1",
+      cover_url: "https://example.com/cover.jpg",
+      release_type: "Album",
+      secondary_types: ["Live"],
     });
 
     expect(result.id).toBe(7);
-    expect(mockSeenCreate).toHaveBeenCalledWith({
+    expect(mockReleaseCreate).toHaveBeenCalledWith({
       followed_artist_id: 1,
       release_key: "key-1",
-      source: "musicbrainz",
       album_title: "Album",
       release_date: "2025-01-01",
-      external_id: "ext-1",
+      release_group_mbid: "rg-1",
+      cover_url: "https://example.com/cover.jpg",
+      release_type: "Album",
+      secondary_types: '["Live"]',
     });
   });
 
-  it("getSeenReleasesForUser runs join query with limit", async () => {
+  it("recordFollowedRelease keeps null secondary types as null", async () => {
+    mockReleaseCreate.mockImplementation((input) => input);
+    mockReleaseSave.mockImplementation(async (input) => ({ ...input, id: 8 }));
+
+    await recordFollowedRelease({
+      followed_artist_id: 1,
+      release_key: "key-2",
+      album_title: "Album",
+      release_date: null,
+      release_group_mbid: null,
+      cover_url: null,
+      release_type: null,
+      secondary_types: null,
+    });
+
+    expect(mockReleaseCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ secondary_types: null })
+    );
+  });
+
+  it("backfillReleaseMetadata updates MB-derived fields", async () => {
+    mockReleaseUpdate.mockResolvedValue({});
+    await backfillReleaseMetadata(4, {
+      release_group_mbid: "rg-9",
+      cover_url: "https://caa/rg-9",
+      release_type: "EP",
+      secondary_types: [],
+    });
+    expect(mockReleaseUpdate).toHaveBeenCalledWith(
+      { id: 4 },
+      {
+        release_group_mbid: "rg-9",
+        cover_url: "https://caa/rg-9",
+        release_type: "EP",
+        secondary_types: "[]",
+      }
+    );
+  });
+
+  it("getFollowedReleasesForUser runs join query with limit", async () => {
     mockQuery.mockResolvedValue([{ id: 1, artist_name: "A" }]);
-    const result = await getSeenReleasesForUser(3, 10);
+    const result = await getFollowedReleasesForUser(3, 10);
     expect(result).toHaveLength(1);
     expect(mockQuery).toHaveBeenCalledWith(expect.any(String), [3, 10]);
     const sqlArg = mockQuery.mock.calls[0][0] as string;
-    expect(sqlArg).toContain("seen_releases");
+    expect(sqlArg).toContain("followed_releases");
     expect(sqlArg).toContain("followed_artists");
+  });
+});
+
+describe("parseSecondaryTypes", () => {
+  it("parses a JSON array", () => {
+    expect(parseSecondaryTypes('["Live","Remix"]')).toEqual(["Live", "Remix"]);
+  });
+
+  it("returns null for null input", () => {
+    expect(parseSecondaryTypes(null)).toBeNull();
+  });
+
+  it("returns null for malformed JSON", () => {
+    expect(parseSecondaryTypes("{nope")).toBeNull();
   });
 });
 
@@ -202,15 +257,14 @@ describe("updateLastCheckedAt", () => {
 });
 
 describe("getUnseenReleaseCount", () => {
-  it("returns the count from the join query", async () => {
+  it("counts rows with viewed_at IS NULL", async () => {
     mockQuery.mockResolvedValue([{ count: 3 }]);
     const result = await getUnseenReleaseCount(7);
     expect(result).toBe(3);
     expect(mockQuery).toHaveBeenCalledWith(expect.any(String), [7]);
     const sql = mockQuery.mock.calls[0][0] as string;
-    expect(sql).toContain("seen_releases");
-    expect(sql).toContain("followed_artists");
-    expect(sql).toContain("followed_last_viewed_at");
+    expect(sql).toContain("followed_releases");
+    expect(sql).toContain("viewed_at IS NULL");
   });
 
   it("returns 0 when no rows", async () => {
@@ -221,15 +275,34 @@ describe("getUnseenReleaseCount", () => {
 });
 
 describe("markFollowedReleasesViewed", () => {
-  it("updates the user row with a current timestamp", async () => {
-    mockUserUpdate.mockResolvedValue({});
+  it("stamps viewed_at on all unviewed rows for the user", async () => {
+    mockQuery.mockResolvedValue([]);
     await markFollowedReleasesViewed(9);
-    expect(mockUserUpdate).toHaveBeenCalledTimes(1);
-    const [where, patch] = mockUserUpdate.mock.calls[0];
-    expect(where).toEqual({ id: 9 });
-    expect(
-      typeof (patch as { followed_last_viewed_at: string })
-        .followed_last_viewed_at
-    ).toBe("string");
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    const [sql, params] = mockQuery.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain("UPDATE followed_releases");
+    expect(sql).toContain("viewed_at IS NULL");
+    expect(typeof params[0]).toBe("string");
+    expect(params[1]).toBe(9);
+  });
+});
+
+describe("markFollowedReleaseViewed", () => {
+  it("returns false when the release doesn't belong to the user", async () => {
+    mockQuery.mockResolvedValue([]);
+    const result = await markFollowedReleaseViewed(1, 42);
+    expect(result).toBe(false);
+    expect(mockReleaseUpdate).not.toHaveBeenCalled();
+  });
+
+  it("stamps viewed_at when the release belongs to the user", async () => {
+    mockQuery.mockResolvedValue([{ id: 42 }]);
+    mockReleaseUpdate.mockResolvedValue({});
+    const result = await markFollowedReleaseViewed(1, 42);
+    expect(result).toBe(true);
+    expect(mockReleaseUpdate).toHaveBeenCalledWith(
+      { id: 42 },
+      { viewed_at: expect.any(String) }
+    );
   });
 });

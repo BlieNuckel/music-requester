@@ -1,7 +1,8 @@
 import {
   getAllFollowedArtists,
-  hasSeenRelease,
-  recordSeenRelease,
+  findFollowedRelease,
+  recordFollowedRelease,
+  backfillReleaseMetadata,
   updateLastCheckedAt,
 } from "./followedService";
 import { aggregateArtistReleases } from "./releaseAggregator";
@@ -27,17 +28,30 @@ async function pollOneArtist(follow: FollowedArtist): Promise<void> {
   );
 
   for (const rel of releases) {
-    const alreadySeen = await hasSeenRelease(follow.id, rel.release_key);
-    if (alreadySeen) continue;
+    const existing = await findFollowedRelease(follow.id, rel.release_key);
 
-    await recordSeenRelease({
-      followed_artist_id: follow.id,
-      release_key: rel.release_key,
-      source: rel.source,
-      album_title: rel.album_title,
-      release_date: rel.release_date,
-      external_id: rel.external_id,
-    });
+    if (!existing) {
+      await recordFollowedRelease({
+        followed_artist_id: follow.id,
+        release_key: rel.release_key,
+        album_title: rel.album_title,
+        release_date: rel.release_date,
+        release_group_mbid: rel.release_group_mbid,
+        cover_url: rel.cover_url,
+        release_type: rel.release_type,
+        secondary_types: rel.secondary_types,
+      });
+      continue;
+    }
+
+    if (!existing.release_group_mbid && rel.release_group_mbid) {
+      await backfillReleaseMetadata(existing.id, {
+        release_group_mbid: rel.release_group_mbid,
+        cover_url: rel.cover_url,
+        release_type: rel.release_type,
+        secondary_types: rel.secondary_types,
+      });
+    }
   }
 
   await updateLastCheckedAt(follow.id, isoNow());

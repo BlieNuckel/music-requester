@@ -114,8 +114,6 @@ export interface SpendingSummary {
 export type MonitorState =
   "idle" | "adding" | "success" | "already_monitored" | "error";
 
-export type ReleaseNotificationSource = "musicbrainz" | "deezer" | "apple";
-
 export interface FollowedArtistItem {
   id: number;
   artistMbid: string;
@@ -124,15 +122,37 @@ export interface FollowedArtistItem {
   createdAt: string;
 }
 
-export interface SeenReleaseItem {
+export type NewReleaseSource = "followed" | "library" | "similar";
+
+export type NewReleaseLidarrStatus = "downloading" | "wanted" | "imported";
+
+export interface NewReleaseItem {
+  releaseGroupMbid: string | null;
+  title: string;
+  artistName: string;
+  artistMbid: string | null;
+  releaseDate: string | null;
+  source: NewReleaseSource;
+  coverUrl: string | null;
+  lidarrStatus: NewReleaseLidarrStatus | null;
+  followedReleaseId: number | null;
+}
+
+export interface NewReleasesData {
+  items: NewReleaseItem[];
+  windowDays: number;
+}
+
+export interface FollowedReleaseItem {
   id: number;
   followedArtistId: number;
   artistMbid: string;
   artistName: string;
   releaseKey: string;
-  source: ReleaseNotificationSource;
   albumTitle: string;
   releaseDate: string | null;
-  externalId: string | null;
+  releaseGroupMbid: string | null;
+  coverUrl: string | null;
+  viewedAt: string | null;
   notifiedAt: string;
 }
