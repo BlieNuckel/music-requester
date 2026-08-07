@@ -7,7 +7,7 @@ vi.mock("../api/deezer/artists", () => ({
   getArtistsImages: (...args: unknown[]) => mockGetArtistsImages(...args),
 }));
 
-vi.mock("../api/apple/artists", () => ({
+vi.mock("../api/deezer/albums", () => ({
   getAlbumsArtwork: (...args: unknown[]) => mockGetAlbumsArtwork(...args),
 }));
 
@@ -96,17 +96,17 @@ describe("enrichArtistSectionsWithImages", () => {
 });
 
 describe("enrichAlbumsWithArtwork", () => {
-  it("merges Apple Music artwork into albums", async () => {
+  it("merges Deezer artwork into albums", async () => {
     const albums = [
       { name: "OK Computer", artistName: "Radiohead", imageUrl: "" },
       { name: "Kid A", artistName: "Radiohead", imageUrl: "existing.jpg" },
     ];
     mockGetAlbumsArtwork.mockResolvedValue(
-      new Map([["ok computer|radiohead", "https://apple.com/okcomputer.jpg"]])
+      new Map([["ok computer|radiohead", "https://deezer.com/okcomputer.jpg"]])
     );
 
     const result = await enrichAlbumsWithArtwork(albums);
-    expect(result[0].imageUrl).toBe("https://apple.com/okcomputer.jpg");
+    expect(result[0].imageUrl).toBe("https://deezer.com/okcomputer.jpg");
     expect(result[1].imageUrl).toBe("existing.jpg");
     expect(mockGetAlbumsArtwork).toHaveBeenCalledWith([
       { name: "OK Computer", artistName: "Radiohead" },

@@ -92,7 +92,7 @@ describe("runPollOnce", () => {
     expect(mockUpdateChecked).toHaveBeenCalledTimes(1);
   });
 
-  it("backfills MB metadata onto a release first seen from Deezer/Apple", async () => {
+  it("backfills MB metadata onto a release first seen from Deezer", async () => {
     mockGetAll.mockResolvedValue([
       {
         id: 1,

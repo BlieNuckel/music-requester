@@ -4,8 +4,16 @@ import ReleaseSectionGrid from "../ReleaseSectionGrid";
 import type { ReleaseGroup } from "@/types";
 
 vi.mock("@/components/ReleaseGroupCard", () => ({
-  default: ({ releaseGroup }: { releaseGroup: ReleaseGroup }) => (
-    <div data-testid={`rg-${releaseGroup.id}`}>{releaseGroup.title}</div>
+  default: ({
+    releaseGroup,
+    inLibrary,
+  }: {
+    releaseGroup: ReleaseGroup;
+    inLibrary?: boolean;
+  }) => (
+    <div data-testid={`rg-${releaseGroup.id}`} data-in-library={inLibrary}>
+      {releaseGroup.title}
+    </div>
   ),
 }));
 
@@ -63,6 +71,26 @@ describe("ReleaseSectionGrid", () => {
 
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText("First Album")).not.toBeInTheDocument();
+  });
+
+  it("passes per-album library status to the cards", () => {
+    render(
+      <ReleaseSectionGrid
+        title="Albums"
+        items={items}
+        defaultExpanded
+        isAlbumInLibrary={(mbid) => mbid === "one"}
+      />
+    );
+
+    expect(screen.getByTestId("rg-one")).toHaveAttribute(
+      "data-in-library",
+      "true"
+    );
+    expect(screen.getByTestId("rg-two")).toHaveAttribute(
+      "data-in-library",
+      "false"
+    );
   });
 
   it("rotates the chevron when expanded", async () => {

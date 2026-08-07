@@ -1,21 +1,16 @@
-import { resilientFetch } from "../resilientFetch";
-import { MB_BASE, MB_HEADERS } from "./config";
+import { MB_BASE, mbJson } from "./config";
+import { mbCached, MB_TTL } from "./cache";
+import type { MbPriority } from "./queue";
 import type { MusicBrainzReleasesResponse, TrackMedia } from "./types";
 
-/** Fetch the track listing for a release group */
-export async function getReleaseTracks(
-  releaseGroupId: string
+async function loadReleaseTracks(
+  releaseGroupId: string,
+  priority: MbPriority
 ): Promise<TrackMedia[]> {
   const url = `${MB_BASE}/release?release-group=${releaseGroupId}&inc=recordings+media&limit=1&fmt=json`;
-  const response = await resilientFetch(url, { headers: MB_HEADERS });
+  const data = await mbJson<MusicBrainzReleasesResponse>(url, priority);
 
-  if (!response.ok) {
-    throw new Error(`MusicBrainz returned ${response.status}`);
-  }
-
-  const data: MusicBrainzReleasesResponse = await response.json();
-  const release = data.releases?.[0];
-
+  const release = data?.releases?.[0];
   if (!release) {
     return [];
   }
@@ -30,4 +25,19 @@ export async function getReleaseTracks(
       length: t.length,
     })),
   }));
+}
+
+/** Fetch the track listing for a release group */
+export function getReleaseTracks(
+  releaseGroupId: string,
+  priority: MbPriority = "interactive"
+): Promise<TrackMedia[]> {
+  return mbCached(
+    {
+      key: `rg-tracks:${releaseGroupId}`,
+      ttlSeconds: MB_TTL.immutable,
+      priority,
+    },
+    (p) => loadReleaseTracks(releaseGroupId, p)
+  );
 }

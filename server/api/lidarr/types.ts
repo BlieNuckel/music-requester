@@ -19,11 +19,18 @@ export type LidarrArtist = {
   folder: string;
 };
 
+export type LidarrAlbumStatistics = {
+  trackFileCount: number;
+  totalTrackCount: number;
+  percentOfTracks: number;
+};
+
 export type LidarrAlbum = {
   id: number;
   title: string;
   foreignAlbumId: string;
   monitored: boolean;
+  statistics?: LidarrAlbumStatistics;
   artist: {
     id: number;
     artistName: string;

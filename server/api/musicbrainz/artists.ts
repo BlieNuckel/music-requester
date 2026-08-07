@@ -1,12 +1,11 @@
-import { resilientFetch } from "../resilientFetch";
-import { MB_BASE, MB_HEADERS, rateLimitedMbFetch } from "./config";
+import { MB_BASE, mbJson } from "./config";
+import { mbCached, MB_TTL } from "./cache";
+import type { MbPriority } from "./queue";
 import type {
   ArtistInfo,
   MusicBrainzArtist,
   MusicBrainzArtistSearchResponse,
 } from "./types";
-
-const mbidCache = new Map<string, string | null>();
 
 /** @param artist Raw MusicBrainz artist entity */
 function toArtistInfo(artist: MusicBrainzArtist): ArtistInfo {
@@ -20,55 +19,82 @@ function toArtistInfo(artist: MusicBrainzArtist): ArtistInfo {
   };
 }
 
-export function clearArtistMbidCache() {
-  mbidCache.clear();
+async function loadArtistMbid(
+  name: string,
+  priority: MbPriority
+): Promise<string | null> {
+  const url = `${MB_BASE}/artist/?query=${encodeURIComponent(name)}&limit=1&fmt=json`;
+  const data = await mbJson<MusicBrainzArtistSearchResponse>(url, priority);
+  return data?.artists?.[0]?.id ?? null;
+}
+
+async function loadArtistById(
+  mbid: string,
+  priority: MbPriority
+): Promise<ArtistInfo | null> {
+  const data = await mbJson<MusicBrainzArtist>(
+    `${MB_BASE}/artist/${mbid}?fmt=json`,
+    priority
+  );
+  if (!data?.id) return null;
+  return toArtistInfo(data);
+}
+
+async function loadArtistSearch(
+  query: string,
+  priority: MbPriority
+): Promise<ArtistInfo[]> {
+  const url = `${MB_BASE}/artist/?query=${encodeURIComponent(query)}&limit=25&fmt=json`;
+  const data = await mbJson<MusicBrainzArtistSearchResponse>(url, priority);
+  return (data?.artists ?? []).map(toArtistInfo);
 }
 
 /**
- * Resolve an artist name to its top-matching MusicBrainz artist MBID. Results
- * are cached for the process lifetime (including misses). Returns null when no
- * match is found; transient fetch failures are not cached.
+ * Resolve an artist name to its top-matching MusicBrainz artist MBID. Returns
+ * null when no match is found; a lookup that fails outright also returns null
+ * and is not cached, so it will be retried.
  */
 export async function getArtistMbidByName(
-  name: string
+  name: string,
+  priority: MbPriority = "interactive"
 ): Promise<string | null> {
-  const key = name.toLowerCase();
-  const cached = mbidCache.get(key);
-  if (cached !== undefined) return cached;
-
-  const url = `${MB_BASE}/artist/?query=${encodeURIComponent(name)}&limit=1&fmt=json`;
   try {
-    const response = await rateLimitedMbFetch(url, { headers: MB_HEADERS });
-    if (!response.ok) return null;
-
-    const data: MusicBrainzArtistSearchResponse = await response.json();
-    const mbid = data.artists?.[0]?.id ?? null;
-    mbidCache.set(key, mbid);
-    return mbid;
+    return await mbCached(
+      {
+        key: `artist-mbid:${name.toLowerCase()}`,
+        ttlSeconds: MB_TTL.immutable,
+        priority,
+      },
+      (p) => loadArtistMbid(name, p)
+    );
   } catch {
     return null;
   }
 }
 
-/** Look up a single artist by MBID. Returns null on a failed lookup. */
-export async function getArtistById(mbid: string): Promise<ArtistInfo | null> {
-  const url = `${MB_BASE}/artist/${mbid}?fmt=json`;
-  const response = await rateLimitedMbFetch(url, { headers: MB_HEADERS });
-  if (!response.ok) return null;
-
-  const data: MusicBrainzArtist = await response.json();
-  if (!data.id) return null;
-  return toArtistInfo(data);
+/** Look up a single artist by MBID. Returns null when the artist doesn't exist. */
+export function getArtistById(
+  mbid: string,
+  priority: MbPriority = "interactive"
+): Promise<ArtistInfo | null> {
+  return mbCached(
+    { key: `artist:${mbid}`, ttlSeconds: MB_TTL.slow, priority },
+    (p) => loadArtistById(mbid, p)
+  );
 }
 
 /** Search for artists by name, returning lightweight artist entities. */
-export async function searchArtists(query: string): Promise<ArtistInfo[]> {
-  const url = `${MB_BASE}/artist/?query=${encodeURIComponent(query)}&limit=25&fmt=json`;
-  const response = await resilientFetch(url, { headers: MB_HEADERS });
-  if (!response.ok) {
-    throw new Error(`MusicBrainz returned ${response.status}`);
-  }
-
-  const data: MusicBrainzArtistSearchResponse = await response.json();
-  return (data.artists ?? []).map(toArtistInfo);
+export function searchArtists(
+  query: string,
+  priority: MbPriority = "interactive"
+): Promise<ArtistInfo[]> {
+  return mbCached(
+    {
+      key: `artist-search:${query.toLowerCase()}`,
+      ttlSeconds: MB_TTL.volatile,
+      priority,
+      strategy: "revalidate",
+    },
+    (p) => loadArtistSearch(query, p)
+  );
 }

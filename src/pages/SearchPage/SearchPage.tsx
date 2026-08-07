@@ -5,6 +5,8 @@ import ReleaseGroupCard from "@/components/ReleaseGroupCard";
 import ArtistCard from "@/pages/DiscoverPage/components/ArtistCard";
 import Skeleton from "@/components/Skeleton";
 import useSearch from "@/hooks/useSearch";
+import useLibraryAlbums from "@/hooks/useLibraryAlbums";
+import useLibraryArtists from "@/hooks/useLibraryArtists";
 
 const DEAL_ROTATIONS = [-4, 3.5, -3, 4.5, -3.5, 3];
 
@@ -63,6 +65,8 @@ function SearchSkeletons() {
 export default function SearchPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { albums, artists, loading, error, search } = useSearch();
+  const { isAlbumInLibrary } = useLibraryAlbums();
+  const { isArtistInLibrary } = useLibraryArtists();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const query = searchParams.get("q") ?? "";
@@ -117,6 +121,7 @@ export default function SearchPage() {
                     name={artist.name}
                     mbid={artist.mbid}
                     imageUrl={artist.imageUrl}
+                    inLibrary={isArtistInLibrary(artist.mbid, artist.name)}
                   />
                 ))}
               </div>
@@ -138,7 +143,10 @@ export default function SearchPage() {
                       } as React.CSSProperties
                     }
                   >
-                    <ReleaseGroupCard releaseGroup={rg} />
+                    <ReleaseGroupCard
+                      releaseGroup={rg}
+                      inLibrary={isAlbumInLibrary(rg.id)}
+                    />
                   </div>
                 ))}
               </div>

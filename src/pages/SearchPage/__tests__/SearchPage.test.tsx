@@ -11,6 +11,9 @@ let mockSearchState: {
   search: ReturnType<typeof vi.fn>;
 };
 
+let libraryAlbumMbids: string[] = [];
+let libraryArtistMbids: string[] = [];
+
 vi.mock("@/hooks/useSearch", () => ({
   default: () => mockSearchState,
 }));
@@ -19,15 +22,38 @@ vi.mock("@/hooks/useNavigateToArtist", () => ({
   default: () => ({ go: vi.fn(), resolving: false }),
 }));
 
+vi.mock("@/hooks/useLibraryAlbums", () => ({
+  default: () => ({
+    isAlbumInLibrary: (mbid: string) => libraryAlbumMbids.includes(mbid),
+    getTrackAvailability: () => null,
+  }),
+}));
+
+vi.mock("@/hooks/useLibraryArtists", () => ({
+  default: () => ({
+    isArtistInLibrary: (mbid: string) => libraryArtistMbids.includes(mbid),
+  }),
+}));
+
 vi.mock("@/components/ReleaseGroupCard", () => ({
-  default: ({ releaseGroup }: { releaseGroup: { title: string } }) => (
-    <div data-testid="release-card">{releaseGroup.title}</div>
+  default: ({
+    releaseGroup,
+    inLibrary,
+  }: {
+    releaseGroup: { title: string };
+    inLibrary?: boolean;
+  }) => (
+    <div data-testid="release-card" data-in-library={String(!!inLibrary)}>
+      {releaseGroup.title}
+    </div>
   ),
 }));
 
 vi.mock("@/pages/DiscoverPage/components/ArtistCard", () => ({
-  default: ({ name }: { name: string }) => (
-    <div data-testid="artist-card">{name}</div>
+  default: ({ name, inLibrary }: { name: string; inLibrary?: boolean }) => (
+    <div data-testid="artist-card" data-in-library={String(!!inLibrary)}>
+      {name}
+    </div>
   ),
 }));
 
@@ -61,6 +87,8 @@ beforeEach(() => {
     error: null,
     search: vi.fn(),
   };
+  libraryAlbumMbids = [];
+  libraryArtistMbids = [];
 });
 
 describe("SearchPage", () => {
@@ -114,6 +142,32 @@ describe("SearchPage", () => {
   it("shows the no-results state when a query returns nothing", () => {
     renderSearchPage("nonexistent");
     expect(screen.getByText("No results found")).toBeInTheDocument();
+  });
+
+  it("marks only the album results that are in the library", () => {
+    libraryAlbumMbids = ["rg-1"];
+    mockSearchState.albums = [
+      makeAlbum("rg-1", "OK Computer"),
+      makeAlbum("rg-2", "Kid A"),
+    ];
+
+    renderSearchPage("Radiohead");
+
+    const cards = screen.getAllByTestId("release-card");
+    expect(cards.map((c) => c.dataset.inLibrary)).toEqual(["true", "false"]);
+  });
+
+  it("marks only the artist results that are in the library", () => {
+    libraryArtistMbids = ["a1"];
+    mockSearchState.artists = [
+      { mbid: "a1", name: "Radiohead" },
+      { mbid: "a2", name: "Thom Yorke" },
+    ];
+
+    renderSearchPage("Radiohead");
+
+    const cards = screen.getAllByTestId("artist-card");
+    expect(cards.map((c) => c.dataset.inLibrary)).toEqual(["true", "false"]);
   });
 
   it("clears input and focuses it on search:reset event", () => {

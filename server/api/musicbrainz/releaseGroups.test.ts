@@ -9,16 +9,25 @@ import {
 } from "./releaseGroups";
 
 const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
+const mockAcquireMbSlot = vi.fn((..._args: unknown[]) => Promise.resolve());
 
-vi.mock("./config", () => ({
-  MB_BASE: "https://musicbrainz.test/ws/2",
-  MB_HEADERS: { "User-Agent": "test" },
-  rateLimitedMbFetch: (...args: unknown[]) => mockFetch(...args),
+vi.mock("../resilientFetch", () => ({
+  resilientFetch: (...args: unknown[]) => mockFetch(...args),
 }));
+
+vi.mock("./queue", () => ({
+  acquireMbSlot: (...args: unknown[]) => mockAcquireMbSlot(...args),
+  reportMbSuccess: () => {},
+  reportMbThrottled: () => {},
+}));
+
+import { MB_BASE, MB_HEADERS } from "./config";
+import { clearMbCache } from "./cache";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockAcquireMbSlot.mockResolvedValue(undefined);
+  clearMbCache();
 });
 
 function okResponse(data: unknown) {
@@ -77,8 +86,9 @@ describe("getReleaseGroupById", () => {
       albumTitle: "OK Computer",
     });
     expect(mockFetch).toHaveBeenCalledWith(
-      "https://musicbrainz.test/ws/2/release-group/rg-123?inc=artist-credits&fmt=json",
-      { headers: { "User-Agent": "test" } }
+      `${MB_BASE}/release-group/rg-123?inc=artist-credits&fmt=json`,
+      { headers: MB_HEADERS },
+      { retry: false }
     );
   });
 
@@ -132,8 +142,9 @@ describe("getAlbumDetails", () => {
       secondaryTypes: ["Live"],
     });
     expect(mockFetch).toHaveBeenCalledWith(
-      "https://musicbrainz.test/ws/2/release-group/rg-123?inc=artist-credits&fmt=json",
-      { headers: { "User-Agent": "test" } }
+      `${MB_BASE}/release-group/rg-123?inc=artist-credits&fmt=json`,
+      { headers: MB_HEADERS },
+      { retry: false }
     );
   });
 
@@ -179,8 +190,9 @@ describe("getReleaseGroupIdFromRelease", () => {
     const result = await getReleaseGroupIdFromRelease("release-123");
     expect(result).toEqual({ id: "rg-456", firstReleaseDate: "1997-06-16" });
     expect(mockFetch).toHaveBeenCalledWith(
-      "https://musicbrainz.test/ws/2/release/release-123?inc=release-groups&fmt=json",
-      { headers: { "User-Agent": "test" } }
+      `${MB_BASE}/release/release-123?inc=release-groups&fmt=json`,
+      { headers: MB_HEADERS },
+      { retry: false }
     );
   });
 
@@ -236,8 +248,9 @@ describe("getReleaseGroupLabel", () => {
     const result = await getReleaseGroupLabel("rg-123");
     expect(result).toEqual({ name: "Warp Records", mbid: "label-1" });
     expect(mockFetch).toHaveBeenCalledWith(
-      "https://musicbrainz.test/ws/2/release?release-group=rg-123&inc=labels&limit=1&fmt=json",
-      { headers: { "User-Agent": "test" } }
+      `${MB_BASE}/release?release-group=rg-123&inc=labels&limit=1&fmt=json`,
+      { headers: MB_HEADERS },
+      { retry: false }
     );
   });
 
@@ -277,11 +290,19 @@ describe("getReleaseGroupLabel", () => {
     expect(result).toBeNull();
   });
 
-  it("returns null on non-ok response", async () => {
-    mockFetch.mockResolvedValue(errorResponse(500));
+  it("returns null when the release group does not exist", async () => {
+    mockFetch.mockResolvedValue(errorResponse(404));
 
-    const result = await getReleaseGroupLabel("rg-error");
+    const result = await getReleaseGroupLabel("rg-missing");
     expect(result).toBeNull();
+  });
+
+  it("throws rather than caching a throttled response as 'no label'", async () => {
+    mockFetch.mockResolvedValue(errorResponse(503));
+
+    await expect(getReleaseGroupLabel("rg-error")).rejects.toThrow(
+      "MusicBrainz returned 503"
+    );
   });
 });
 
@@ -294,8 +315,9 @@ describe("getReleaseGroupDate", () => {
     const result = await getReleaseGroupDate("rg-123");
     expect(result).toBe("1997-06-16");
     expect(mockFetch).toHaveBeenCalledWith(
-      "https://musicbrainz.test/ws/2/release-group/rg-123?fmt=json",
-      { headers: { "User-Agent": "test" } }
+      `${MB_BASE}/release-group/rg-123?fmt=json`,
+      { headers: MB_HEADERS },
+      { retry: false }
     );
   });
 

@@ -2,16 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockMbFetch = vi.fn();
 const mockDeezerFetch = vi.fn();
-const mockAppleFetch = vi.fn();
 
 vi.mock("../../api/musicbrainz/releaseGroups", () => ({
   fetchReleaseGroupsForArtist: (...args: unknown[]) => mockMbFetch(...args),
 }));
 vi.mock("../../api/deezer/albums", () => ({
   getArtistAlbumsByName: (...args: unknown[]) => mockDeezerFetch(...args),
-}));
-vi.mock("../../api/apple/albums", () => ({
-  getArtistAlbumsByName: (...args: unknown[]) => mockAppleFetch(...args),
 }));
 vi.mock("../../logger", () => ({
   createLogger: () => ({ info: vi.fn(), error: vi.fn(), warn: vi.fn() }),
@@ -40,23 +36,14 @@ describe("aggregateArtistReleases", () => {
       },
       { id: 101, title: "Kid A", release_date: "2000-10-02" },
     ]);
-    mockAppleFetch.mockResolvedValue([
-      {
-        collectionId: 200,
-        collectionName: "Amnesiac",
-        releaseDate: "2001-06-05T00:00:00Z",
-      },
-    ]);
 
     const result = await aggregateArtistReleases("mbid-123", "Radiohead");
-    expect(result).toHaveLength(3);
+    expect(result).toHaveLength(2);
     const ok = result.find((r) => r.album_title === "OK Computer");
     expect(ok?.source).toBe("musicbrainz");
     const kid = result.find((r) => r.album_title === "Kid A");
     expect(kid?.source).toBe("deezer");
-    const am = result.find((r) => r.album_title === "Amnesiac");
-    expect(am?.source).toBe("apple");
-    expect(am?.release_date).toBe("2001-06-05");
+    expect(kid?.release_date).toBe("2000-10-02");
   });
 
   it("handles MB fetch failure gracefully", async () => {
@@ -64,7 +51,6 @@ describe("aggregateArtistReleases", () => {
     mockDeezerFetch.mockResolvedValue([
       { id: 1, title: "Solo", release_date: "2025-03-01" },
     ]);
-    mockAppleFetch.mockResolvedValue([]);
 
     const result = await aggregateArtistReleases("mbid-x", "X");
     expect(result).toHaveLength(1);
@@ -76,7 +62,6 @@ describe("aggregateArtistReleases", () => {
       { id: "rg-empty", title: "", "first-release-date": "" },
     ]);
     mockDeezerFetch.mockResolvedValue([]);
-    mockAppleFetch.mockResolvedValue([]);
 
     const result = await aggregateArtistReleases("mbid-x", "X");
     expect(result).toEqual([]);
@@ -93,7 +78,6 @@ describe("aggregateArtistReleases", () => {
       },
     ]);
     mockDeezerFetch.mockResolvedValue([]);
-    mockAppleFetch.mockResolvedValue([]);
 
     const [rel] = await aggregateArtistReleases("mbid-x", "X");
     expect(rel.release_group_mbid).toBe("rg-1");
@@ -121,7 +105,6 @@ describe("aggregateArtistReleases", () => {
         record_type: "ep",
       },
     ]);
-    mockAppleFetch.mockResolvedValue([]);
 
     const result = await aggregateArtistReleases("mbid-x", "X");
     const comp = result.find((r) => r.album_title === "Comp")!;
@@ -136,38 +119,12 @@ describe("aggregateArtistReleases", () => {
     expect(ep.cover_url).toBeNull();
   });
 
-  it("maps Apple artwork and leaves type fields null", async () => {
-    mockMbFetch.mockResolvedValue([]);
-    mockDeezerFetch.mockResolvedValue([]);
-    mockAppleFetch.mockResolvedValue([
-      {
-        collectionId: 2,
-        collectionName: "Apple Only",
-        releaseDate: "2025-02-01T00:00:00Z",
-        artworkUrl100: "https://apple/art.jpg",
-      },
-    ]);
-
-    const [rel] = await aggregateArtistReleases("mbid-x", "X");
-    expect(rel.release_group_mbid).toBeNull();
-    expect(rel.cover_url).toBe("https://apple/art.jpg");
-    expect(rel.release_type).toBeNull();
-    expect(rel.secondary_types).toBeNull();
-  });
-
   it("prefers MB row when same title+month surfaces from multiple sources", async () => {
     mockMbFetch.mockResolvedValue([
       { id: "rg-1", title: "Hello World", "first-release-date": "2025-05-01" },
     ]);
     mockDeezerFetch.mockResolvedValue([
       { id: 1, title: "Hello World", release_date: "2025-05-15" },
-    ]);
-    mockAppleFetch.mockResolvedValue([
-      {
-        collectionId: 2,
-        collectionName: "Hello World",
-        releaseDate: "2025-05-20",
-      },
     ]);
 
     const result = await aggregateArtistReleases("mbid-x", "X");

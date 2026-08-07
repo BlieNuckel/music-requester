@@ -21,9 +21,11 @@ vi.mock("@/hooks/useLibraryAlbums", () => ({
   }),
 }));
 
+let mockLibraryArtistMbids: string[];
+
 vi.mock("@/hooks/useLibraryArtists", () => ({
   default: () => ({
-    isArtistInLibrary: (mbid: string) => mbid === "sim-owned",
+    isArtistInLibrary: (mbid: string) => mockLibraryArtistMbids.includes(mbid),
   }),
 }));
 
@@ -34,8 +36,16 @@ vi.mock("@/hooks/useSimilarArtists", () => ({
 }));
 
 vi.mock("@/components/ReleaseGroupCard", () => ({
-  default: ({ releaseGroup }: { releaseGroup: ReleaseGroup }) => (
-    <div data-testid={`rg-${releaseGroup.id}`}>{releaseGroup.title}</div>
+  default: ({
+    releaseGroup,
+    inLibrary,
+  }: {
+    releaseGroup: ReleaseGroup;
+    inLibrary?: boolean;
+  }) => (
+    <div data-testid={`rg-${releaseGroup.id}`} data-in-library={inLibrary}>
+      {releaseGroup.title}
+    </div>
   ),
 }));
 
@@ -71,6 +81,7 @@ beforeEach(() => {
     error: null,
   };
   mockSimilar = { artists: [], loading: false };
+  mockLibraryArtistMbids = ["sim-owned"];
 });
 
 describe("ArtistPage", () => {
@@ -119,7 +130,23 @@ describe("ArtistPage", () => {
     expect(screen.getByText("Drill EP")).toBeInTheDocument();
   });
 
-  it("shows the In Library badge when the artist owns an album", () => {
+  it("shows the In Library badge when the artist is in the library", () => {
+    mockState.artist = { mbid: "a1", name: "Radiohead" };
+    mockLibraryArtistMbids = ["a1"];
+    renderPage();
+
+    expect(screen.getByText("In Library")).toBeInTheDocument();
+  });
+
+  it("hides the In Library badge when only an album matches the library", () => {
+    mockState.artist = { mbid: "a1", name: "Radiohead" };
+    mockState.releaseGroups = [makeRg({ id: "in-lib", title: "Owned" })];
+    renderPage();
+
+    expect(screen.queryByText("In Library")).not.toBeInTheDocument();
+  });
+
+  it("marks discography albums that are in the library", () => {
     mockState.artist = { mbid: "a1", name: "Radiohead" };
     mockState.releaseGroups = [
       makeRg({ id: "in-lib", title: "Owned" }),
@@ -127,7 +154,14 @@ describe("ArtistPage", () => {
     ];
     renderPage();
 
-    expect(screen.getByText("In Library")).toBeInTheDocument();
+    expect(screen.getByTestId("rg-in-lib")).toHaveAttribute(
+      "data-in-library",
+      "true"
+    );
+    expect(screen.getByTestId("rg-missing")).toHaveAttribute(
+      "data-in-library",
+      "false"
+    );
   });
 
   it("shows an empty message when the artist has no releases", () => {

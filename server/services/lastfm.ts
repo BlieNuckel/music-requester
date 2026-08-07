@@ -1,5 +1,5 @@
 import { getArtistsImages } from "../api/deezer/artists";
-import { getAlbumsArtwork } from "../api/apple/artists";
+import { getAlbumsArtwork } from "../api/deezer/albums";
 
 type ArtistWithImage = { name: string; imageUrl: string };
 type AlbumWithImage = { name: string; artistName: string; imageUrl: string };

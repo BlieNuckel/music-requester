@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { withRetry } from "./retry";
+import { withRetry, retryAfterMs } from "./retry";
 
 describe("withRetry", () => {
   beforeEach(() => {
@@ -177,5 +177,107 @@ describe("withRetry", () => {
 
     expect(result).toBe("ok");
     expect(fn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("timeout errors", () => {
+  it("retries an AbortSignal.timeout rejection", async () => {
+    vi.useRealTimers();
+    const timeout = new DOMException("The operation timed out", "TimeoutError");
+    const fn = vi.fn().mockRejectedValueOnce(timeout).mockResolvedValue("ok");
+
+    expect(await withRetry(fn, { baseDelayMs: 1 })).toBe("ok");
+    expect(fn).toHaveBeenCalledTimes(2);
+    vi.useFakeTimers();
+  });
+
+  it("retries undici socket and header timeouts", async () => {
+    vi.useRealTimers();
+    const error = Object.assign(new Error("headers timeout"), {
+      code: "UND_ERR_HEADERS_TIMEOUT",
+    });
+    const fn = vi.fn().mockRejectedValueOnce(error).mockResolvedValue("ok");
+
+    expect(await withRetry(fn, { baseDelayMs: 1 })).toBe("ok");
+    expect(fn).toHaveBeenCalledTimes(2);
+    vi.useFakeTimers();
+  });
+});
+
+describe("retryOnResult", () => {
+  it("retries a resolved value the caller considers retryable", async () => {
+    vi.useRealTimers();
+    const fn = vi.fn().mockResolvedValueOnce("bad").mockResolvedValue("good");
+
+    const result = await withRetry(fn, {
+      baseDelayMs: 1,
+      retryOnResult: (value) => value === "bad",
+    });
+
+    expect(result).toBe("good");
+    expect(fn).toHaveBeenCalledTimes(2);
+    vi.useFakeTimers();
+  });
+
+  it("returns the last value rather than throwing once retries run out", async () => {
+    vi.useRealTimers();
+    const fn = vi.fn().mockResolvedValue("bad");
+
+    const result = await withRetry(fn, {
+      retries: 2,
+      baseDelayMs: 1,
+      retryOnResult: () => true,
+    });
+
+    expect(result).toBe("bad");
+    expect(fn).toHaveBeenCalledTimes(3);
+    vi.useFakeTimers();
+  });
+
+  it("uses delayForResult in place of the backoff", async () => {
+    const fn = vi.fn().mockResolvedValueOnce("bad").mockResolvedValue("good");
+
+    const promise = withRetry(fn, {
+      baseDelayMs: 10_000,
+      retryOnResult: (value) => value === "bad",
+      delayForResult: () => 50,
+    });
+
+    await vi.advanceTimersByTimeAsync(50);
+    expect(await promise).toBe("good");
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("retryAfterMs", () => {
+  function withHeader(value: string | null): Response {
+    return { headers: { get: () => value } } as unknown as Response;
+  }
+
+  it("reads a delay in seconds", () => {
+    expect(retryAfterMs(withHeader("5"))).toBe(5000);
+  });
+
+  it("reads an HTTP date", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    expect(retryAfterMs(withHeader("Thu, 01 Jan 2026 00:00:10 GMT"))).toBe(
+      10_000
+    );
+  });
+
+  it("returns undefined when the header is absent or unparseable", () => {
+    expect(retryAfterMs(withHeader(null))).toBeUndefined();
+    expect(retryAfterMs(withHeader("soon"))).toBeUndefined();
+  });
+
+  it("caps an unreasonably long delay", () => {
+    expect(retryAfterMs(withHeader("3600"))).toBe(30_000);
+  });
+
+  it("never returns a negative delay for a past date", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    expect(retryAfterMs(withHeader("Thu, 01 Jan 2020 00:00:00 GMT"))).toBe(0);
   });
 });

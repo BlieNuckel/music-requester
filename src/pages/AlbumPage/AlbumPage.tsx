@@ -12,7 +12,7 @@ export default function AlbumPage() {
   const { mbid } = useParams<{ mbid: string }>();
   const { album, moreFromArtist, loading, error } =
     useReleaseGroupDetails(mbid);
-  const { isAlbumInLibrary } = useLibraryAlbums();
+  const { isAlbumInLibrary, getTrackAvailability } = useLibraryAlbums();
   const { isAlbumWanted } = useWantedAlbums();
 
   const otherReleases = useMemo(
@@ -41,6 +41,7 @@ export default function AlbumPage() {
         album={album}
         inLibrary={isAlbumInLibrary(album.mbid)}
         initialWanted={isAlbumWanted(album.mbid)}
+        trackAvailability={getTrackAvailability(album.mbid)}
       />
 
       <AlbumTracklist albumMbid={album.mbid} artistName={album.artistName} />
@@ -49,6 +50,7 @@ export default function AlbumPage() {
         <ReleaseSectionGrid
           title="More from this artist"
           items={otherReleases}
+          isAlbumInLibrary={isAlbumInLibrary}
         />
       )}
     </div>

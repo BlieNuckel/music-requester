@@ -27,46 +27,59 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Full-stack TypeScript app: React 19 frontend + Express 5 backend. Vite proxies `/api/*` to the Express server in development. In production, Express serves the built frontend as static files from `/build`.
 
-**Frontend (`/src`):** React with React Router DOM, Tailwind CSS v4 for styling. Path aliases: `@/*` maps to `./src/*`, `@shared/*` maps to `./shared/*`. Pages live under `src/pages/` with co-located sub-components:
+**Frontend (`/src`):** React with React Router DOM, Tailwind CSS v4 for styling. Path aliases: `@/*` maps to `./src/*`, `@shared/*` maps to `./shared/*`. Pages live under `src/pages/` with co-located sub-components and `__tests__/` directories:
 
-- `/` — DiscoverPage (bento grid driven by a section registry: promoted album spotlight, promoted artists, new releases shelf)
+- `/` — DiscoverPage (definition-driven bento grid: sections registered in `sections.ts`, arranged by `layout.ts`; includes promoted album spotlight, promoted artists, and the new releases shelf)
 - `/search` — SearchPage (MusicBrainz album search)
+- `/artist/:mbid` — ArtistPage (artist details, discography, similar artists, collapsible sections)
+- `/album/:mbid` — AlbumPage (release group details, tracks, purchase/request actions)
 - `/library` — LibraryPage (subroutes: `/library/purchases`, `/library/wanted`, `/library/requests`, `/library/following`)
 - `/library/upload` — UploadPage (manual import)
-- `/settings` — SettingsLayout (subroutes: general, integrations, recommendations, users, logs, notifications with email/webhook sub-pages)
-- `/onboarding` — OnboardingPage (first-run setup)
+- `/settings` — SettingsLayout (subroutes: general, integrations, recommendations, purchase-decision, users, logs, notifications with email/webhook sub-pages; settings search via `settingsSearchConfig.ts`)
+- `/onboarding` — OnboardingPage (first-run setup wizard)
+
+SetupPage (create first admin) and LoginPage are not routed — the `RequireAuth` component wraps all app routes and renders them based on auth status (`needs-setup` / `unauthenticated`).
 
 Shared components in `src/components/`. Frontend uses plain `fetch()` to relative `/api/...` paths — no shared HTTP client.
 
 **Tailwind CSS v4:** Uses `@tailwindcss/postcss` — the legacy `tailwind.config.cjs` is ignored. All custom theme values, keyframes, and animations are defined in `src/index.css` using `@theme` blocks and plain CSS.
 
-**State management:** `SettingsContext` holds global settings, connection status, and Lidarr options (profiles, root paths). `ThemeContext` manages light/dark/system theme. All other state is page-local via custom hooks in `src/hooks/` — each hook owns its own loading/error/data lifecycle.
+**State management:** Contexts live in `src/context/`. `SettingsContext` holds global settings, connection status, and Lidarr options (profiles, root paths). `AuthProvider` holds auth status and the current user. `ThemeContext` manages light/dark/system theme. All other state is page-local via custom hooks in `src/hooks/` — most data-fetching hooks build on `useAsyncData`, which owns the loading/error/data lifecycle.
 
-**Backend (`/server`):** Express with four layers:
+**Backend (`/server`):** Express, layered as routes → services → API clients:
 
-- **Service layer** (`/server/api/`) — each external API has a `<name>/` directory (e.g., `lidarr/`, `lastfm/`, `musicbrainz/`, `plex/`, `deezer/`, `apple/`, `slskd/`) containing `types.ts`, usually `config.ts`, and function files. Service configs read from `getConfig()` lazily at request time (no restart needed after settings change).
-- **Route layer** (`/server/routes/`) — maps Express routes to service functions. Routes mount at `/api/settings`, `/api/lidarr`, `/api/musicbrainz`, `/api/lastfm`, `/api/plex`, `/api/promoted-album`, `/api/promoted-artists`, `/api/torznab`, `/api/sabnzbd`, `/api/auth`, `/api/users`, `/api/requests`, `/api/purchases`, `/api/wanted`, `/api/followed`, `/api/discover`, `/api/logs`. The Lidarr router is an aggregator that mounts sub-routers (add, albums, artists, history, import, queue, search, wanted, qualityProfile, rootPath, metadataProfile, autoSetup).
-- **Middleware** (`/server/middleware/`) — `errorHandler.ts` (global Express error handler), `rateLimiter.ts` (MusicBrainz 1 req/sec), `requireAuth.ts` (session cookie authentication), `requirePermission.ts` (bitfield permission checks), `ApiError.ts` (typed error class with HTTP status).
+- **Route layer** (`/server/routes/`) — thin Express routers that delegate to services. Routes mount at `/api/settings`, `/api/lidarr`, `/api/musicbrainz`, `/api/lastfm`, `/api/plex`, `/api/promoted-album`, `/api/promoted-artists`, `/api/torznab`, `/api/sabnzbd`, `/api/auth`, `/api/users`, `/api/requests`, `/api/purchases`, `/api/wanted`, `/api/followed`, `/api/discover`, `/api/logs`. The Lidarr router is an aggregator that mounts sub-routers (add, albums, artists, history, import, queue, search, wanted, qualityProfile, rootPath, metadataProfile, autoSetup).
+- **Service layer** (`/server/services/`) — business logic between routes and API clients/DB: `lidarr/`, `requests/` (request CRUD, fulfillment, Lidarr enrichment, status polling/sync), `wanted/`, `purchases/`, `purchaseDecision/` (buy-vs-download evaluation: label blocklist, release age), `followed/` (followed artists, new-release aggregation, poller), `discover/` (blended new releases across followed artists, library artists, and similar artists), `profile/` (user taste profile: signal ingestion + pollers for regen), `torznab/` (search, XML, release titles), `sabnzbd/` (queue, history, addFile, transfers), plus single-file services (`musicbrainz.ts`, `lastfm.ts`, `plex.ts`, `settings.ts`, `pathValidation.ts`).
+- **MusicBrainz pacing and caching** (`/server/api/musicbrainz/`) — MusicBrainz allows ~1 req/sec, so every call goes through `mbJson()` (`config.ts`), which takes a slot from the serial queue in `queue.ts`. The queue has two lanes: `interactive` (searches, page loads) preempts `background` (pollers, profile regeneration, cache revalidation), with an anti-starvation cap so background work still progresses under sustained interactive load. Every client function wraps its loader in `mbCached()` (`cache.ts`), which adds a TTL cache keyed per function, in-flight dedup so identical concurrent calls spend one slot, and an optional `revalidate` strategy that serves stale data while refreshing on the background lane. TTLs come from `MB_TTL` and are chosen by volatility: `immutable` for facts about one MBID, `slow` for entities that only get corrected, `volatile` (plus `revalidate`) for searches and discographies, which gain entries when an artist releases something. Two rules keep this correct: never call MusicBrainz outside `mbJson` (one unpaced call turns the whole queue back into a burst), and never widen `NOT_FOUND_STATUSES` (only 400/404 are statements about the entity — a 429 or 5xx cached as a miss would persist for the whole TTL). `mbFetch` retries retryable statuses and timeouts itself, taking a **fresh queue slot per attempt** — retrying inside `resilientFetch` would fire the retry without pacing. A 429/503 also trips a breaker (`reportMbThrottled`) that pauses both lanes with a doubling backoff, honoring `Retry-After`; any normal response clears it.
+- **API client layer** (`/server/api/`) — each external API has a `<name>/` directory (`lidarr/`, `lastfm/`, `musicbrainz/`, `plex/`, `deezer/`, `listenbrainz/`, `slskd/`) containing `types.ts`, usually `config.ts`, and function files. Clients are built with `createExternalApi()` (`server/api/externalApi.ts`), which provides caching (node-cache), rate limiting, timeouts, retry (`retry.ts`), in-flight request dedup, and resilient fetch over undici (`resilientFetch.ts`). `resilientFetch` retries thrown errors (network faults, timeouts) by default; retrying _responses_ that carry a 429/5xx is opt-in via `retryOnStatus`, since `fetch` resolves rather than throws on those and enabling it everywhere would multiply load during an outage. Service configs read from `getConfig()` lazily at request time (no restart needed after settings change).
+- **Middleware** (`/server/middleware/`) — `errorHandler.ts` (global Express error handler), `requireAuth.ts` (session cookie authentication), `requirePermission.ts` (bitfield permission checks), `ApiError.ts` (typed error class with HTTP status).
 - **Auth layer** (`/server/auth/`) — session management (`sessions.ts`), password hashing (`password.ts`), user CRUD (`users.ts`). Sessions stored in SQLite alongside users.
+
+**Recommendations (`/server/promotedAlbum/`, `/server/promotedArtists/`):** Promoted-album picker (artist weighting, exploration of adjacent artists, profile-driven candidate selection via `profileService.ts`) and promoted-artists list. Backed by the persisted user taste profile (`UserProfile` entity, derived from Plex plays/ratings snapshots and signal events) maintained by `/server/services/profile/`.
+
+**Background pollers:** started in `server/index.ts` at boot — followed-artist release poller, request status poller, profile regen poller, signal ingestion poller. Intervals come from config.
+
+**Logging (`server/logger.ts`):** Winston with daily-rotate-file, writing to `APP_CONFIG_DIR/logs`. Create scoped loggers via `createLogger("Scope")`. Logs are exposed at `/api/logs` and in the Logs settings page.
 
 **Database (`/server/db/`):** SQLite via better-sqlite3 + TypeORM. Entities in `/server/db/entity/`: `User`, `Session`, `Request`, `Config`, `WantedItem`, `FollowedArtist`, `FollowedRelease`, `Purchase`, `UserProfile`, `UserSignalEvent`. Migrations in `/server/db/migration/` run automatically on startup (`migrationsRun: true`). WAL mode enabled. Access the singleton DataSource via `getDataSource()` after `initializeDatabase()`.
 
 **Auth & permissions:** Bitfield-based permission system in `shared/permissions.ts` (shared between frontend and backend). Permissions: `ADMIN`, `MANAGE_USERS`, `MANAGE_REQUESTS`, `REQUEST`, `AUTO_APPROVE`, `REQUEST_VIEW`. `ADMIN` bypasses all checks. Auth uses HTTP-only session cookies (`tunearr_session`). Some routes (torznab, sabnzbd, logs, auth) are public; most require `requireAuth` middleware. Each user's Plex OAuth token is stored on the `User` entity (`plex_token` column) and used for per-user Plex media server queries. The server config only stores `plexUrl` (shared), not the token. `AuthUser` includes `hasPlexToken` (sent to frontend) and `plexToken` (server-side only). The `/api/auth/store-plex-token` endpoint updates a user's stored Plex token.
 
-**Soulseek integration via torznab/SABnzbd emulation (`/server/api/slskd/`):** The app integrates Soulseek (via an external slskd daemon) into Lidarr's standard indexer+download-client workflow by emulating two services:
+**Soulseek integration via torznab/SABnzbd emulation:** The app integrates Soulseek (via an external slskd daemon) into Lidarr's standard indexer+download-client workflow by emulating two services. The slskd client lives in `/server/api/slskd/`; the emulation logic lives in `/server/services/torznab/` and `/server/services/sabnzbd/`:
 
-- **Torznab indexer** (`/api/torznab`) — Newznab-compatible endpoint that Lidarr queries for music searches. Translates search requests into slskd queries, groups results by user+directory into logical releases (`groupResults.ts`), and returns RSS/XML. Results are cached for 30 minutes. Download URLs point back to `/api/torznab/download/{guid}`, which returns a fake NZB containing base64-encoded slskd metadata (username + file list) via `nzb.ts`.
-- **SABnzbd emulator** (`/api/sabnzbd`) — Lidarr sends the NZB here as a "download client". The router decodes the embedded metadata, enqueues P2P downloads with slskd (`transfer.ts`), and tracks progress in-memory (`downloadTracker.ts`). Lidarr polls queue/history endpoints; the emulator maps slskd transfer states to SABnzbd format (`statusMap.ts`).
+- **Torznab indexer** (`/api/torznab`) — Newznab-compatible endpoint that Lidarr queries for music searches. Translates search requests into slskd queries, groups results by user+directory into logical releases (`slskd/groupResults.ts`), and returns RSS/XML. Results are cached for 30 minutes. Download URLs point back to `/api/torznab/download/{guid}`, which returns a fake NZB containing base64-encoded slskd metadata (username + file list) via `slskd/nzb.ts`.
+- **SABnzbd emulator** (`/api/sabnzbd`) — Lidarr sends the NZB here as a "download client". The router decodes the embedded metadata, enqueues P2P downloads with slskd (`slskd/transfer.ts`), and tracks progress in-memory (`slskd/downloadTracker.ts`). Lidarr polls queue/history endpoints; the emulator maps slskd transfer states to SABnzbd format (`slskd/statusMap.ts`).
 
 The result: Lidarr sees a normal indexer and download client, but downloads actually come from Soulseek P2P via slskd.
 
-**Shared code (`/shared/`):** Code shared between frontend and backend. Currently contains `permissions.ts` (Permission enum, `hasPermission()` helper). Importable from both sides.
+**Shared code (`/shared/`):** Code shared between frontend and backend: `permissions.ts` (Permission enum, `hasPermission()` helper) and `currency.ts`. Importable from both sides via `@shared/*`.
 
-**Config system** (`server/config.ts`): Persisted as JSON at `APP_CONFIG_DIR/config.json`. `getConfig()` reads from disk and merges with defaults on every call. `setConfig()` validates and writes. `getConfigValue<K>(key)` provides typed single-field access.
+**Config system** (`server/config.ts`): Persisted as JSON at `APP_CONFIG_DIR/config.json`. `getConfig()` reads from disk and merges with defaults on every call (nested config objects like `promotedAlbum`, `purchaseDecision`, `spending` are deep-merged). `setConfig()` validates and writes. `getConfigValue<K>(key)` provides typed single-field access.
 
 **Key patterns:**
 
-- Type-safe generic API helpers per service (e.g., `lidarrGet<T>(path, query)`)
+- External API clients created via `createExternalApi()` — don't hand-roll fetch/caching/rate-limiting per service
+- `withCache()` (`server/cache.ts`) for memoizing arbitrary async functions with a TTL
 - All external API calls routed through the backend
 - Functional components with custom hooks — no class components
 - Tailwind utility classes only — no custom CSS files
@@ -78,7 +91,7 @@ The result: Lidarr sees a normal indexer and download client, but downloads actu
 ## Environment Variables
 
 - `APP_DATA_DIR` — Host path for persistent data
-- `APP_CONFIG_DIR` — Host path for runtime config JSON (default: `./config`)
+- `APP_CONFIG_DIR` — Host path for runtime config JSON and logs (default: `./config`)
 - `PORT` — Server port (default: 3001)
 
 ## Testing
@@ -103,4 +116,4 @@ The result: Lidarr sees a normal indexer and download client, but downloads actu
 
 ## Deployment
 
-Multi-stage Dockerfile: builds frontend with Vite, then runs server with `npx tsx server/index.ts` in a `node:22-alpine` image. `APP_CONFIG_DIR=/config` is intended to be bind-mounted for persistence.
+Multi-stage Dockerfile: builds frontend with Vite, then runs the server with tsx (`node_modules/.bin/tsx server/index.ts`) in a `node:22-alpine` image as the non-root `node` user. `APP_CONFIG_DIR=/config` is intended to be bind-mounted for persistence.

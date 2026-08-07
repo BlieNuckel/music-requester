@@ -44,8 +44,8 @@ stdenv.mkDerivation (finalAttrs: {
   # rebuild, and copy the correct hash from the error message.
   pnpmDeps = fetchPnpmDeps {
     inherit (finalAttrs) pname version src;
-    fetcherVersion = 3;
-    hash = "sha256-uWjlVVehPhN2BoywjbSX/UvIZM4zYQNPVWfoK+Is6H8=";
+    fetcherVersion = 4;
+    hash = "sha256-QnxLuQCePl+H0sxuo/f9lV3NtiOAjsVFVMij1RLlgSI=";
   };
 
   # pnpmConfigHook installs with --ignore-scripts, so the native better-sqlite3

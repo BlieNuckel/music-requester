@@ -5,6 +5,16 @@ type LibraryAlbum = {
   title: string;
   foreignAlbumId: string;
   monitored: boolean;
+  statistics?: {
+    trackFileCount: number;
+    totalTrackCount: number;
+    percentOfTracks: number;
+  };
+};
+
+export type TrackAvailability = {
+  available: number;
+  total: number;
 };
 
 export default function useLibraryAlbums() {
@@ -24,13 +34,21 @@ export default function useLibraryAlbums() {
     load();
   }, []);
 
-  const libraryAlbumMbids = useMemo(
-    () => new Set(libraryAlbums.map((a) => a.foreignAlbumId)),
+  const libraryAlbumsByMbid = useMemo(
+    () => new Map(libraryAlbums.map((a) => [a.foreignAlbumId, a])),
     [libraryAlbums]
   );
 
   const isAlbumInLibrary = (albumMbid: string) =>
-    libraryAlbumMbids.has(albumMbid);
+    libraryAlbumsByMbid.has(albumMbid);
 
-  return { isAlbumInLibrary };
+  const getTrackAvailability = (
+    albumMbid: string
+  ): TrackAvailability | null => {
+    const stats = libraryAlbumsByMbid.get(albumMbid)?.statistics;
+    if (!stats || stats.totalTrackCount === 0) return null;
+    return { available: stats.trackFileCount, total: stats.totalTrackCount };
+  };
+
+  return { isAlbumInLibrary, getTrackAvailability };
 }

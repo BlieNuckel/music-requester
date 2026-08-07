@@ -81,7 +81,7 @@ async function buildSeed(
   config: PromotedAlbumConfig,
   genericTags: Set<string>
 ): Promise<SimilarGraphSeed | null> {
-  const seedMbid = await getArtistMbidByName(artist.name);
+  const seedMbid = await getArtistMbidByName(artist.name, "background");
   if (!seedMbid) return null;
 
   const similar = await getSimilarArtists(seedMbid);

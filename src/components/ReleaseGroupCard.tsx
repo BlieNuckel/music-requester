@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import ImageWithShimmer from "./ImageWithShimmer";
 import ContextMenu from "./ContextMenu";
 import AlbumActionModals from "./AlbumActionModals";
+import { CheckIcon } from "./icons";
 import useHaptics from "../hooks/useHaptics";
 import useAlbumActions from "../hooks/useAlbumActions";
 import { pastelColorFromId } from "../utils/color";
@@ -10,10 +11,12 @@ import { ReleaseGroup } from "../types";
 
 interface ReleaseGroupCardProps {
   releaseGroup: ReleaseGroup;
+  inLibrary?: boolean;
 }
 
 export default function ReleaseGroupCard({
   releaseGroup,
+  inLibrary,
 }: ReleaseGroupCardProps) {
   const navigate = useNavigate();
   const haptics = useHaptics();
@@ -45,6 +48,15 @@ export default function ReleaseGroupCard({
     </div>
   ) : null;
 
+  const inLibraryBadge = inLibrary ? (
+    <span
+      className="absolute bottom-1.5 right-1.5 flex items-center justify-center w-5 h-5 bg-amber-300 text-black rounded-full border-2 border-black shadow-cartoon-sm"
+      aria-label="In Library"
+    >
+      <CheckIcon className="w-3 h-3" />
+    </span>
+  ) : null;
+
   return (
     <ContextMenu options={actions.contextOptions} title={albumTitle}>
       <button
@@ -58,6 +70,7 @@ export default function ReleaseGroupCard({
           style={{ backgroundColor: pastelBg }}
         >
           {coverImage}
+          {inLibraryBadge}
         </div>
         <div className="flex-1 min-w-0 px-4 py-3">
           <h3 className="text-gray-900 dark:text-gray-100 font-semibold text-base truncate">
@@ -83,6 +96,7 @@ export default function ReleaseGroupCard({
           style={{ backgroundColor: pastelBg }}
         >
           {coverImage}
+          {inLibraryBadge}
         </div>
         <div className="p-3 border-t-2 border-black">
           <h3 className="text-gray-900 dark:text-gray-100 font-semibold text-sm truncate mb-1">

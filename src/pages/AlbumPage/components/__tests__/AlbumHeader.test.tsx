@@ -1,3 +1,4 @@
+import type { ComponentProps } from "react";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import AlbumHeader from "../AlbumHeader";
@@ -24,10 +25,13 @@ const makeAlbum = (overrides: Partial<AlbumDetails> = {}): AlbumDetails => ({
   ...overrides,
 });
 
-function renderHeader(album: AlbumDetails) {
+function renderHeader(
+  album: AlbumDetails,
+  props: Partial<ComponentProps<typeof AlbumHeader>> = {}
+) {
   return render(
     <MemoryRouter>
-      <AlbumHeader album={album} />
+      <AlbumHeader album={album} {...props} />
     </MemoryRouter>
   );
 }
@@ -68,5 +72,29 @@ describe("AlbumHeader", () => {
     expect(screen.getByTestId("album-actions")).toBeInTheDocument();
     expect(receivedReleaseGroup?.id).toBe("rg-1");
     expect(receivedReleaseGroup?.["artist-credit"][0]?.artist.id).toBe("a1");
+  });
+
+  it("shows track availability when the album is in the library", () => {
+    renderHeader(makeAlbum(), {
+      inLibrary: true,
+      trackAvailability: { available: 9, total: 12 },
+    });
+
+    expect(screen.getByText("9/12 tracks")).toBeInTheDocument();
+  });
+
+  it("hides track availability when the album is not in the library", () => {
+    renderHeader(makeAlbum(), {
+      inLibrary: false,
+      trackAvailability: { available: 9, total: 12 },
+    });
+
+    expect(screen.queryByText("9/12 tracks")).not.toBeInTheDocument();
+  });
+
+  it("hides track availability when no statistics are known", () => {
+    renderHeader(makeAlbum(), { inLibrary: true, trackAvailability: null });
+
+    expect(screen.queryByText(/tracks/)).not.toBeInTheDocument();
   });
 });

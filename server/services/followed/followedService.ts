@@ -140,7 +140,7 @@ export async function recordFollowedRelease(
   return repo.save(row);
 }
 
-/** Fills MB-derived metadata onto a release first seen from Deezer/Apple. */
+/** Fills MB-derived metadata onto a release first seen from Deezer. */
 export async function backfillReleaseMetadata(
   releaseId: number,
   patch: ReleaseMetadataPatch
