@@ -1,4 +1,5 @@
 import { getSignalEvents } from "../db/userProfile";
+import { isPlaceholderArtist } from "../utils/artistFilter";
 import {
   ingestUserPlays,
   latestRatings,
@@ -109,5 +110,7 @@ export async function loadArtistWeights(
   const ratings = aggregateArtistRatings(
     await getSignalEvents(userId, "plex_rating")
   );
-  return applyRatingMultiplier(plays, ratings, ratingWeight);
+  return applyRatingMultiplier(plays, ratings, ratingWeight).filter(
+    (weight) => !isPlaceholderArtist(weight.name)
+  );
 }

@@ -25,6 +25,7 @@ vi.mock("../api/musicbrainz/releaseGroups", () => ({
 }));
 
 import { buildSimilarGraph, buildExploreResult } from "./explore";
+import { VARIOUS_ARTISTS_MBID } from "../utils/artistFilter";
 
 const config = {
   genericTags: ["seen live"],
@@ -119,6 +120,28 @@ describe("buildSimilarGraph", () => {
     expect(graph).toEqual([]);
   });
 
+  it("drops Various Artists from the candidate list", async () => {
+    mockGetArtistMbidByName.mockResolvedValue("mbid-seed");
+    mockGetSimilarArtists.mockResolvedValue([
+      similar("Various Artists", VARIOUS_ARTISTS_MBID, 9999),
+      similar("Jazz Cat", "mbid-jazz", 9000),
+    ]);
+    mockGetArtistTopTags.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === "Radiohead"
+          ? [{ name: "alternative", count: 100 }]
+          : [{ name: "jazz", count: 100 }]
+      )
+    );
+
+    const graph = await buildSimilarGraph(
+      [{ name: "Radiohead", viewCount: 100 }],
+      config
+    );
+
+    expect(graph[0].candidates.map((c) => c.name)).toEqual(["Jazz Cat"]);
+  });
+
   it("caps candidates at exploreCandidateCount", async () => {
     mockGetArtistMbidByName.mockResolvedValue("mbid-seed");
     mockGetSimilarArtists.mockResolvedValue(
@@ -168,6 +191,33 @@ describe("buildExploreResult", () => {
       artistInLibrary: notInLibrary,
       albumInLibrary: notInLibrary,
     });
+    expect(result).toBeNull();
+    expect(mockFetchReleaseGroupsForArtist).not.toHaveBeenCalled();
+  });
+
+  it("skips Various Artists left in an already-persisted graph", async () => {
+    mockFetchReleaseGroupsForArtist.mockResolvedValue([]);
+
+    const staleSeed: SimilarGraphSeed = {
+      ...seed,
+      candidates: [
+        {
+          name: "Various Artists",
+          artistMbid: VARIOUS_ARTISTS_MBID,
+          score: 9999,
+          genres: ["jazz", "bebop"],
+        },
+      ],
+    };
+
+    const result = await buildExploreResult({
+      similarGraph: [staleSeed],
+      config,
+      recentlyShown: new Set(),
+      artistInLibrary: notInLibrary,
+      albumInLibrary: notInLibrary,
+    });
+
     expect(result).toBeNull();
     expect(mockFetchReleaseGroupsForArtist).not.toHaveBeenCalled();
   });

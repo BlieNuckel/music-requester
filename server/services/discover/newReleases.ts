@@ -13,6 +13,10 @@ import { getArtistList } from "../lidarr/artists";
 import { enrichRequestsWithLidarr } from "../requests/lidarrEnrichment";
 import { getUserProfile } from "../../db/userProfile";
 import { parseDerivedProfile } from "../../db/userProfile";
+import {
+  hasPlaceholderArtist,
+  isPlaceholderArtist,
+} from "../../utils/artistFilter";
 import type { ListenBrainzFreshRelease } from "../../api/listenbrainz/types";
 import { createLogger } from "../../logger";
 
@@ -84,6 +88,7 @@ function feedToCandidate(
 }
 
 function isFollowedRowAllowed(row: FollowedReleaseWithArtist): boolean {
+  if (isPlaceholderArtist(row.artist_name, row.artist_mbid)) return false;
   return isAllowedReleaseType(
     row.release_type,
     parseSecondaryTypes(row.secondary_types)
@@ -91,6 +96,12 @@ function isFollowedRowAllowed(row: FollowedReleaseWithArtist): boolean {
 }
 
 function isFeedReleaseAllowed(release: ListenBrainzFreshRelease): boolean {
+  if (
+    isPlaceholderArtist(release.artistName) ||
+    hasPlaceholderArtist(release.artistMbids)
+  ) {
+    return false;
+  }
   return isAllowedReleaseType(
     release.primaryType,
     release.secondaryType === null ? [] : [release.secondaryType]

@@ -189,6 +189,19 @@ describe("loadArtistWeights (with DB)", () => {
     expect(result).toEqual([{ name: "A", viewCount: 42 }]);
   });
 
+  it("drops Various Artists from the weight set", async () => {
+    await appendSignalEvent(1, "plex_plays", {
+      artists: [
+        { name: "Various Artists", playCount: 900 },
+        { name: "A", playCount: 10 },
+      ],
+    });
+
+    const result = await loadArtistWeights(1, "tok", 30 * DAY, 0.5, NOW);
+
+    expect(result).toEqual([{ name: "A", viewCount: 10 }]);
+  });
+
   it("reads existing plays + ratings without a live fetch", async () => {
     await appendSignalEvent(1, "plex_plays", {
       artists: [{ name: "A", playCount: 100 }],

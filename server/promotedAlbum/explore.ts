@@ -9,6 +9,7 @@ import type {
   SimilarGraphCandidate,
 } from "../db/entity/UserProfile";
 import { weightedRandomPick, shuffle } from "../utils/random";
+import { isPlaceholderArtist } from "../utils/artistFilter";
 import type {
   BuiltAlbum,
   ExploreResult,
@@ -94,7 +95,9 @@ async function buildSeed(
   );
   if (seedGenres.size === 0) return null;
 
-  const candidates = similar.slice(0, config.exploreCandidateCount);
+  const candidates = similar
+    .filter((c) => !isPlaceholderArtist(c.name, c.artist_mbid))
+    .slice(0, config.exploreCandidateCount);
   const tagSets = await Promise.all(candidates.map((c) => safeTopTags(c.name)));
 
   return {
@@ -136,16 +139,18 @@ function evaluateSeed(
   seedGenres: Set<string>,
   threshold: number
 ): EvaluatedCandidate[] {
-  return seed.candidates.map((candidate) => {
-    const genres = new Set(candidate.genres);
-    const overlap = jaccard(seedGenres, genres);
-    return {
-      candidate,
-      genres,
-      overlap,
-      isDifferentGenre: genres.size > 0 && overlap <= threshold,
-    };
-  });
+  return seed.candidates
+    .filter((c) => !isPlaceholderArtist(c.name, c.artistMbid))
+    .map((candidate) => {
+      const genres = new Set(candidate.genres);
+      const overlap = jaccard(seedGenres, genres);
+      return {
+        candidate,
+        genres,
+        overlap,
+        isDifferentGenre: genres.size > 0 && overlap <= threshold,
+      };
+    });
 }
 
 async function pickAlbumFromArtist(
