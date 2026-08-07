@@ -1,16 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getReleaseTracks } from "./tracks";
 
-vi.mock("./config", () => ({
-  MB_BASE: "https://musicbrainz.test/ws/2",
-  MB_HEADERS: { "User-Agent": "test" },
+const mockFetch = vi.fn();
+const mockAcquireMbSlot = vi.fn((..._args: unknown[]) => Promise.resolve());
+
+vi.mock("../resilientFetch", () => ({
+  resilientFetch: (...args: unknown[]) => mockFetch(...args),
 }));
 
-const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
+vi.mock("./queue", () => ({
+  acquireMbSlot: (...args: unknown[]) => mockAcquireMbSlot(...args),
+  reportMbSuccess: () => {},
+  reportMbThrottled: () => {},
+}));
+
+import { clearMbCache } from "./cache";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockAcquireMbSlot.mockResolvedValue(undefined);
+  clearMbCache();
 });
 
 describe("getReleaseTracks", () => {
@@ -66,11 +75,17 @@ describe("getReleaseTracks", () => {
     expect(result).toEqual([]);
   });
 
-  it("throws on non-ok response", async () => {
+  it("returns an empty listing when the release group does not exist", async () => {
     mockFetch.mockResolvedValue({ ok: false, status: 404 });
 
-    await expect(getReleaseTracks("bad")).rejects.toThrow(
-      "MusicBrainz returned 404"
+    expect(await getReleaseTracks("bad")).toEqual([]);
+  });
+
+  it("throws rather than caching a throttled response as 'no tracks'", async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 503 });
+
+    await expect(getReleaseTracks("rg-1")).rejects.toThrow(
+      "MusicBrainz returned 503"
     );
   });
 

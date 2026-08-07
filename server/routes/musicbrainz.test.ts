@@ -59,10 +59,6 @@ vi.mock("../services/musicbrainz", () => ({
     mockEnrichTracksWithPreviews(...args),
 }));
 
-vi.mock("../middleware/rateLimiter", () => ({
-  default: (_req: unknown, _res: unknown, next: () => void) => next(),
-}));
-
 import express from "express";
 import request from "supertest";
 import musicbrainzRouter from "./musicbrainz";

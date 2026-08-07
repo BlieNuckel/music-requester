@@ -1,12 +1,28 @@
-import { withRetry, type RetryOptions } from "./retry";
+import {
+  withRetry,
+  isRetryableStatus,
+  retryAfterMs,
+  type RetryOptions,
+} from "./retry";
 
 export interface ResilientFetchOptions {
   timeoutMs?: number;
-  retry?: RetryOptions | boolean;
+  retry?: RetryOptions<Response> | boolean;
+  /**
+   * Also retry responses carrying a retryable status. Off by default: `fetch`
+   * resolves those rather than throwing, so switching this on globally would
+   * multiply load on every service during an outage. Turn it on per caller,
+   * ideally alongside something that backs off when the service says stop.
+   */
+  retryOnStatus?: boolean;
   fetchFn?: typeof fetch;
 }
 
 const DEFAULT_TIMEOUT_MS = 10000;
+
+function isRetryableResponse(response: Response): boolean {
+  return isRetryableStatus(response.status);
+}
 
 export function resilientFetch(
   url: string,
@@ -17,7 +33,7 @@ export function resilientFetch(
   const fetchFn = options?.fetchFn ?? fetch;
   const retryOpt = options?.retry ?? true;
 
-  const retryOptions: RetryOptions | undefined =
+  const retryOptions: RetryOptions<Response> | undefined =
     retryOpt === true ? {} : retryOpt === false ? undefined : retryOpt;
 
   const doFetch = () => {
@@ -26,5 +42,10 @@ export function resilientFetch(
   };
 
   if (!retryOptions) return doFetch();
-  return withRetry(doFetch, retryOptions);
+
+  const statusRetry: RetryOptions<Response> = options?.retryOnStatus
+    ? { retryOnResult: isRetryableResponse, delayForResult: retryAfterMs }
+    : {};
+
+  return withRetry(doFetch, { ...statusRetry, ...retryOptions });
 }

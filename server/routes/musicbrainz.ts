@@ -1,6 +1,5 @@
 import type { Request, Response } from "express";
 import express from "express";
-import rateLimiter from "../middleware/rateLimiter";
 import {
   searchReleaseGroups,
   fetchReleaseGroupsForArtist,
@@ -43,7 +42,7 @@ async function enrichArtistsWithImages(artists: ArtistInfo[]) {
   }));
 }
 
-router.get("/search/all", rateLimiter, async (req: Request, res: Response) => {
+router.get("/search/all", async (req: Request, res: Response) => {
   const { q } = req.query;
   if (typeof q !== "string") {
     return res.status(400).json({ error: "Query parameter q is required" });
@@ -63,7 +62,7 @@ router.get("/search/all", rateLimiter, async (req: Request, res: Response) => {
   });
 });
 
-router.get("/search", rateLimiter, async (req: Request, res: Response) => {
+router.get("/search", async (req: Request, res: Response) => {
   const { q } = req.query;
   if (typeof q !== "string") {
     return res.status(400).json({ error: "Query parameter q is required" });
@@ -72,21 +71,17 @@ router.get("/search", rateLimiter, async (req: Request, res: Response) => {
   res.json(await searchReleaseGroups(q));
 });
 
-router.get(
-  "/artist/search",
-  rateLimiter,
-  async (req: Request, res: Response) => {
-    const { q } = req.query;
-    if (typeof q !== "string") {
-      return res.status(400).json({ error: "Query parameter q is required" });
-    }
-
-    const artists = await searchArtists(q);
-    res.json({ artists: await enrichArtistsWithImages(artists) });
+router.get("/artist/search", async (req: Request, res: Response) => {
+  const { q } = req.query;
+  if (typeof q !== "string") {
+    return res.status(400).json({ error: "Query parameter q is required" });
   }
-);
 
-router.get("/artist/id", rateLimiter, async (req: Request, res: Response) => {
+  const artists = await searchArtists(q);
+  res.json({ artists: await enrichArtistsWithImages(artists) });
+});
+
+router.get("/artist/id", async (req: Request, res: Response) => {
   const { name } = req.query;
   if (typeof name !== "string" || !name.trim()) {
     return res.status(400).json({ error: "Query parameter name is required" });
@@ -95,62 +90,50 @@ router.get("/artist/id", rateLimiter, async (req: Request, res: Response) => {
   res.json({ mbid: await getArtistMbidByName(name) });
 });
 
-router.get(
-  "/artist/:mbid",
-  rateLimiter,
-  async (req: Request, res: Response) => {
-    const { mbid } = req.params;
-    const artist = await getArtistById(mbid as string);
+router.get("/artist/:mbid", async (req: Request, res: Response) => {
+  const { mbid } = req.params;
+  const artist = await getArtistById(mbid as string);
 
-    if (!artist) {
-      return res.status(404).json({ error: "Artist not found" });
-    }
-
-    const [releaseGroups, imageUrl] = await Promise.all([
-      fetchReleaseGroupsForArtist(mbid as string),
-      getArtistImage(artist.name),
-    ]);
-
-    res.json({
-      artist: { ...artist, imageUrl: imageUrl || undefined },
-      releaseGroups,
-    });
+  if (!artist) {
+    return res.status(404).json({ error: "Artist not found" });
   }
-);
 
-router.get(
-  "/tracks/:releaseGroupId",
-  rateLimiter,
-  async (req: Request, res: Response) => {
-    const { releaseGroupId } = req.params;
-    const artistName =
-      typeof req.query.artistName === "string" ? req.query.artistName : "";
-    const media = await getReleaseTracks(releaseGroupId as string);
+  const [releaseGroups, imageUrl] = await Promise.all([
+    fetchReleaseGroupsForArtist(mbid as string),
+    getArtistImage(artist.name),
+  ]);
 
-    const enrichedMedia = artistName
-      ? await enrichTracksWithPreviews(media, artistName)
-      : media;
+  res.json({
+    artist: { ...artist, imageUrl: imageUrl || undefined },
+    releaseGroups,
+  });
+});
 
-    res.json({ media: enrichedMedia });
+router.get("/tracks/:releaseGroupId", async (req: Request, res: Response) => {
+  const { releaseGroupId } = req.params;
+  const artistName =
+    typeof req.query.artistName === "string" ? req.query.artistName : "";
+  const media = await getReleaseTracks(releaseGroupId as string);
+
+  const enrichedMedia = artistName
+    ? await enrichTracksWithPreviews(media, artistName)
+    : media;
+
+  res.json({ media: enrichedMedia });
+});
+
+router.get("/release-group/:mbid", async (req: Request, res: Response) => {
+  const { mbid } = req.params;
+  const result = await getReleaseGroupById(mbid as string);
+
+  if (!result) {
+    return res.status(404).json({ error: "Release group not found" });
   }
-);
 
-router.get(
-  "/release-group/:mbid",
-  rateLimiter,
-  async (req: Request, res: Response) => {
-    const { mbid } = req.params;
-    const result = await getReleaseGroupById(mbid as string);
+  res.json(result);
+});
 
-    if (!result) {
-      return res.status(404).json({ error: "Release group not found" });
-    }
-
-    res.json(result);
-  }
-);
-
-router.get("/album/:mbid", rateLimiter, async (req: Request, res: Response) => {
+router.get("/album/:mbid", async (req: Request, res: Response) => {
   const { mbid } = req.params;
   const album = await getAlbumDetails(mbid as string);
 
@@ -177,7 +160,6 @@ function sendSSE(res: Response, event: string, data: unknown) {
 
 router.get(
   "/purchase-context/:releaseGroupId",
-  rateLimiter,
   async (req: Request, res: Response) => {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");

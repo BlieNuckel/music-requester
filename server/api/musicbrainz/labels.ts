@@ -1,4 +1,6 @@
-import { MB_BASE, MB_HEADERS, rateLimitedMbFetch } from "./config";
+import { MB_BASE, mbJson } from "./config";
+import { mbCached, MB_TTL } from "./cache";
+import type { MbPriority } from "./queue";
 import type { MusicBrainzLabelWithRels } from "./types";
 
 type LabelInfo = { name: string; mbid: string };
@@ -16,13 +18,22 @@ function extractParents(data: MusicBrainzLabelWithRels): LabelInfo[] {
   );
 }
 
-async function fetchLabelWithRels(
-  labelMbid: string
+function loadLabelWithRels(
+  labelMbid: string,
+  priority: MbPriority
 ): Promise<MusicBrainzLabelWithRels | null> {
   const url = `${MB_BASE}/label/${labelMbid}?inc=label-rels&fmt=json`;
-  const response = await rateLimitedMbFetch(url, { headers: MB_HEADERS });
-  if (!response.ok) return null;
-  return response.json();
+  return mbJson<MusicBrainzLabelWithRels>(url, priority);
+}
+
+function fetchLabelWithRels(
+  labelMbid: string,
+  priority: MbPriority
+): Promise<MusicBrainzLabelWithRels | null> {
+  return mbCached(
+    { key: `label-rels:${labelMbid}`, ttlSeconds: MB_TTL.immutable, priority },
+    (p) => loadLabelWithRels(labelMbid, p)
+  );
 }
 
 type AncestorWalkOptions = {
@@ -34,7 +45,8 @@ type AncestorWalkOptions = {
 /** BFS walk up ownership chains, returning all ancestors nearest-first */
 export async function getLabelAncestors(
   labelMbid: string,
-  options?: AncestorWalkOptions
+  options?: AncestorWalkOptions,
+  priority: MbPriority = "interactive"
 ): Promise<LabelInfo[]> {
   const ancestors: LabelInfo[] = [];
   const visited = new Set<string>([labelMbid]);
@@ -44,7 +56,7 @@ export async function getLabelAncestors(
     const nextQueue: string[] = [];
 
     for (const mbid of queue) {
-      const data = await fetchLabelWithRels(mbid);
+      const data = await fetchLabelWithRels(mbid, priority);
       if (!data) continue;
 
       for (const parent of extractParents(data)) {

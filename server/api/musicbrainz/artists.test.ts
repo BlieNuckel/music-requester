@@ -1,31 +1,30 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mockRateLimitedMbFetch = vi.fn();
-const mockFetch = vi.fn();
+const mockMbFetch = vi.fn();
+const mockAcquireMbSlot = vi.fn((..._args: unknown[]) => Promise.resolve());
 
-vi.stubGlobal("fetch", mockFetch);
-
-vi.mock("./config", () => ({
-  MB_BASE: "https://musicbrainz.org/ws/2",
-  MB_HEADERS: { "User-Agent": "test" },
-  rateLimitedMbFetch: (...args: unknown[]) => mockRateLimitedMbFetch(...args),
+vi.mock("../resilientFetch", () => ({
+  resilientFetch: (...args: unknown[]) => mockMbFetch(...args),
 }));
 
-import {
-  getArtistMbidByName,
-  getArtistById,
-  searchArtists,
-  clearArtistMbidCache,
-} from "./artists";
+vi.mock("./queue", () => ({
+  acquireMbSlot: (...args: unknown[]) => mockAcquireMbSlot(...args),
+  reportMbSuccess: () => {},
+  reportMbThrottled: () => {},
+}));
+
+import { getArtistMbidByName, getArtistById, searchArtists } from "./artists";
+import { clearMbCache } from "./cache";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  clearArtistMbidCache();
+  mockAcquireMbSlot.mockResolvedValue(undefined);
+  clearMbCache();
 });
 
 describe("getArtistMbidByName", () => {
   it("returns the top-matching artist's MBID", async () => {
-    mockRateLimitedMbFetch.mockResolvedValue({
+    mockMbFetch.mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ artists: [{ id: "mbid-1", name: "X" }] }),
     });
@@ -34,7 +33,7 @@ describe("getArtistMbidByName", () => {
   });
 
   it("returns null when there are no matches", async () => {
-    mockRateLimitedMbFetch.mockResolvedValue({
+    mockMbFetch.mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ artists: [] }),
     });
@@ -43,37 +42,37 @@ describe("getArtistMbidByName", () => {
   });
 
   it("caches results across calls (including misses)", async () => {
-    mockRateLimitedMbFetch.mockResolvedValue({
+    mockMbFetch.mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ artists: [{ id: "mbid-1", name: "X" }] }),
     });
 
     await getArtistMbidByName("Radiohead");
     await getArtistMbidByName("radiohead");
-    expect(mockRateLimitedMbFetch).toHaveBeenCalledTimes(1);
+    expect(mockMbFetch).toHaveBeenCalledTimes(1);
   });
 
   it("does not cache transient failures", async () => {
-    mockRateLimitedMbFetch.mockResolvedValueOnce({ ok: false, json: () => {} });
+    mockMbFetch.mockResolvedValueOnce({ ok: false, json: () => {} });
     expect(await getArtistMbidByName("Radiohead")).toBeNull();
 
-    mockRateLimitedMbFetch.mockResolvedValueOnce({
+    mockMbFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ artists: [{ id: "mbid-1", name: "X" }] }),
     });
     expect(await getArtistMbidByName("Radiohead")).toBe("mbid-1");
-    expect(mockRateLimitedMbFetch).toHaveBeenCalledTimes(2);
+    expect(mockMbFetch).toHaveBeenCalledTimes(2);
   });
 
   it("returns null when the fetch throws", async () => {
-    mockRateLimitedMbFetch.mockRejectedValue(new Error("network"));
+    mockMbFetch.mockRejectedValue(new Error("network"));
     expect(await getArtistMbidByName("Radiohead")).toBeNull();
   });
 });
 
 describe("getArtistById", () => {
   it("maps a MusicBrainz artist into ArtistInfo", async () => {
-    mockRateLimitedMbFetch.mockResolvedValue({
+    mockMbFetch.mockResolvedValue({
       ok: true,
       json: () =>
         Promise.resolve({
@@ -95,7 +94,7 @@ describe("getArtistById", () => {
   });
 
   it("omits empty optional fields", async () => {
-    mockRateLimitedMbFetch.mockResolvedValue({
+    mockMbFetch.mockResolvedValue({
       ok: true,
       json: () =>
         Promise.resolve({
@@ -115,7 +114,7 @@ describe("getArtistById", () => {
   });
 
   it("returns null on a failed lookup", async () => {
-    mockRateLimitedMbFetch.mockResolvedValue({
+    mockMbFetch.mockResolvedValue({
       ok: false,
       status: 404,
       json: () => Promise.resolve({}),
@@ -127,7 +126,7 @@ describe("getArtistById", () => {
 
 describe("searchArtists", () => {
   it("maps matching artists into ArtistInfo entities", async () => {
-    mockFetch.mockResolvedValue({
+    mockMbFetch.mockResolvedValue({
       ok: true,
       status: 200,
       json: () =>
@@ -158,7 +157,7 @@ describe("searchArtists", () => {
   });
 
   it("returns an empty array when there are no matches", async () => {
-    mockFetch.mockResolvedValue({
+    mockMbFetch.mockResolvedValue({
       ok: true,
       status: 200,
       json: () => Promise.resolve({ artists: [] }),
@@ -168,7 +167,7 @@ describe("searchArtists", () => {
   });
 
   it("throws when MusicBrainz returns an error", async () => {
-    mockFetch.mockResolvedValue({
+    mockMbFetch.mockResolvedValue({
       ok: false,
       status: 503,
       json: () => Promise.resolve({}),

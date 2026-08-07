@@ -2,16 +2,24 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getLabelAncestors } from "./labels";
 
 const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
+const mockAcquireMbSlot = vi.fn((..._args: unknown[]) => Promise.resolve());
 
-vi.mock("./config", () => ({
-  MB_BASE: "https://musicbrainz.test/ws/2",
-  MB_HEADERS: { "User-Agent": "test" },
-  rateLimitedMbFetch: (...args: unknown[]) => mockFetch(...args),
+vi.mock("../resilientFetch", () => ({
+  resilientFetch: (...args: unknown[]) => mockFetch(...args),
 }));
+
+vi.mock("./queue", () => ({
+  acquireMbSlot: (...args: unknown[]) => mockAcquireMbSlot(...args),
+  reportMbSuccess: () => {},
+  reportMbThrottled: () => {},
+}));
+
+import { clearMbCache } from "./cache";
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mockAcquireMbSlot.mockResolvedValue(undefined);
+  clearMbCache();
 });
 
 function okResponse(data: unknown) {

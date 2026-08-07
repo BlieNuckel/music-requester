@@ -32,7 +32,7 @@ async function fetchFromMusicBrainz(
   artistMbid: string
 ): Promise<AggregatedRelease[]> {
   try {
-    const groups = await fetchReleaseGroupsForArtist(artistMbid);
+    const groups = await fetchReleaseGroupsForArtist(artistMbid, "background");
     return groups.map((rg) => ({
       release_key: buildKey(rg.title, rg["first-release-date"]),
       source: "musicbrainz" as const,
