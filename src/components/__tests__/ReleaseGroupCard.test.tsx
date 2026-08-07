@@ -112,4 +112,16 @@ describe("ReleaseGroupCard", () => {
 
     expect(screen.queryByLabelText("More options")).not.toBeInTheDocument();
   });
+
+  it("shows the In Library badge on both card variants when inLibrary", () => {
+    render(<ReleaseGroupCard releaseGroup={makeReleaseGroup()} inLibrary />);
+
+    expect(screen.getAllByLabelText("In Library")).toHaveLength(2);
+  });
+
+  it("hides the In Library badge when not in library", () => {
+    render(<ReleaseGroupCard releaseGroup={makeReleaseGroup()} />);
+
+    expect(screen.queryByLabelText("In Library")).not.toBeInTheDocument();
+  });
 });

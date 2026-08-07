@@ -23,11 +23,6 @@ export default function ArtistPage() {
     [releaseGroups, mbid]
   );
 
-  const hasLibraryAlbum = useMemo(
-    () => releaseGroups.some((rg) => isAlbumInLibrary(rg.id)),
-    [releaseGroups, isAlbumInLibrary]
-  );
-
   if (loading) return <ArtistPageSkeleton />;
 
   if (error || !artist) {
@@ -45,7 +40,10 @@ export default function ArtistPage() {
 
   return (
     <div>
-      <ArtistHeader artist={artist} inLibrary={hasLibraryAlbum} />
+      <ArtistHeader
+        artist={artist}
+        inLibrary={isArtistInLibrary(mbid ?? "", artist.name)}
+      />
 
       {sections.length === 0 ? (
         <p className="text-gray-400 dark:text-gray-500 text-sm">
@@ -58,6 +56,7 @@ export default function ArtistPage() {
             title={section.title}
             items={section.items}
             defaultExpanded={index === 0}
+            isAlbumInLibrary={isAlbumInLibrary}
           />
         ))
       )}

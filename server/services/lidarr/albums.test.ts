@@ -31,6 +31,25 @@ describe("getMonitoredAlbums", () => {
     }
   });
 
+  it("passes album statistics through untouched", async () => {
+    const statistics = {
+      trackFileCount: 9,
+      totalTrackCount: 12,
+      percentOfTracks: 75,
+    };
+    mockLidarrGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: [{ id: 1, title: "OK Computer", monitored: true, statistics }],
+    });
+
+    const result = await getMonitoredAlbums();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data[0].statistics).toEqual(statistics);
+    }
+  });
+
   it("returns error when Lidarr API fails", async () => {
     mockLidarrGet.mockResolvedValue({
       ok: false,

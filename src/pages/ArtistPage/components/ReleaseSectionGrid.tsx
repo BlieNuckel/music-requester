@@ -9,12 +9,14 @@ interface ReleaseSectionGridProps {
   title: string;
   items: ReleaseGroup[];
   defaultExpanded?: boolean;
+  isAlbumInLibrary?: (albumMbid: string) => boolean;
 }
 
 export default function ReleaseSectionGrid({
   title,
   items,
   defaultExpanded = false,
+  isAlbumInLibrary,
 }: ReleaseSectionGridProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
@@ -49,7 +51,10 @@ export default function ReleaseSectionGrid({
                 } as React.CSSProperties
               }
             >
-              <ReleaseGroupCard releaseGroup={rg} />
+              <ReleaseGroupCard
+                releaseGroup={rg}
+                inLibrary={isAlbumInLibrary?.(rg.id)}
+              />
             </div>
           ))}
         </div>
