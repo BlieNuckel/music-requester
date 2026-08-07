@@ -5,6 +5,7 @@ import { lidarrGet } from "../api/lidarr/get";
 import type { LidarrArtist } from "../api/lidarr/types";
 import { getConfigValue } from "../config";
 import { weightedRandomPick, shuffle } from "../utils/random";
+import { isPlaceholderArtist } from "../utils/artistFilter";
 import { findUserById } from "../auth/users";
 import {
   getUserProfile,
@@ -76,6 +77,7 @@ function mergeSimilar(
     for (const artist of list) {
       const key = artist.name.toLowerCase();
       if (excludeNames.has(key)) continue;
+      if (isPlaceholderArtist(artist.name, artist.mbid)) continue;
 
       const existing = byName.get(key);
       if (!existing || artist.match > existing.match) {

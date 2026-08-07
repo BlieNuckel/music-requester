@@ -6,6 +6,7 @@ import type { ReleaseGroupInfo } from "../api/musicbrainz/types";
 import { getConfigValue } from "../config";
 import type { LibraryPreference, PromotedAlbumConfig } from "../config";
 import { weightedRandomPick, shuffle } from "../utils/random";
+import { isPlaceholderArtist } from "../utils/artistFilter";
 import { findUserById } from "../auth/users";
 import { updateExplorationHistory } from "../db/userProfile";
 import type { DerivedProfile } from "../db/entity/UserProfile";
@@ -236,6 +237,7 @@ async function buildWithinTasteFromProfile(
   const seen = new Set<string>();
   const allAlbums = [...page1.albums, ...pageDeep.albums].filter((a) => {
     if (!a.mbid) return false;
+    if (isPlaceholderArtist(a.artistName, a.artistMbid)) return false;
     if (seen.has(a.mbid)) return false;
     seen.add(a.mbid);
     return true;

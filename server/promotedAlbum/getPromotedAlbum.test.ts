@@ -263,6 +263,27 @@ describe("getPromotedAlbum", () => {
     expect(result).toBeNull();
   });
 
+  it("filters Various Artists compilations out of the album pool", async () => {
+    mockLoadArtistWeights.mockResolvedValue(plexArtists);
+    mockGetArtistTopTags.mockResolvedValue(tags);
+    mockGetTopAlbumsByTag.mockResolvedValue({
+      albums: [
+        {
+          name: "Now That's What I Call Music",
+          mbid: "alb-va",
+          artistName: "Various Artists",
+          artistMbid: "art-va",
+        },
+        ...albumsPage.albums,
+      ],
+      pagination: { page: 1, totalPages: 1 },
+    });
+    mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
+
+    const result = await getPromotedAlbum(userId);
+    expect(result!.album.artistName).toBe("Radiohead");
+  });
+
   it("marks inLibrary true when the album is in the Lidarr album list", async () => {
     mockLoadArtistWeights.mockResolvedValue(plexArtists);
     mockGetArtistTopTags.mockResolvedValue(tags);

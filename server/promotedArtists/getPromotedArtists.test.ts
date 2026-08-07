@@ -33,6 +33,7 @@ import {
   clearPromotedArtistsCache,
 } from "./getPromotedArtists";
 import { initializeDatabase, closeDatabase, getDataSource } from "../db";
+import { VARIOUS_ARTISTS_MBID } from "../utils/artistFilter";
 
 type SimilarArtist = {
   name: string;
@@ -171,6 +172,32 @@ describe("getPromotedArtists", () => {
     const boc = result!.artists.find((a) => a.name === "Boards of Canada");
     expect(tycho?.inLibrary).toBe(true);
     expect(boc?.inLibrary).toBe(false);
+  });
+
+  it("excludes Various Artists from the similar results", async () => {
+    mockGetSimilarArtists.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === "Aphex Twin"
+          ? [
+              {
+                name: "Various Artists",
+                mbid: VARIOUS_ARTISTS_MBID,
+                match: 1,
+                imageUrl: "",
+              },
+              {
+                name: "Boards of Canada",
+                mbid: "boc",
+                match: 0.9,
+                imageUrl: "",
+              },
+            ]
+          : []
+      )
+    );
+
+    const result = await getPromotedArtists(userId);
+    expect(result!.artists.map((a) => a.name)).toEqual(["Boards of Canada"]);
   });
 
   it("returns null when no similar artists remain after exclusion", async () => {

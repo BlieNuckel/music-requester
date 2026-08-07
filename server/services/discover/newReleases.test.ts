@@ -42,6 +42,7 @@ vi.mock("../../logger", () => ({
 }));
 
 import { getNewReleases } from "./newReleases";
+import { VARIOUS_ARTISTS_MBID } from "../../utils/artistFilter";
 
 const NOW = Date.parse("2026-07-09T12:00:00.000Z");
 
@@ -200,6 +201,31 @@ describe("getNewReleases", () => {
     const result = await getNewReleases(1, NOW);
     expect(result.items).toHaveLength(1);
     expect(result.items[0].releaseGroupMbid).toBe("rg-ost");
+  });
+
+  it("drops Various Artists compilations from feed and followed tiers", async () => {
+    mockGetFollowedReleases.mockResolvedValue([
+      followedRow({
+        artist_name: "Various Artists",
+        artist_mbid: VARIOUS_ARTISTS_MBID,
+      }),
+    ]);
+    mockGetArtistList.mockResolvedValue({
+      ok: true,
+      data: [{ id: 1, name: "A", foreignArtistId: "mbid-library" }],
+    });
+    mockGetCachedFeed.mockResolvedValue([
+      feedRelease({ artistName: "Various Artists", releaseGroupMbid: "rg-va" }),
+      feedRelease({
+        artistMbids: ["mbid-library", VARIOUS_ARTISTS_MBID],
+        releaseGroupMbid: "rg-va-credit",
+      }),
+      feedRelease({ releaseGroupMbid: "rg-real" }),
+    ]);
+
+    const result = await getNewReleases(1, NOW);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].releaseGroupMbid).toBe("rg-real");
   });
 
   it("prefers the followed entry when the same release appears in the feed", async () => {
