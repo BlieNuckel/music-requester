@@ -209,3 +209,17 @@ pnpm dev:mock      # dev mode with a mocked Lidarr (MOCK_LIDARR=true)
 ```
 
 The stack is React 19 + Tailwind CSS v4 on the frontend and Express 5 + SQLite (TypeORM) on the backend, all TypeScript. See [CLAUDE.md](CLAUDE.md) for a full architecture overview.
+
+### Changing dependencies
+
+`nix/package.nix` pins the hash of the offline pnpm store, so **any change to `pnpm-lock.yaml` needs that hash refreshed** in the same pull request. The `nix` CI job is a required check and fails without it, which keeps a dependency bump from breaking `nixos-rebuild` for anyone tracking the flake.
+
+You don't need Nix installed to do this. When the hash is stale, the `nix` job's summary contains the correct `hash = "sha256-…";` line — paste it into the `pnpmDeps` block and push. Refresh it _after_ any other lockfile edits, since re-resolving the lockfile changes the hash again.
+
+Dependabot's lockfiles are worth a second look for the same reason: it re-resolves the whole tree, which can pull a package published too recently for pnpm's `minimumReleaseAge` policy and fail `pnpm install --frozen-lockfile`. Resetting the lockfile and re-resolving only the intended packages fixes it:
+
+```sh
+git checkout origin/main -- pnpm-lock.yaml
+pnpm install --lockfile-only
+rm -rf node_modules && pnpm install --frozen-lockfile   # confirms the policy passes
+```

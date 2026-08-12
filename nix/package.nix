@@ -40,9 +40,10 @@ stdenv.mkDerivation (finalAttrs: {
     makeWrapper
   ];
 
-  # Offline pnpm store. After changing dependencies, set `hash = lib.fakeHash;`,
-  # rebuild, and copy the correct hash from the error message. The `nix` CI job
-  # fails on a stale hash, so a lockfile bump cannot silently break rebuilds.
+  # Offline pnpm store. Every change to pnpm-lock.yaml changes this hash. The
+  # `nix` CI job fails on a stale one and prints the correct value in its job
+  # summary, so the fix is a paste and needs no local Nix. With Nix at hand:
+  # set `hash = lib.fakeHash;`, rebuild, copy the hash from the error.
   pnpmDeps = fetchPnpmDeps {
     inherit (finalAttrs) pname version src;
     fetcherVersion = 4;
