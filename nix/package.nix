@@ -41,11 +41,12 @@ stdenv.mkDerivation (finalAttrs: {
   ];
 
   # Offline pnpm store. After changing dependencies, set `hash = lib.fakeHash;`,
-  # rebuild, and copy the correct hash from the error message.
+  # rebuild, and copy the correct hash from the error message. The `nix` CI job
+  # fails on a stale hash, so a lockfile bump cannot silently break rebuilds.
   pnpmDeps = fetchPnpmDeps {
     inherit (finalAttrs) pname version src;
     fetcherVersion = 4;
-    hash = "sha256-QnxLuQCePl+H0sxuo/f9lV3NtiOAjsVFVMij1RLlgSI=";
+    hash = "sha256-kfKnxhruNQIx2OqTZK6RmHl0vtECWENimYNkriM50aI=";
   };
 
   # pnpmConfigHook installs with --ignore-scripts, so the native better-sqlite3
