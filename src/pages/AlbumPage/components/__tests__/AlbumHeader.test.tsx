@@ -74,27 +74,38 @@ describe("AlbumHeader", () => {
     expect(receivedReleaseGroup?.["artist-credit"][0]?.artist.id).toBe("a1");
   });
 
-  it("shows track availability when the album is in the library", () => {
+  it("shows track availability for a partially downloaded album", () => {
     renderHeader(makeAlbum(), {
       inLibrary: true,
-      trackAvailability: { available: 9, total: 12 },
+      library: { state: "partial", available: 9, total: 12 },
     });
 
     expect(screen.getByText("9/12 tracks")).toBeInTheDocument();
   });
 
-  it("hides track availability when the album is not in the library", () => {
+  it("says in library only when every track is downloaded", () => {
     renderHeader(makeAlbum(), {
-      inLibrary: false,
-      trackAvailability: { available: 9, total: 12 },
+      inLibrary: true,
+      library: { state: "complete", available: 12, total: 12 },
     });
 
-    expect(screen.queryByText("9/12 tracks")).not.toBeInTheDocument();
+    expect(screen.getByText("In library")).toBeInTheDocument();
   });
 
-  it("hides track availability when no statistics are known", () => {
-    renderHeader(makeAlbum(), { inLibrary: true, trackAvailability: null });
+  it("shows 0 of n tracks for a monitored album with no files", () => {
+    renderHeader(makeAlbum(), {
+      inLibrary: true,
+      library: { state: "requested", available: 0, total: 7 },
+    });
+
+    const pill = screen.getByText("0/7 tracks");
+    expect(pill).toHaveAttribute("title", "Requested, not downloaded");
+  });
+
+  it("shows no pill when the album is not in Lidarr", () => {
+    renderHeader(makeAlbum(), { inLibrary: false, library: null });
 
     expect(screen.queryByText(/tracks/)).not.toBeInTheDocument();
+    expect(screen.queryByText("In library")).not.toBeInTheDocument();
   });
 });

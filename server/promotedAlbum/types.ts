@@ -1,3 +1,5 @@
+import type { AlbumLibraryInfo } from "../../shared/albumLibrary";
+
 export type TraceArtistTagContribution = {
   tagName: string;
   rawCount: number;
@@ -76,6 +78,7 @@ export type WithinTasteResult = {
   album: PromotedAlbumInfo;
   tag: string;
   inLibrary: boolean;
+  library: AlbumLibraryInfo | null;
   trace: WithinTasteTrace;
 };
 
@@ -85,6 +88,7 @@ export type ExploreResult = {
   seedArtist: string;
   newGenres: string[];
   inLibrary: boolean;
+  library: AlbumLibraryInfo | null;
   trace: ExploreTrace;
 };
 

@@ -1,5 +1,6 @@
 import useAsyncData from "./useAsyncData";
 import type { FetchContext } from "./useAsyncData";
+import type { AlbumLibraryInfo } from "@shared/albumLibrary";
 
 export type TraceArtistTagContribution = {
   tagName: string;
@@ -77,6 +78,7 @@ export type PromotedAlbumInfo = {
 export type PromotedAlbumData = {
   album: PromotedAlbumInfo;
   inLibrary: boolean;
+  library: AlbumLibraryInfo | null;
 } & (
   | { mode: "within_taste"; tag: string; trace: WithinTasteTrace }
   | {

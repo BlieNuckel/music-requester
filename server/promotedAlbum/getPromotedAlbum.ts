@@ -4,6 +4,10 @@ import type { LidarrAlbum, LidarrArtist } from "../api/lidarr/types";
 import { getReleaseGroupIdFromRelease } from "../api/musicbrainz/releaseGroups";
 import type { ReleaseGroupInfo } from "../api/musicbrainz/types";
 import { getConfigValue } from "../config";
+import {
+  deriveAlbumLibraryInfo,
+  type AlbumLibraryInfo,
+} from "../../shared/albumLibrary";
 import type { LibraryPreference, PromotedAlbumConfig } from "../config";
 import { weightedRandomPick, shuffle } from "../utils/random";
 import { isPlaceholderArtist } from "../utils/artistFilter";
@@ -214,7 +218,7 @@ async function buildWithinTasteFromProfile(
   config: PromotedAlbumConfig,
   recentlyShown: Set<string>,
   artistInLibrary: (mbid: string) => boolean,
-  albumInLibrary: (mbid: string) => boolean
+  albumLibrary: (mbid: string) => AlbumLibraryInfo | null
 ): Promise<BuiltAlbum | null> {
   const weightedTags: WeightedTag[] = profile.genreVector.map((g) => ({
     name: g.tag,
@@ -270,6 +274,8 @@ async function buildWithinTasteFromProfile(
     picked.reason
   );
 
+  const library = albumLibrary(picked.rgMbid);
+
   const result: WithinTasteResult = {
     mode: "within_taste",
     album: {
@@ -281,7 +287,8 @@ async function buildWithinTasteFromProfile(
       year: picked.year,
     },
     tag: chosenTag.name,
-    inLibrary: albumInLibrary(picked.rgMbid),
+    inLibrary: library !== null,
+    library,
     trace,
   };
 
@@ -290,10 +297,10 @@ async function buildWithinTasteFromProfile(
 
 async function loadLibraryMbids(): Promise<{
   artistInLibrary: (mbid: string) => boolean;
-  albumInLibrary: (mbid: string) => boolean;
+  albumLibrary: (mbid: string) => AlbumLibraryInfo | null;
 }> {
   let libraryArtistMbids = new Set<string>();
-  let libraryAlbumMbids = new Set<string>();
+  let libraryAlbums = new Map<string, LidarrAlbum>();
   try {
     const [artistResult, albumResult] = await Promise.all([
       lidarrGet<LidarrArtist[]>("/artist"),
@@ -305,8 +312,8 @@ async function loadLibraryMbids(): Promise<{
       );
     }
     if (albumResult.ok) {
-      libraryAlbumMbids = new Set(
-        albumResult.data.map((a) => a.foreignAlbumId)
+      libraryAlbums = new Map(
+        albumResult.data.map((a) => [a.foreignAlbumId, a])
       );
     }
   } catch {
@@ -315,7 +322,10 @@ async function loadLibraryMbids(): Promise<{
 
   return {
     artistInLibrary: (mbid) => libraryArtistMbids.has(mbid),
-    albumInLibrary: (mbid) => libraryAlbumMbids.has(mbid),
+    albumLibrary: (mbid) => {
+      const album = libraryAlbums.get(mbid);
+      return album ? deriveAlbumLibraryInfo(album.statistics) : null;
+    },
   };
 }
 
@@ -324,14 +334,14 @@ function buildExplore(
   config: PromotedAlbumConfig,
   recentlyShown: Set<string>,
   artistInLibrary: (mbid: string) => boolean,
-  albumInLibrary: (mbid: string) => boolean
+  albumLibrary: (mbid: string) => AlbumLibraryInfo | null
 ): Promise<BuiltAlbum | null> {
   return buildExploreResult({
     similarGraph: profile.similarGraph,
     config,
     recentlyShown,
     artistInLibrary,
-    albumInLibrary,
+    albumLibrary,
   });
 }
 
@@ -353,7 +363,7 @@ export async function getPromotedAlbum(
 
   const profile = await loadFreshProfile(userId, plexToken, config);
 
-  const { artistInLibrary, albumInLibrary } = await loadLibraryMbids();
+  const { artistInLibrary, albumLibrary } = await loadLibraryMbids();
   const recentAlbums = profile?.explorationHistory.albums ?? [];
   const recentlyShown = new Set(recentAlbums);
 
@@ -364,7 +374,7 @@ export async function getPromotedAlbum(
       config,
       recentlyShown,
       artistInLibrary,
-      albumInLibrary
+      albumLibrary
     );
   }
   if (!built && profile) {
@@ -373,7 +383,7 @@ export async function getPromotedAlbum(
       config,
       recentlyShown,
       artistInLibrary,
-      albumInLibrary
+      albumLibrary
     );
   }
   if (!built) return null;

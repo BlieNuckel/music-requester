@@ -17,7 +17,8 @@ vi.mock("@/hooks/useArtistDetails", () => ({
 
 vi.mock("@/hooks/useLibraryAlbums", () => ({
   default: () => ({
-    isAlbumInLibrary: (id: string) => id === "in-lib",
+    getAlbumLibrary: (id: string) =>
+      id === "in-lib" ? { state: "complete", available: 7, total: 7 } : null,
   }),
 }));
 
@@ -38,12 +39,15 @@ vi.mock("@/hooks/useSimilarArtists", () => ({
 vi.mock("@/components/ReleaseGroupCard", () => ({
   default: ({
     releaseGroup,
-    inLibrary,
+    library,
   }: {
     releaseGroup: ReleaseGroup;
-    inLibrary?: boolean;
+    library?: { state: string } | null;
   }) => (
-    <div data-testid={`rg-${releaseGroup.id}`} data-in-library={inLibrary}>
+    <div
+      data-testid={`rg-${releaseGroup.id}`}
+      data-library-state={library?.state ?? "none"}
+    >
       {releaseGroup.title}
     </div>
   ),
@@ -155,12 +159,12 @@ describe("ArtistPage", () => {
     renderPage();
 
     expect(screen.getByTestId("rg-in-lib")).toHaveAttribute(
-      "data-in-library",
-      "true"
+      "data-library-state",
+      "complete"
     );
     expect(screen.getByTestId("rg-missing")).toHaveAttribute(
-      "data-in-library",
-      "false"
+      "data-library-state",
+      "none"
     );
   });
 

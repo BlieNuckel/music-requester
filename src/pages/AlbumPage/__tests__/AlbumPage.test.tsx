@@ -17,8 +17,8 @@ vi.mock("@/hooks/useReleaseGroupDetails", () => ({
 vi.mock("@/hooks/useLibraryAlbums", () => ({
   default: () => ({
     isAlbumInLibrary: (id: string) => id === "rg-1",
-    getTrackAvailability: (id: string) =>
-      id === "rg-1" ? { available: 9, total: 12 } : null,
+    getAlbumLibrary: (id: string) =>
+      id === "rg-1" ? { state: "partial", available: 9, total: 12 } : null,
   }),
 }));
 
@@ -31,21 +31,20 @@ vi.mock("../components/AlbumHeader", () => ({
     album,
     inLibrary,
     initialWanted,
-    trackAvailability,
+    library,
   }: {
     album: AlbumDetails;
     inLibrary?: boolean;
     initialWanted?: boolean;
-    trackAvailability?: { available: number; total: number } | null;
+    library?: { state: string; available: number; total: number } | null;
   }) => (
     <div
       data-testid="album-header"
       data-in-library={inLibrary}
       data-wanted={initialWanted}
+      data-library-state={library?.state}
       data-track-availability={
-        trackAvailability
-          ? `${trackAvailability.available}/${trackAvailability.total}`
-          : undefined
+        library ? `${library.available}/${library.total}` : undefined
       }
     >
       {album.title}
@@ -141,6 +140,7 @@ describe("AlbumPage", () => {
     expect(header).toHaveAttribute("data-in-library", "true");
     expect(header).toHaveAttribute("data-wanted", "true");
     expect(header).toHaveAttribute("data-track-availability", "9/12");
+    expect(header).toHaveAttribute("data-library-state", "partial");
   });
 
   it("renders more-from-artist excluding the current album", () => {

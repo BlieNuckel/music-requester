@@ -119,6 +119,18 @@ describe("NewReleasesShelf", () => {
     expect(screen.getByLabelText("In library")).toBeInTheDocument();
   });
 
+  it("distinguishes a wanted album from one that is in the library", () => {
+    renderShelf(makeData([makeItem({ lidarrStatus: "wanted" })]));
+    const badge = screen.getByLabelText("Requested, not downloaded");
+    expect(badge.className).toContain("bg-gray-200");
+    expect(screen.queryByLabelText("In library")).not.toBeInTheDocument();
+  });
+
+  it("labels an in-progress download as downloading", () => {
+    renderShelf(makeData([makeItem({ lidarrStatus: "downloading" })]));
+    expect(screen.getByLabelText("Downloading")).toBeInTheDocument();
+  });
+
   it("shows no badge when Lidarr status is null", () => {
     renderShelf(makeData([makeItem()]));
     expect(screen.queryByLabelText("In library")).not.toBeInTheDocument();

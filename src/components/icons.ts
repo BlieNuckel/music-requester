@@ -4,6 +4,7 @@ export {
   ChevronDownIcon,
   PlusIcon,
   CheckIcon,
+  MinusIcon,
   ArrowPathIcon as RefreshIcon,
   ArrowTopRightOnSquareIcon as ExternalLinkIcon,
   CloudArrowUpIcon as CloudUploadIcon,

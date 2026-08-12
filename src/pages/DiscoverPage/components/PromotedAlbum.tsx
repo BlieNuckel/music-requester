@@ -15,6 +15,7 @@ import useWanted from "@/hooks/useWanted";
 import useReleaseTracks from "@/hooks/useReleaseTracks";
 import useAudioPreview from "@/hooks/useAudioPreview";
 import ImageWithShimmer from "@/components/ImageWithShimmer";
+import { AlbumLibraryPill } from "@/components/AlbumLibraryBadge";
 import Skeleton from "@/components/Skeleton";
 import { pastelColorFromId } from "@/utils/color";
 import { getMonitorState } from "@/utils/monitorState";
@@ -199,6 +200,9 @@ export default function PromotedAlbum({
                               New genre: {data.newGenres[0]}
                             </span>
                           )}
+                        {data.library && (
+                          <AlbumLibraryPill info={data.library} />
+                        )}
                       </div>
                     )}
                   </div>

@@ -113,15 +113,50 @@ describe("ReleaseGroupCard", () => {
     expect(screen.queryByLabelText("More options")).not.toBeInTheDocument();
   });
 
-  it("shows the In Library badge on both card variants when inLibrary", () => {
-    render(<ReleaseGroupCard releaseGroup={makeReleaseGroup()} inLibrary />);
+  it("shows the in-library badge on both card variants when fully downloaded", () => {
+    render(
+      <ReleaseGroupCard
+        releaseGroup={makeReleaseGroup()}
+        library={{ state: "complete", available: 12, total: 12 }}
+      />
+    );
 
-    expect(screen.getAllByLabelText("In Library")).toHaveLength(2);
+    expect(screen.getAllByLabelText("In library")).toHaveLength(2);
   });
 
-  it("hides the In Library badge when not in library", () => {
+  it("marks a monitored album with no files as requested, not in library", () => {
+    render(
+      <ReleaseGroupCard
+        releaseGroup={makeReleaseGroup()}
+        library={{ state: "requested", available: 0, total: 7 }}
+      />
+    );
+
+    expect(screen.getAllByLabelText("Requested, not downloaded")).toHaveLength(
+      2
+    );
+    expect(screen.queryByLabelText("In library")).not.toBeInTheDocument();
+  });
+
+  it("marks a partially downloaded album with its track count", () => {
+    render(
+      <ReleaseGroupCard
+        releaseGroup={makeReleaseGroup()}
+        library={{ state: "partial", available: 3, total: 7 }}
+      />
+    );
+
+    expect(
+      screen.getAllByLabelText("Partially downloaded — 3/7 tracks")
+    ).toHaveLength(2);
+  });
+
+  it("hides the badge when the album is not in Lidarr at all", () => {
     render(<ReleaseGroupCard releaseGroup={makeReleaseGroup()} />);
 
-    expect(screen.queryByLabelText("In Library")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("In library")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Requested, not downloaded")
+    ).not.toBeInTheDocument();
   });
 });

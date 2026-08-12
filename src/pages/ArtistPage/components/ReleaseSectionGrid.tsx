@@ -2,6 +2,7 @@ import { useState } from "react";
 import ReleaseGroupCard from "@/components/ReleaseGroupCard";
 import { ChevronRightIcon } from "@/components/icons";
 import type { ReleaseGroup } from "@/types";
+import type { AlbumLibraryInfo } from "@shared/albumLibrary";
 
 const DEAL_ROTATIONS = [-4, 3.5, -3, 4.5, -3.5, 3];
 
@@ -9,14 +10,14 @@ interface ReleaseSectionGridProps {
   title: string;
   items: ReleaseGroup[];
   defaultExpanded?: boolean;
-  isAlbumInLibrary?: (albumMbid: string) => boolean;
+  getAlbumLibrary?: (albumMbid: string) => AlbumLibraryInfo | null;
 }
 
 export default function ReleaseSectionGrid({
   title,
   items,
   defaultExpanded = false,
-  isAlbumInLibrary,
+  getAlbumLibrary,
 }: ReleaseSectionGridProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
@@ -53,7 +54,7 @@ export default function ReleaseSectionGrid({
             >
               <ReleaseGroupCard
                 releaseGroup={rg}
-                inLibrary={isAlbumInLibrary?.(rg.id)}
+                library={getAlbumLibrary?.(rg.id)}
               />
             </div>
           ))}
