@@ -4,6 +4,7 @@ const mockFind = vi.fn();
 const mockSave = vi.fn();
 const mockFetchLidarrData = vi.fn();
 const mockMockEnrich = vi.fn();
+const mockNotifyStatus = vi.fn();
 
 vi.mock("../../db/index", () => ({
   getDataSource: () => ({
@@ -28,6 +29,10 @@ vi.mock("./lidarrEnrichment", async () => {
 
 vi.mock("../../dev/mockLidarrEnrichment", () => ({
   mockEnrichRequestsWithLidarr: (...args: unknown[]) => mockMockEnrich(...args),
+}));
+
+vi.mock("../notifications", () => ({
+  notifyRequestStatus: (...args: unknown[]) => mockNotifyStatus(...args),
 }));
 
 vi.mock("../../logger", () => ({
@@ -138,5 +143,57 @@ describe("syncRequestStatuses", () => {
     expect(mockFetchLidarrData).not.toHaveBeenCalled();
     const saved = mockSave.mock.calls[0][0] as { lidarr_status: string }[];
     expect(saved[0].lidarr_status).toBe("imported");
+  });
+});
+
+describe("notifications", () => {
+  it("announces each request whose status changed", async () => {
+    const request = {
+      id: 1,
+      album_mbid: "mbid-1",
+      lidarr_status: "downloading",
+      user_id: 3,
+    };
+    mockFind.mockResolvedValue([request]);
+    mockFetchLidarrData.mockResolvedValue({
+      queueMap: new Map(),
+      importedMap: new Map([["mbid-1", { id: 1 }]]),
+      wantedMap: new Map(),
+    });
+
+    await syncRequestStatuses();
+
+    expect(mockNotifyStatus).toHaveBeenCalledWith(request, "imported");
+  });
+
+  it("stays silent when a poll changes nothing", async () => {
+    mockFind.mockResolvedValue([
+      {
+        id: 1,
+        album_mbid: "mbid-1",
+        lidarr_status: "downloading",
+        user_id: 3,
+      },
+    ]);
+    mockFetchLidarrData.mockResolvedValue({
+      queueMap: new Map([["mbid-1", { id: 1 }]]),
+      importedMap: new Map(),
+      wantedMap: new Map(),
+    });
+
+    await syncRequestStatuses();
+
+    expect(mockNotifyStatus).not.toHaveBeenCalled();
+  });
+
+  it("stays silent when Lidarr cannot be reached", async () => {
+    mockFind.mockResolvedValue([
+      { id: 1, album_mbid: "mbid-1", lidarr_status: null, user_id: 3 },
+    ]);
+    mockFetchLidarrData.mockRejectedValue(new Error("connection refused"));
+
+    await syncRequestStatuses();
+
+    expect(mockNotifyStatus).not.toHaveBeenCalled();
   });
 });

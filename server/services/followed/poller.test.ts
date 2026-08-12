@@ -6,6 +6,7 @@ const mockRecord = vi.fn();
 const mockBackfill = vi.fn();
 const mockUpdateChecked = vi.fn();
 const mockAggregate = vi.fn();
+const mockNotifyRelease = vi.fn();
 
 vi.mock("./followedService", () => ({
   getAllFollowedArtists: () => mockGetAll(),
@@ -17,6 +18,10 @@ vi.mock("./followedService", () => ({
 
 vi.mock("./releaseAggregator", () => ({
   aggregateArtistReleases: (...args: unknown[]) => mockAggregate(...args),
+}));
+
+vi.mock("../notifications", () => ({
+  notifyFollowedRelease: (...args: unknown[]) => mockNotifyRelease(...args),
 }));
 
 vi.mock("../../logger", () => ({
@@ -188,5 +193,105 @@ describe("runPollOnce", () => {
 
     expect(mockUpdateChecked).toHaveBeenCalledTimes(1);
     expect(mockRecord).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("new-release notifications", () => {
+  const FOLLOW = {
+    id: 1,
+    user_id: 10,
+    artist_mbid: "mbid-1",
+    artist_name: "Test Artist",
+    last_checked_at: "2025-01-01T00:00:00.000Z",
+  };
+
+  function daysAgo(days: number): string {
+    return new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+  }
+
+  beforeEach(() => {
+    mockFindRelease.mockResolvedValue(null);
+    mockRecord.mockResolvedValue(undefined);
+    mockUpdateChecked.mockResolvedValue(undefined);
+  });
+
+  it("announces a release that just came out", async () => {
+    mockGetAll.mockResolvedValue([FOLLOW]);
+    mockAggregate.mockResolvedValue([
+      makeAggregated({ release_date: daysAgo(3) }),
+    ]);
+
+    await runPollOnce();
+
+    expect(mockNotifyRelease).toHaveBeenCalledWith({
+      userId: 10,
+      artistName: "Test Artist",
+      artistMbid: "mbid-1",
+      albumTitle: "New Album",
+      releaseGroupMbid: "rg-1",
+    });
+  });
+
+  it("stays silent on the first poll, which records the whole back catalogue", async () => {
+    mockGetAll.mockResolvedValue([{ ...FOLLOW, last_checked_at: null }]);
+    mockAggregate.mockResolvedValue([
+      makeAggregated({ release_date: daysAgo(3) }),
+      makeAggregated({ release_key: "key-2", release_date: daysAgo(4000) }),
+    ]);
+
+    await runPollOnce();
+
+    expect(mockRecord).toHaveBeenCalledTimes(2);
+    expect(mockNotifyRelease).not.toHaveBeenCalled();
+  });
+
+  it("ignores an old release that upstream only just catalogued", async () => {
+    mockGetAll.mockResolvedValue([FOLLOW]);
+    mockAggregate.mockResolvedValue([
+      makeAggregated({ release_date: daysAgo(400) }),
+    ]);
+
+    await runPollOnce();
+
+    expect(mockRecord).toHaveBeenCalled();
+    expect(mockNotifyRelease).not.toHaveBeenCalled();
+  });
+
+  it("ignores an announced release that is not out yet", async () => {
+    mockGetAll.mockResolvedValue([FOLLOW]);
+    mockAggregate.mockResolvedValue([
+      makeAggregated({ release_date: daysAgo(-30) }),
+    ]);
+
+    await runPollOnce();
+
+    expect(mockNotifyRelease).not.toHaveBeenCalled();
+  });
+
+  it("ignores a release with no usable date", async () => {
+    mockGetAll.mockResolvedValue([FOLLOW]);
+    mockAggregate.mockResolvedValue([
+      makeAggregated({ release_date: null }),
+      makeAggregated({ release_key: "key-2", release_date: "not a date" }),
+    ]);
+
+    await runPollOnce();
+
+    expect(mockNotifyRelease).not.toHaveBeenCalled();
+  });
+
+  it("does not re-announce a release it already knows about", async () => {
+    mockGetAll.mockResolvedValue([FOLLOW]);
+    mockAggregate.mockResolvedValue([
+      makeAggregated({ release_date: daysAgo(3) }),
+    ]);
+    mockFindRelease.mockResolvedValue({ id: 99, release_group_mbid: "rg-1" });
+
+    await runPollOnce();
+
+    expect(mockRecord).not.toHaveBeenCalled();
+    expect(mockNotifyRelease).not.toHaveBeenCalled();
   });
 });
