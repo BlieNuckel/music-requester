@@ -67,7 +67,17 @@ app.use("/api/discover", requireAuth, discoverRoutes);
 app.use("/api/notifications", notificationsRoutes);
 
 if (process.env.NODE_ENV === "production") {
-  app.use(express.static(path.join(__dirname, "..", "build")));
+  app.use(
+    express.static(path.join(__dirname, "..", "build"), {
+      setHeaders: (res, filePath) => {
+        // The worker must revalidate on every load, or a deploy can leave the
+        // previous one in control for as long as the browser caches it.
+        if (path.basename(filePath) === "sw.js") {
+          res.setHeader("Cache-Control", "no-cache");
+        }
+      },
+    })
+  );
   app.get("/{*path}", (_req, res) => {
     res.sendFile(path.join(__dirname, "..", "build", "index.html"));
   });
