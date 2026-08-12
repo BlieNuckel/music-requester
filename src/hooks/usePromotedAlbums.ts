@@ -89,26 +89,27 @@ export type PromotedAlbumData = {
     }
 );
 
-async function fetchPromotedAlbum({
+async function fetchPromotedAlbums({
   refresh,
-}: FetchContext): Promise<PromotedAlbumData | null> {
+}: FetchContext): Promise<PromotedAlbumData[]> {
   const url = refresh
     ? "/api/promoted-album?refresh=true"
     : "/api/promoted-album";
   const res = await fetch(url);
 
   if (!res.ok) {
-    throw new Error("Failed to fetch promoted album");
+    throw new Error("Failed to fetch promoted albums");
   }
 
-  return res.json();
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
 }
 
-export default function usePromotedAlbum() {
+export default function usePromotedAlbums() {
   const { data, loading, error, refresh } = useAsyncData(
-    "promoted-album",
-    fetchPromotedAlbum
+    "promoted-albums",
+    fetchPromotedAlbums
   );
 
-  return { promotedAlbum: data, loading, error, refresh };
+  return { promotedAlbums: data ?? [], loading, error, refresh };
 }

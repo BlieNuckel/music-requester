@@ -19,7 +19,7 @@ import { buildExploreResult } from "./explore";
 import { loadFreshProfile } from "./profileService";
 import type {
   BuiltAlbum,
-  PromotedAlbumResult,
+  PromotedAlbumEntry,
   WithinTasteResult,
   WithinTasteTrace,
   TraceArtistEntry,
@@ -28,13 +28,24 @@ import type {
   TraceWeightedTag,
 } from "./types";
 
-export type { PromotedAlbumResult } from "./types";
+export type { PromotedAlbumResult, PromotedAlbumEntry } from "./types";
 
 type WeightedTag = { name: string; weight: number };
 
-type CacheEntry = { result: PromotedAlbumResult; cachedAt: number };
+type CacheEntry = { results: PromotedAlbumEntry[]; cachedAt: number };
 
-const RECENT_SHOWN_LIMIT = 10;
+type LibraryLookups = {
+  artistInLibrary: (mbid: string) => boolean;
+  albumLibrary: (mbid: string) => AlbumLibraryInfo | null;
+};
+
+/** How many recommendations the spotlight carousel presents. */
+export const SPOTLIGHT_COUNT = 5;
+
+/** Spare attempts so dead tags or duplicate picks don't shorten the carousel. */
+const PICK_ATTEMPT_SLACK = 3;
+
+const RECENT_SHOWN_LIMIT = 25;
 
 /** Short-lived final-result cache (layer 2) — keeps album selection off MusicBrainz on every load. */
 const resultCache = new Map<number, CacheEntry>();
@@ -296,10 +307,7 @@ async function buildWithinTasteFromProfile(
   return { result, rememberKey: picked.album.mbid };
 }
 
-async function loadLibraryMbids(): Promise<{
-  artistInLibrary: (mbid: string) => boolean;
-  albumLibrary: (mbid: string) => AlbumLibraryInfo | null;
-}> {
+async function loadLibraryMbids(): Promise<LibraryLookups> {
   let libraryArtistMbids = new Set<string>();
   let libraryAlbums = new Map<string, LidarrAlbum>();
   try {
@@ -348,56 +356,113 @@ function buildExplore(
   });
 }
 
-export async function getPromotedAlbum(
+/** One recommendation: explore first when the coin says so, within-taste otherwise. */
+async function buildOnePick(
+  profile: DerivedProfile,
+  config: PromotedAlbumConfig,
+  excluded: Set<string>,
+  library: LibraryLookups
+): Promise<BuiltAlbum | null> {
+  if (Math.random() < config.explorationRate) {
+    const explored = await buildExplore(
+      profile,
+      config,
+      excluded,
+      library.artistInLibrary,
+      library.albumLibrary
+    );
+    if (explored) return explored;
+  }
+  return buildWithinTasteFromProfile(
+    profile,
+    config,
+    excluded,
+    library.artistInLibrary,
+    library.albumLibrary
+  );
+}
+
+/**
+ * Build up to `count` distinct recommendations in one pass. Every pick re-rolls
+ * the explore/within-taste coin and adds its album to the exclusion set, so the
+ * carousel spans several tags instead of repeating one pool.
+ */
+async function buildPicks(
+  profile: DerivedProfile,
+  config: PromotedAlbumConfig,
+  recentlyShown: Set<string>,
+  library: LibraryLookups,
+  count: number
+): Promise<BuiltAlbum[]> {
+  const picks: BuiltAlbum[] = [];
+  const excluded = new Set(recentlyShown);
+  const pickedAlbums = new Set<string>();
+  const attemptLimit = count + PICK_ATTEMPT_SLACK;
+
+  for (
+    let attempt = 0;
+    attempt < attemptLimit && picks.length < count;
+    attempt += 1
+  ) {
+    const built = await buildOnePick(profile, config, excluded, library);
+    if (!built) continue;
+
+    excluded.add(built.rememberKey);
+    if (pickedAlbums.has(built.result.album.mbid)) continue;
+
+    pickedAlbums.add(built.result.album.mbid);
+    picks.push(built);
+  }
+
+  return picks;
+}
+
+export async function getPromotedAlbums(
   userId: number,
-  forceRefresh = false
-): Promise<PromotedAlbumResult> {
+  forceRefresh = false,
+  count = SPOTLIGHT_COUNT
+): Promise<PromotedAlbumEntry[]> {
   const config = getConfigValue("promotedAlbum");
   const resultTtlMs = config.cacheDurationMinutes * 60 * 1000;
 
   const cached = resultCache.get(userId);
-  if (!forceRefresh && cached && Date.now() - cached.cachedAt < resultTtlMs) {
-    return cached.result;
+  if (
+    !forceRefresh &&
+    cached &&
+    cached.results.length >= count &&
+    Date.now() - cached.cachedAt < resultTtlMs
+  ) {
+    return cached.results.slice(0, count);
   }
 
   const user = await findUserById(userId);
   const plexToken = user?.plexToken;
-  if (!plexToken) return null;
+  if (!plexToken) return [];
 
   const profile = await loadFreshProfile(userId, plexToken, config);
+  if (!profile) return [];
 
-  const { artistInLibrary, albumLibrary } = await loadLibraryMbids();
-  const recentAlbums = profile?.explorationHistory.albums ?? [];
-  const recentlyShown = new Set(recentAlbums);
+  const library = await loadLibraryMbids();
+  const recentAlbums = profile.explorationHistory.albums ?? [];
 
-  let built: BuiltAlbum | null = null;
-  if (profile && Math.random() < config.explorationRate) {
-    built = await buildExplore(
-      profile,
-      config,
-      recentlyShown,
-      artistInLibrary,
-      albumLibrary
-    );
-  }
-  if (!built && profile) {
-    built = await buildWithinTasteFromProfile(
-      profile,
-      config,
-      recentlyShown,
-      artistInLibrary,
-      albumLibrary
-    );
-  }
-  if (!built) return null;
+  const picks = await buildPicks(
+    profile,
+    config,
+    new Set(recentAlbums),
+    library,
+    count
+  );
+  if (picks.length === 0) return [];
 
+  const rememberKeys = picks.map((p) => p.rememberKey);
   const nextAlbums = [
-    built.rememberKey,
-    ...recentAlbums.filter((m) => m !== built.rememberKey),
+    ...rememberKeys,
+    ...recentAlbums.filter((m) => !rememberKeys.includes(m)),
   ].slice(0, RECENT_SHOWN_LIMIT);
   await updateExplorationHistory(userId, { albums: nextAlbums });
 
-  resultCache.set(userId, { result: built.result, cachedAt: Date.now() });
+  const results = picks.map((p) => p.result);
+  resultCache.set(userId, { results, cachedAt: Date.now() });
 
-  return built.result;
+  return results;
 }

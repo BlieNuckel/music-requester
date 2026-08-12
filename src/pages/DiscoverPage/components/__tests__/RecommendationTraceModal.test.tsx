@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import RecommendationTraceModal from "../RecommendationTraceModal";
-import type { WithinTasteTrace, ExploreTrace } from "@/hooks/usePromotedAlbum";
+import type { WithinTasteTrace, ExploreTrace } from "@/hooks/usePromotedAlbums";
 
 vi.mock("@/components/Modal", () => ({
   default: ({
