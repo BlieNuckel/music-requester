@@ -18,7 +18,7 @@
     "node-cache": "^5.1.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-router-dom": "^7.18.1",
+    "react-router-dom": "^7.18.2",
     "reflect-metadata": "^0.2.2",
     "typeorm": "^1.1.0",
     "undici": "^7.29.0",
