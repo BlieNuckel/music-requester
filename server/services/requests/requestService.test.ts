@@ -4,6 +4,9 @@ import { Permission } from "../../../shared/permissions";
 
 const mockFulfillRequest = vi.fn();
 const mockGetAlbumByMbid = vi.fn();
+const mockNotifyApproved = vi.fn();
+const mockNotifyDeclined = vi.fn();
+const mockNotifyCreated = vi.fn();
 
 const mockFindOne = vi.fn();
 const mockCreate = vi.fn();
@@ -59,6 +62,12 @@ vi.mock("../lidarr/helpers", () => ({
   getAlbumByMbid: (...args: unknown[]) => mockGetAlbumByMbid(...args),
 }));
 
+vi.mock("../notifications", () => ({
+  notifyRequestApproved: (...args: unknown[]) => mockNotifyApproved(...args),
+  notifyRequestDeclined: (...args: unknown[]) => mockNotifyDeclined(...args),
+  notifyRequestCreated: (...args: unknown[]) => mockNotifyCreated(...args),
+}));
+
 vi.mock("../../logger", () => ({
   createLogger: () => ({
     info: vi.fn(),
@@ -82,6 +91,9 @@ beforeEach(() => {
     title: "Test Album",
     artist: { artistName: "Test Artist" },
   });
+  mockNotifyApproved.mockResolvedValue(undefined);
+  mockNotifyDeclined.mockResolvedValue(undefined);
+  mockNotifyCreated.mockResolvedValue(undefined);
 });
 
 describe("createRequest", () => {
@@ -350,5 +362,71 @@ describe("getRequests", () => {
     expect(qbCalls.andWhere).toEqual([
       { sql: "request.user_id = :userId", params: { userId: 5 } },
     ]);
+  });
+});
+
+describe("notifications", () => {
+  it("tells admins about a request that needs a decision", async () => {
+    const saved = { id: 10, user_id: 1, album_mbid: "mbid-1" };
+    mockFindOne.mockResolvedValue(null);
+    mockCreate.mockReturnValue({ user_id: 1, album_mbid: "mbid-1" });
+    mockSave.mockResolvedValue(saved);
+
+    await createRequest(1, Permission.REQUEST, "mbid-1");
+
+    expect(mockNotifyCreated).toHaveBeenCalledWith(saved);
+  });
+
+  it("stays quiet when the request auto-approves, since there is nothing to decide", async () => {
+    mockFindOne.mockResolvedValue(null);
+    mockCreate.mockReturnValue({ user_id: 1, album_mbid: "mbid-1" });
+    mockSave.mockResolvedValue({ id: 10, user_id: 1, album_mbid: "mbid-1" });
+    mockFulfillRequest.mockResolvedValue({ status: "added" });
+
+    await createRequest(1, Permission.AUTO_APPROVE, "mbid-1");
+
+    expect(mockNotifyCreated).not.toHaveBeenCalled();
+  });
+
+  it("notifies the requester when an admin approves", async () => {
+    const request = { id: 5, user_id: 3, status: "pending" };
+    mockFindOne.mockResolvedValue(request);
+    mockFulfillRequest.mockResolvedValue({ status: "added" });
+    mockSave.mockResolvedValue(request);
+
+    await approveRequest(5, 1);
+
+    expect(mockNotifyApproved).toHaveBeenCalledWith(request);
+  });
+
+  it("does not notify when fulfilment fails", async () => {
+    const request = { id: 5, user_id: 3, status: "pending" };
+    mockFindOne.mockResolvedValue(request);
+    mockFulfillRequest.mockRejectedValue(new Error("lidarr is down"));
+    mockSave.mockResolvedValue(request);
+
+    await approveRequest(5, 1);
+
+    expect(mockNotifyApproved).not.toHaveBeenCalled();
+  });
+
+  it("notifies the requester when an admin declines", async () => {
+    const request = { id: 5, user_id: 3, status: "pending" };
+    mockFindOne.mockResolvedValue(request);
+    mockSave.mockResolvedValue(request);
+
+    await declineRequest(5);
+
+    expect(mockNotifyDeclined).toHaveBeenCalledWith(request);
+  });
+
+  it("does not notify when the request was already resolved", async () => {
+    mockFindOne.mockResolvedValue({ id: 5, user_id: 3, status: "approved" });
+
+    await declineRequest(5);
+    await approveRequest(5, 1);
+
+    expect(mockNotifyDeclined).not.toHaveBeenCalled();
+    expect(mockNotifyApproved).not.toHaveBeenCalled();
   });
 });

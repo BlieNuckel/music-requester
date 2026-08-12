@@ -4,6 +4,7 @@ import type { LidarrLifecycleStatus } from "../../db/index";
 import { fetchLidarrData, classifyRequest } from "./lidarrEnrichment";
 import { mockEnrichRequestsWithLidarr } from "../../dev/mockLidarrEnrichment";
 import { createLogger } from "../../logger";
+import { notifyRequestStatus } from "../notifications";
 
 const log = createLogger("request-status-sync");
 
@@ -65,5 +66,9 @@ export async function syncRequestStatuses(): Promise<void> {
   if (changed.length > 0) {
     await repo.save(changed);
     log.info(`Updated lidarr_status for ${changed.length} request(s)`);
+    // Only transitions reach here, so a poll that finds nothing new is silent.
+    changed.forEach((request) => {
+      void notifyRequestStatus(request, request.lidarr_status);
+    });
   }
 }

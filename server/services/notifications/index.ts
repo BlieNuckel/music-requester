@@ -5,6 +5,14 @@ import { webPushTransport } from "./webPushTransport";
 
 export { notifyUser, notifyAdmins } from "./dispatcher";
 export {
+  notifyFollowedRelease,
+  notifyRequestApproved,
+  notifyRequestCreated,
+  notifyRequestDeclined,
+  notifyRequestStatus,
+} from "./emit";
+export type { FollowedReleaseNotification } from "./emit";
+export {
   getEffectivePreferences,
   isEventEnabled,
   setPreferences,

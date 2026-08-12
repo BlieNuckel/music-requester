@@ -4,6 +4,11 @@ import { hasPermission, Permission } from "../../../shared/permissions";
 import { getAlbumByMbid } from "../lidarr/helpers";
 import { fulfillRequest } from "./fulfillRequest";
 import { createLogger } from "../../logger";
+import {
+  notifyRequestApproved,
+  notifyRequestCreated,
+  notifyRequestDeclined,
+} from "../notifications";
 
 type CreateRequestResult =
   | { status: "approved"; requestId: number }
@@ -82,6 +87,9 @@ export async function createRequest(
     return processApproval(saved, userId);
   }
 
+  // Only a request that still needs a decision is worth an admin's attention.
+  void notifyRequestCreated(saved);
+
   return { status: "pending", requestId: saved.id };
 }
 
@@ -139,6 +147,7 @@ export async function approveRequest(
     await repo.save(request);
 
     log.info(`Request #${requestId} approved by user ${approvedBy}`);
+    void notifyRequestApproved(request);
 
     if (result.status === "already_monitored") {
       return { status: "already_monitored" };
@@ -172,6 +181,7 @@ export async function declineRequest(
   await repo.save(request);
 
   log.info(`Request #${requestId} declined`);
+  void notifyRequestDeclined(request);
 
   return { status: "declined" };
 }
