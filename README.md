@@ -8,7 +8,9 @@
   A self-hosted web app for discovering, requesting, and managing music through Lidarr — with multi-user requests, taste-based recommendations, and optional Soulseek integration.
 </p>
 
-<!-- SCREENSHOT PLACEHOLDER: Discover page (bento grid) — e.g. docs/screenshots/discover.png, width 700 -->
+<p align="center">
+  <img src="docs/screenshots/discover.png" alt="Tunearr — Discover page" width="700" />
+</p>
 
 ---
 
@@ -23,7 +25,24 @@
 - **Library** — Keep tabs on purchases, wanted albums, and requests, and follow artists to catch new releases.
 - **Manual import** — Upload purchased music through the web interface and import it into Lidarr.
 
-<!-- SCREENSHOT PLACEHOLDER: 2-3 more screenshots (artist page, requests/library, settings) — side by side or stacked -->
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/artist.png" alt="Artist page with discography" width="100%" />
+      <p align="center"><sub>Artist page — discography, follow, and what's already in your library</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/library.png" alt="Requests tab in the library" width="100%" />
+      <p align="center"><sub>Library — requests tracked through to import, with spending totals</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" valign="top">
+      <img src="docs/screenshots/settings.png" alt="Settings" width="100%" />
+      <p align="center"><sub>Settings — integrations, recommendations, users, and logs</sub></p>
+    </td>
+  </tr>
+</table>
 
 ## Getting started
 
