@@ -46,11 +46,23 @@ export type PromotedAlbumConfig = {
 };
 
 /**
+ * VAPID identifies this server to the browser push services. The keypair is
+ * generated on first boot and kept for the lifetime of the install: replacing it
+ * invalidates every existing subscription.
+ */
+export type WebPushConfig = {
+  publicKey: string;
+  privateKey: string;
+  subject: string;
+};
+
+/**
  * Master switch for the notification system. Individual transports add their own
  * sub-object here (`notifications.email`, `notifications.webhook`, …) as they land.
  */
 export type NotificationsConfig = {
   enabled: boolean;
+  webPush: WebPushConfig;
 };
 
 export type IConfig = {
@@ -81,7 +93,9 @@ export type IConfigInput = Omit<
   promotedAlbum?: Partial<PromotedAlbumConfig>;
   purchaseDecision?: Partial<PurchaseDecisionConfig>;
   spending?: Partial<SpendingConfig>;
-  notifications?: Partial<NotificationsConfig>;
+  notifications?: Partial<Omit<NotificationsConfig, "webPush">> & {
+    webPush?: Partial<WebPushConfig>;
+  };
 };
 
 export const DEFAULT_PURCHASE_DECISION: PurchaseDecisionConfig = {
@@ -94,8 +108,15 @@ export const DEFAULT_SPENDING: SpendingConfig = {
   monthlyLimit: null,
 };
 
+export const DEFAULT_WEB_PUSH: WebPushConfig = {
+  publicKey: "",
+  privateKey: "",
+  subject: "https://github.com/BlieNuckel/tunearr",
+};
+
 export const DEFAULT_NOTIFICATIONS: NotificationsConfig = {
   enabled: true,
+  webPush: DEFAULT_WEB_PUSH,
 };
 
 export const DEFAULT_FOLLOWED_POLL_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -190,6 +211,11 @@ function mergeWithDefaults(saved: Record<string, unknown>): IConfig {
     notifications: {
       ...DEFAULT_NOTIFICATIONS,
       ...((saved.notifications as Record<string, unknown>) ?? {}),
+      webPush: {
+        ...DEFAULT_WEB_PUSH,
+        ...(((saved.notifications as { webPush?: Record<string, unknown> })
+          ?.webPush ?? {}) as Record<string, unknown>),
+      },
     },
   } as IConfig;
 }
@@ -335,6 +361,21 @@ function validateNotificationsConfig(config: NotificationsConfig) {
   if (typeof config.enabled !== "boolean") {
     throw new Error("notifications.enabled must be a boolean");
   }
+  const webPush = config.webPush;
+  if (
+    typeof webPush.publicKey !== "string" ||
+    typeof webPush.privateKey !== "string"
+  ) {
+    throw new Error("notifications.webPush keys must be strings");
+  }
+  if (
+    typeof webPush.subject !== "string" ||
+    !/^(mailto:|https:\/\/)/.test(webPush.subject)
+  ) {
+    throw new Error(
+      "notifications.webPush.subject must be a mailto: or https:// URL"
+    );
+  }
 }
 
 function validateConfig(mergedConfig: IConfig) {
@@ -409,6 +450,10 @@ export const setConfig = (newConfig: Partial<IConfigInput>) => {
     notifications: {
       ...currentConfig.notifications,
       ...(newConfig.notifications ?? {}),
+      webPush: {
+        ...currentConfig.notifications.webPush,
+        ...(newConfig.notifications?.webPush ?? {}),
+      },
     },
   };
 

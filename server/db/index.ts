@@ -58,3 +58,4 @@ export {
 export type { SignalKind } from "./entity/UserSignalEvent";
 export { UserSignalEvent } from "./entity/UserSignalEvent";
 export { NotificationPreference } from "./entity/NotificationPreference";
+export { PushSubscription } from "./entity/PushSubscription";

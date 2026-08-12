@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { syncAppBadge } from "@/appBadge";
 
 type Subscriber = (state: SharedState) => void;
 type SharedState = { count: number; loading: boolean };
@@ -10,6 +11,7 @@ const subscribers = new Set<Subscriber>();
 
 function publish(next: Partial<SharedState>): void {
   sharedState = { ...sharedState, ...next };
+  syncAppBadge(sharedState.count);
   for (const subscriber of subscribers) {
     subscriber(sharedState);
   }

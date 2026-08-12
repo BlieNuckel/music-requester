@@ -293,3 +293,46 @@ describe("notifications config", () => {
     ).toThrow("notifications.enabled must be a boolean");
   });
 });
+
+describe("web push config", () => {
+  beforeEach(() => {
+    initializeConfig();
+  });
+
+  it("starts with no keypair and a valid default subject", () => {
+    const { webPush } = getConfig().notifications;
+
+    expect(webPush.publicKey).toBe("");
+    expect(webPush.privateKey).toBe("");
+    expect(webPush.subject.startsWith("https://")).toBe(true);
+  });
+
+  it("deep merges webPush without clearing the other notification fields", () => {
+    setConfig({ notifications: { webPush: { publicKey: "pub" } } });
+    const { notifications } = getConfig();
+
+    expect(notifications.webPush.publicKey).toBe("pub");
+    expect(notifications.webPush.subject).toBe(
+      DEFAULT_NOTIFICATIONS.webPush.subject
+    );
+    expect(notifications.enabled).toBe(true);
+  });
+
+  it("rejects a subject that is not mailto: or https://", () => {
+    expect(() =>
+      setConfig({ notifications: { webPush: { subject: "tunearr" } } })
+    ).toThrow(
+      "notifications.webPush.subject must be a mailto: or https:// URL"
+    );
+  });
+
+  it("accepts a mailto: subject", () => {
+    setConfig({
+      notifications: { webPush: { subject: "mailto:admin@example.com" } },
+    });
+
+    expect(getConfig().notifications.webPush.subject).toBe(
+      "mailto:admin@example.com"
+    );
+  });
+});
