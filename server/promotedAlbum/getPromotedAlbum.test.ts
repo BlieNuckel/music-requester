@@ -297,7 +297,10 @@ describe("getPromotedAlbum", () => {
       }
       return Promise.resolve({
         ok: true,
-        data: [{ foreignAlbumId: "rg-alb-1" }, { foreignAlbumId: "rg-alb-2" }],
+        data: [
+          { foreignAlbumId: "rg-alb-1", monitored: true },
+          { foreignAlbumId: "rg-alb-2", monitored: true },
+        ],
       });
     });
 
@@ -318,6 +321,7 @@ describe("getPromotedAlbum", () => {
         ok: true,
         data: ["rg-alb-1", "rg-alb-2"].map((foreignAlbumId) => ({
           foreignAlbumId,
+          monitored: true,
           statistics: {
             trackFileCount: 0,
             totalTrackCount: 7,
@@ -336,6 +340,33 @@ describe("getPromotedAlbum", () => {
     });
   });
 
+  it("ignores unmonitored discography rows so untouched albums read as absent", async () => {
+    mockLoadArtistWeights.mockResolvedValue(plexArtists);
+    mockGetArtistTopTags.mockResolvedValue(tags);
+    mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
+    mockLidarrGet.mockImplementation((path: string) => {
+      if (path === "/artist") {
+        return Promise.resolve({ ok: true, data: [] });
+      }
+      return Promise.resolve({
+        ok: true,
+        data: ["rg-alb-1", "rg-alb-2"].map((foreignAlbumId) => ({
+          foreignAlbumId,
+          monitored: false,
+          statistics: {
+            trackFileCount: 0,
+            totalTrackCount: 12,
+            percentOfTracks: 0,
+          },
+        })),
+      });
+    });
+
+    const result = await getPromotedAlbum(userId);
+    expect(result!.inLibrary).toBe(false);
+    expect(result!.library).toBeNull();
+  });
+
   it("reports the library state as complete when every track has a file", async () => {
     mockLoadArtistWeights.mockResolvedValue(plexArtists);
     mockGetArtistTopTags.mockResolvedValue(tags);
@@ -348,6 +379,7 @@ describe("getPromotedAlbum", () => {
         ok: true,
         data: ["rg-alb-1", "rg-alb-2"].map((foreignAlbumId) => ({
           foreignAlbumId,
+          monitored: true,
           statistics: {
             trackFileCount: 7,
             totalTrackCount: 7,
@@ -673,8 +705,8 @@ describe("getPromotedAlbum", () => {
         return Promise.resolve({
           ok: true,
           data: [
-            { foreignAlbumId: "rg-alb-1" },
-            { foreignAlbumId: "rg-alb-2" },
+            { foreignAlbumId: "rg-alb-1", monitored: true },
+            { foreignAlbumId: "rg-alb-2", monitored: true },
           ],
         });
       });

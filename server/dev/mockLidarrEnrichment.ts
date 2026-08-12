@@ -1,6 +1,11 @@
+import { In } from "typeorm";
+import { getDataSource, Request } from "../db/index";
+import { createLogger } from "../logger";
 import type { LidarrLifecycleDetails } from "../services/requests/lidarrEnrichment";
 
 type MockState = "downloading" | "wanted" | "imported" | null;
+
+const log = createLogger("mock-lidarr");
 
 const MOCK_STATES: MockState[] = [
   "downloading",
@@ -77,8 +82,34 @@ function mockForMbid(mbid: string): LidarrLifecycleDetails {
   }
 }
 
-export function mockEnrichRequestsWithLidarr(
+async function loadRequestedMbids(albumMbids: string[]): Promise<Set<string>> {
+  if (albumMbids.length === 0) return new Set();
+
+  try {
+    const rows = await getDataSource()
+      .getRepository(Request)
+      .find({
+        where: { album_mbid: In(albumMbids) },
+        select: { album_mbid: true },
+      });
+    return new Set(rows.map((row) => row.album_mbid));
+  } catch (err) {
+    log.warn(`Failed to load requested album mbids: ${err}`);
+    return new Set();
+  }
+}
+
+/**
+ * Fabricates lifecycle states for albums that actually have a request row, so
+ * mock mode exercises the request lifecycle without inventing statuses for
+ * albums nobody asked for (the discover feed asks about arbitrary MBIDs).
+ */
+export async function mockEnrichRequestsWithLidarr(
   albumMbids: string[]
-): (LidarrLifecycleDetails | null)[] {
-  return albumMbids.map((mbid) => mockForMbid(mbid));
+): Promise<(LidarrLifecycleDetails | null)[]> {
+  const requested = await loadRequestedMbids(albumMbids);
+
+  return albumMbids.map((mbid) =>
+    requested.has(mbid) ? mockForMbid(mbid) : null
+  );
 }
