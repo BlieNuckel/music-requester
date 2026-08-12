@@ -22,7 +22,7 @@ export default function SettingsTabs({
 
   const handleTabClick = (tabId: SettingsTab) => {
     if (tabId === "notifications") {
-      navigate("/settings/notifications/email");
+      navigate("/settings/notifications/mine");
     } else {
       onTabChange(tabId);
     }

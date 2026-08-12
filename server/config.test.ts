@@ -9,6 +9,7 @@ import {
   getConfigValue,
   initializeConfig,
   DEFAULT_PROMOTED_ALBUM,
+  DEFAULT_NOTIFICATIONS,
 } from "./config";
 
 let tmpDir: string;
@@ -268,5 +269,27 @@ describe("promotedAlbum config", () => {
     const config = getConfig();
     expect(config.promotedAlbum.cacheDurationMinutes).toBe(0);
     expect(config.promotedAlbum.libraryPreference).toBe("prefer_library");
+  });
+});
+
+describe("notifications config", () => {
+  beforeEach(() => {
+    initializeConfig();
+  });
+
+  it("returns defaults when nothing has been set", () => {
+    expect(getConfig().notifications).toEqual(DEFAULT_NOTIFICATIONS);
+  });
+
+  it("deep merges notifications on setConfig", () => {
+    setConfig({ notifications: { enabled: false } });
+
+    expect(getConfig().notifications.enabled).toBe(false);
+  });
+
+  it("validates the enabled flag", () => {
+    expect(() =>
+      setConfig({ notifications: { enabled: "yes" } as never })
+    ).toThrow("notifications.enabled must be a boolean");
   });
 });

@@ -45,6 +45,14 @@ export type PromotedAlbumConfig = {
   ratingWeight: number;
 };
 
+/**
+ * Master switch for the notification system. Individual transports add their own
+ * sub-object here (`notifications.email`, `notifications.webhook`, …) as they land.
+ */
+export type NotificationsConfig = {
+  enabled: boolean;
+};
+
 export type IConfig = {
   lidarrUrl: string;
   lidarrApiKey: string;
@@ -60,6 +68,7 @@ export type IConfig = {
   promotedAlbum: PromotedAlbumConfig;
   purchaseDecision: PurchaseDecisionConfig;
   spending: SpendingConfig;
+  notifications: NotificationsConfig;
   followedArtistPollIntervalMs: number;
   requestStatusPollIntervalMs: number;
 };
@@ -67,11 +76,12 @@ export type IConfig = {
 /** Input type for setConfig — nested objects are optional since defaults are deep-merged */
 export type IConfigInput = Omit<
   IConfig,
-  "promotedAlbum" | "purchaseDecision" | "spending"
+  "promotedAlbum" | "purchaseDecision" | "spending" | "notifications"
 > & {
   promotedAlbum?: Partial<PromotedAlbumConfig>;
   purchaseDecision?: Partial<PurchaseDecisionConfig>;
   spending?: Partial<SpendingConfig>;
+  notifications?: Partial<NotificationsConfig>;
 };
 
 export const DEFAULT_PURCHASE_DECISION: PurchaseDecisionConfig = {
@@ -82,6 +92,10 @@ export const DEFAULT_PURCHASE_DECISION: PurchaseDecisionConfig = {
 export const DEFAULT_SPENDING: SpendingConfig = {
   currency: "USD",
   monthlyLimit: null,
+};
+
+export const DEFAULT_NOTIFICATIONS: NotificationsConfig = {
+  enabled: true,
 };
 
 export const DEFAULT_FOLLOWED_POLL_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -137,6 +151,7 @@ const DEFAULT_CONFIG: IConfig = {
   promotedAlbum: DEFAULT_PROMOTED_ALBUM,
   purchaseDecision: DEFAULT_PURCHASE_DECISION,
   spending: DEFAULT_SPENDING,
+  notifications: DEFAULT_NOTIFICATIONS,
   followedArtistPollIntervalMs: DEFAULT_FOLLOWED_POLL_INTERVAL_MS,
   requestStatusPollIntervalMs: DEFAULT_REQUEST_STATUS_POLL_INTERVAL_MS,
 };
@@ -172,6 +187,10 @@ function mergeWithDefaults(saved: Record<string, unknown>): IConfig {
       ...DEFAULT_SPENDING,
       ...((saved.spending as Record<string, unknown>) ?? {}),
     },
+    notifications: {
+      ...DEFAULT_NOTIFICATIONS,
+      ...((saved.notifications as Record<string, unknown>) ?? {}),
+    },
   } as IConfig;
 }
 
@@ -186,6 +205,7 @@ export const getConfig = (): IConfig => {
       promotedAlbum: { ...DEFAULT_PROMOTED_ALBUM },
       purchaseDecision: { ...DEFAULT_PURCHASE_DECISION },
       spending: { ...DEFAULT_SPENDING },
+      notifications: { ...DEFAULT_NOTIFICATIONS },
     };
   }
 
@@ -311,6 +331,12 @@ function validateSpendingConfig(config: SpendingConfig) {
   }
 }
 
+function validateNotificationsConfig(config: NotificationsConfig) {
+  if (typeof config.enabled !== "boolean") {
+    throw new Error("notifications.enabled must be a boolean");
+  }
+}
+
 function validateConfig(mergedConfig: IConfig) {
   if (typeof mergedConfig.lidarrUrl !== "string") {
     throw new Error("lidarrUrl must be a string");
@@ -380,6 +406,10 @@ export const setConfig = (newConfig: Partial<IConfigInput>) => {
       ...currentConfig.spending,
       ...(newConfig.spending ?? {}),
     },
+    notifications: {
+      ...currentConfig.notifications,
+      ...(newConfig.notifications ?? {}),
+    },
   };
 
   validateConfig(mergedConfig);
@@ -394,6 +424,10 @@ export const setConfig = (newConfig: Partial<IConfigInput>) => {
 
   if (newConfig.spending !== undefined) {
     validateSpendingConfig(mergedConfig.spending);
+  }
+
+  if (newConfig.notifications !== undefined) {
+    validateNotificationsConfig(mergedConfig.notifications);
   }
 
   const db = getRawDb();
@@ -425,6 +459,7 @@ export const initializeConfig = () => {
     promotedAlbum: { ...DEFAULT_PROMOTED_ALBUM },
     purchaseDecision: { ...DEFAULT_PURCHASE_DECISION },
     spending: { ...DEFAULT_SPENDING },
+    notifications: { ...DEFAULT_NOTIFICATIONS },
   };
 
   const configJsonPath = getConfigJsonPath();
