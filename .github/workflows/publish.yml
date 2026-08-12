@@ -37,7 +37,7 @@ jobs:
         run: pnpm run typecheck:server
 
       - name: Format check
-        run: pnpm run format --check
+        run: pnpm run format:check
 
       - name: Lint
         run: pnpm run lint
