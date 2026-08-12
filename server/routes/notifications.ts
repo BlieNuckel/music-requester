@@ -9,16 +9,54 @@ import {
 } from "../../shared/notificationEvents";
 import { Permission } from "../../shared/permissions";
 import {
+  deleteSubscriptionByEndpoint,
+  deleteSubscriptionForUser,
   describeSelectableTransports,
   getEffectivePreferences,
   getTransport,
+  getWebPushConfig,
+  listSubscriptions,
+  saveSubscription,
   setPreferences,
+  toPushDevice,
+  webPushTransport,
 } from "../services/notifications";
-import type { PreferenceEntry } from "../services/notifications";
+import type {
+  PreferenceEntry,
+  PushSubscriptionInput,
+} from "../services/notifications";
 
 const router = express.Router();
 
 router.use(requireAuth);
+
+function parseSubscription(
+  body: unknown
+): Omit<PushSubscriptionInput, "userAgent"> {
+  const subscription = body as {
+    endpoint?: unknown;
+    keys?: { p256dh?: unknown; auth?: unknown };
+  };
+
+  if (
+    typeof subscription?.endpoint !== "string" ||
+    subscription.endpoint === ""
+  ) {
+    throw new ApiError(400, "endpoint is required");
+  }
+  if (
+    typeof subscription.keys?.p256dh !== "string" ||
+    typeof subscription.keys?.auth !== "string"
+  ) {
+    throw new ApiError(400, "keys.p256dh and keys.auth are required");
+  }
+
+  return {
+    endpoint: subscription.endpoint,
+    p256dh: subscription.keys.p256dh,
+    auth: subscription.keys.auth,
+  };
+}
 
 function parsePreferences(body: unknown): PreferenceEntry[] {
   const entries = (body as { preferences?: unknown })?.preferences;
@@ -67,6 +105,71 @@ router.put("/preferences", async (req: Request, res: Response) => {
   const entries = parsePreferences(req.body);
   const preferences = await setPreferences(req.user!.id, entries);
   res.json({ preferences });
+});
+
+router.get("/webpush/key", (_req: Request, res: Response) => {
+  res.json({ publicKey: getWebPushConfig().publicKey });
+});
+
+router.post("/webpush/subscribe", async (req: Request, res: Response) => {
+  const subscription = parseSubscription(req.body);
+  const device = await saveSubscription(req.user!.id, {
+    ...subscription,
+    userAgent: req.get("user-agent") ?? null,
+  });
+  res.json({ device });
+});
+
+router.post("/webpush/unsubscribe", async (req: Request, res: Response) => {
+  const endpoint = (req.body as { endpoint?: unknown })?.endpoint;
+  if (typeof endpoint !== "string" || endpoint === "") {
+    throw new ApiError(400, "endpoint is required");
+  }
+
+  await deleteSubscriptionByEndpoint(endpoint);
+  res.json({ status: "ok" });
+});
+
+/**
+ * Self-service test. The admin-gated `/:transportId/test` below exists for
+ * instance transports; verifying your own phone must not require ADMIN.
+ */
+router.post("/webpush/test", async (req: Request, res: Response) => {
+  const subscriptions = await listSubscriptions(req.user!.id);
+  if (subscriptions.length === 0) {
+    throw new ApiError(400, "This account has no subscribed devices");
+  }
+
+  await webPushTransport.send(
+    { userId: req.user!.id, username: req.user!.username },
+    {
+      eventId: "request.imported",
+      title: "Tunearr test notification",
+      body: "Push notifications are working on this device.",
+      url: "/settings/notifications/mine",
+    }
+  );
+
+  res.json({ status: "ok", deviceCount: subscriptions.length });
+});
+
+router.get("/devices", async (req: Request, res: Response) => {
+  const subscriptions = await listSubscriptions(req.user!.id);
+  res.json({ devices: subscriptions.map(toPushDevice) });
+});
+
+router.delete("/devices/:id", async (req: Request, res: Response) => {
+  const id = Number.parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new ApiError(400, "Invalid device id");
+  }
+
+  const removed = await deleteSubscriptionForUser(req.user!.id, id);
+  if (!removed) {
+    throw new ApiError(404, "Device not found");
+  }
+
+  res.json({ status: "ok" });
 });
 
 router.post(

@@ -1,5 +1,7 @@
 import { logTransport } from "./logTransport";
 import { registerTransport } from "./registry";
+import { ensureVapidKeys } from "./vapid";
+import { webPushTransport } from "./webPushTransport";
 
 export { notifyUser, notifyAdmins } from "./dispatcher";
 export {
@@ -14,6 +16,16 @@ export {
   listTransports,
   registerTransport,
 } from "./registry";
+export {
+  deleteSubscriptionByEndpoint,
+  deleteSubscriptionForUser,
+  listSubscriptions,
+  saveSubscription,
+  toPushDevice,
+} from "./pushSubscriptions";
+export type { PushDevice, PushSubscriptionInput } from "./pushSubscriptions";
+export { getWebPushConfig, hasVapidKeys } from "./vapid";
+export { webPushTransport } from "./webPushTransport";
 export type {
   NotificationMessage,
   NotificationRecipient,
@@ -24,5 +36,7 @@ export type {
 
 /** Registers the built-in transports. Called once at boot from `server/index.ts`. */
 export function initializeNotifications(): void {
+  ensureVapidKeys();
   registerTransport(logTransport);
+  registerTransport(webPushTransport);
 }

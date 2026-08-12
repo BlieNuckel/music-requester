@@ -6,6 +6,12 @@ const mockSetPreferences = vi.fn();
 const mockDescribeTransports = vi.fn();
 const mockGetTransport = vi.fn();
 const mockGetConfigValue = vi.fn();
+const mockGetWebPushConfig = vi.fn();
+const mockListSubscriptions = vi.fn();
+const mockSaveSubscription = vi.fn();
+const mockDeleteByEndpoint = vi.fn();
+const mockDeleteForUser = vi.fn();
+const mockWebPushSend = vi.fn();
 
 let currentUser = {
   id: 1,
@@ -23,6 +29,22 @@ vi.mock("../services/notifications", () => ({
   describeSelectableTransports: (...args: unknown[]) =>
     mockDescribeTransports(...args),
   getTransport: (...args: unknown[]) => mockGetTransport(...args),
+  getWebPushConfig: (...args: unknown[]) => mockGetWebPushConfig(...args),
+  listSubscriptions: (...args: unknown[]) => mockListSubscriptions(...args),
+  saveSubscription: (...args: unknown[]) => mockSaveSubscription(...args),
+  deleteSubscriptionByEndpoint: (...args: unknown[]) =>
+    mockDeleteByEndpoint(...args),
+  deleteSubscriptionForUser: (...args: unknown[]) => mockDeleteForUser(...args),
+  toPushDevice: (row: { id: number; endpoint: string }) => ({
+    id: row.id,
+    endpoint: row.endpoint,
+  }),
+  webPushTransport: {
+    id: "webpush",
+    label: "Web push",
+    isConfigured: () => true,
+    send: (...args: unknown[]) => mockWebPushSend(...args),
+  },
 }));
 
 vi.mock("../config", () => ({
@@ -78,6 +100,142 @@ beforeEach(() => {
     label: "Web push",
     isConfigured: () => true,
     send: vi.fn().mockResolvedValue(undefined),
+  });
+  mockGetWebPushConfig.mockReturnValue({
+    publicKey: "public-key",
+    privateKey: "private-key",
+    subject: "https://example.test",
+  });
+  mockListSubscriptions.mockResolvedValue([]);
+  mockSaveSubscription.mockResolvedValue({ id: 1, endpoint: "https://push/a" });
+  mockDeleteByEndpoint.mockResolvedValue(true);
+  mockDeleteForUser.mockResolvedValue(true);
+  mockWebPushSend.mockResolvedValue(undefined);
+});
+
+describe("GET /webpush/key", () => {
+  it("returns only the public key", async () => {
+    const res = await request(app).get("/webpush/key");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ publicKey: "public-key" });
+    expect(JSON.stringify(res.body)).not.toContain("private-key");
+  });
+});
+
+describe("POST /webpush/subscribe", () => {
+  it("stores the subscription against the caller with its user agent", async () => {
+    const res = await request(app)
+      .post("/webpush/subscribe")
+      .set("user-agent", "TestBrowser/1.0")
+      .send({
+        endpoint: "https://push/a",
+        keys: { p256dh: "p", auth: "a" },
+      });
+
+    expect(res.status).toBe(200);
+    expect(mockSaveSubscription).toHaveBeenCalledWith(1, {
+      endpoint: "https://push/a",
+      p256dh: "p",
+      auth: "a",
+      userAgent: "TestBrowser/1.0",
+    });
+  });
+
+  it("rejects a subscription without an endpoint", async () => {
+    const res = await request(app)
+      .post("/webpush/subscribe")
+      .send({ keys: { p256dh: "p", auth: "a" } });
+
+    expect(res.status).toBe(400);
+    expect(mockSaveSubscription).not.toHaveBeenCalled();
+  });
+
+  it("rejects a subscription missing its keys", async () => {
+    const res = await request(app)
+      .post("/webpush/subscribe")
+      .send({ endpoint: "https://push/a" });
+
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /webpush/unsubscribe", () => {
+  it("removes the endpoint", async () => {
+    const res = await request(app)
+      .post("/webpush/unsubscribe")
+      .send({ endpoint: "https://push/a" });
+
+    expect(res.status).toBe(200);
+    expect(mockDeleteByEndpoint).toHaveBeenCalledWith("https://push/a");
+  });
+
+  it("rejects a missing endpoint", async () => {
+    const res = await request(app).post("/webpush/unsubscribe").send({});
+
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /webpush/test", () => {
+  it("sends to the caller's own devices without needing admin", async () => {
+    mockListSubscriptions.mockResolvedValue([{ id: 1 }, { id: 2 }]);
+
+    const res = await request(app).post("/webpush/test");
+
+    expect(res.status).toBe(200);
+    expect(res.body.deviceCount).toBe(2);
+    expect(mockWebPushSend).toHaveBeenCalledWith(
+      { userId: 1, username: "testuser" },
+      expect.objectContaining({ title: "Tunearr test notification" })
+    );
+  });
+
+  it("400s when the account has no devices", async () => {
+    mockListSubscriptions.mockResolvedValue([]);
+
+    const res = await request(app).post("/webpush/test");
+
+    expect(res.status).toBe(400);
+    expect(mockWebPushSend).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /devices", () => {
+  it("lists the caller's devices", async () => {
+    mockListSubscriptions.mockResolvedValue([
+      { id: 7, endpoint: "https://push/a" },
+    ]);
+
+    const res = await request(app).get("/devices");
+
+    expect(res.status).toBe(200);
+    expect(mockListSubscriptions).toHaveBeenCalledWith(1);
+    expect(res.body.devices).toEqual([{ id: 7, endpoint: "https://push/a" }]);
+  });
+});
+
+describe("DELETE /devices/:id", () => {
+  it("revokes a device the caller owns", async () => {
+    const res = await request(app).delete("/devices/7");
+
+    expect(res.status).toBe(200);
+    expect(mockDeleteForUser).toHaveBeenCalledWith(1, 7);
+  });
+
+  it("404s when the device is not the caller's", async () => {
+    mockDeleteForUser.mockResolvedValue(false);
+
+    const res = await request(app).delete("/devices/7");
+
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects a non-numeric id", async () => {
+    const res = await request(app).delete("/devices/abc");
+
+    expect(res.status).toBe(400);
+    expect(mockDeleteForUser).not.toHaveBeenCalled();
   });
 });
 
@@ -188,7 +346,7 @@ describe("PUT /preferences", () => {
 
 describe("POST /:transportId/test", () => {
   it("requires admin", async () => {
-    const res = await request(app).post("/webpush/test");
+    const res = await request(app).post("/email/test");
 
     expect(res.status).toBe(403);
   });
@@ -197,13 +355,13 @@ describe("POST /:transportId/test", () => {
     asAdmin();
     const send = vi.fn().mockResolvedValue(undefined);
     mockGetTransport.mockReturnValue({
-      id: "webpush",
-      label: "Web push",
+      id: "email",
+      label: "Email",
       isConfigured: () => true,
       send,
     });
 
-    const res = await request(app).post("/webpush/test");
+    const res = await request(app).post("/email/test");
 
     expect(res.status).toBe(200);
     expect(send).toHaveBeenCalledOnce();
@@ -237,13 +395,13 @@ describe("POST /:transportId/test", () => {
   it("400s when the transport is not configured", async () => {
     asAdmin();
     mockGetTransport.mockReturnValue({
-      id: "webpush",
-      label: "Web push",
+      id: "email",
+      label: "Email",
       isConfigured: () => false,
       send: vi.fn(),
     });
 
-    const res = await request(app).post("/webpush/test");
+    const res = await request(app).post("/email/test");
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/not configured/);

@@ -1,5 +1,6 @@
 import { useAuth } from "@/context/useAuth";
 import useNotificationSettings from "@/hooks/useNotificationSettings";
+import PushDevicesSection from "./PushDevicesSection";
 import type {
   NotificationPreferenceEntry,
   NotificationTransportInfo,
@@ -124,6 +125,8 @@ export default function MyNotificationsSection() {
           back on in the notification settings.
         </p>
       )}
+
+      <PushDevicesSection />
 
       {settings.transports.length === 0 ? (
         <p className="p-4 text-sm text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-800 border-2 border-black rounded-lg shadow-cartoon-sm">

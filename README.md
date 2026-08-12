@@ -171,6 +171,14 @@ Lidarr then searches, grabs, and imports Soulseek releases exactly like it would
 
 > **Note:** the `/api/torznab` and `/api/sabnzbd` endpoints are unauthenticated so Lidarr can reach them. Don't expose Tunearr directly to the internet without a reverse proxy handling access control.
 
+## Notifications
+
+Each user chooses what they want to hear about under **Settings → Notifications → Mine**, and turns push on per device. Tunearr generates its own VAPID keypair on first boot, so there is no account to create and nothing to pay for.
+
+Push notifications need Tunearr to be reachable over **HTTPS**. Browsers disable service workers on plain HTTP, and no service worker means no push — a LAN address like `http://192.168.1.10:3001` cannot deliver notifications no matter how it is configured. Put Tunearr behind a reverse proxy with a certificate, a Tailscale `serve`, or a tunnel, and the settings page will pick it up.
+
+On iPhone and iPad there is one extra step: Apple only allows web notifications for installed web apps. Open Tunearr in Safari, tap **Share → Add to Home Screen**, then open it from the icon and turn notifications on there. Android and desktop browsers work without installing.
+
 ## Environment variables
 
 | Variable         | Default    | Purpose                                        |
