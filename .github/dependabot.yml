@@ -9,3 +9,10 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
+    # One grouped PR per week rather than one per package: every lockfile change
+    # invalidates the pnpmDeps hash in nix/package.nix, so grouping turns a
+    # refresh per package into a refresh per week.
+    groups:
+      npm:
+        patterns:
+          - "*"

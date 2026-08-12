@@ -62,9 +62,20 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      # Builds the flake package, which fails loudly when a dependency bump
-      # leaves nix/package.nix's pnpmDeps hash stale. Without this, the break
-      # only surfaces on a user's nixos-rebuild.
+      # Fetched on its own so a dependency bump that leaves nix/package.nix's
+      # pnpmDeps hash stale fails here, before the package build, and the
+      # mismatch is the only plausible reason for this step to fail.
+      - name: Fetch the pnpm dependencies
+        id: deps
+        shell: bash # the default `bash -e` has no pipefail, so `| tee` would mask a failed build
+        run: nix build .#tunearr.pnpmDeps --print-build-logs 2>&1 | tee "$RUNNER_TEMP/pnpm-deps.log"
+
+      - name: Report the correct pnpmDeps hash
+        if: failure() && steps.deps.conclusion == 'failure'
+        run: .github/scripts/report-stale-pnpm-hash.sh "$RUNNER_TEMP/pnpm-deps.log"
+
+      # Builds the flake package so a break surfaces here rather than on a
+      # user's nixos-rebuild.
       - name: Build the Nix package
         run: nix build .#tunearr --print-build-logs
 
