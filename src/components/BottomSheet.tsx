@@ -32,7 +32,6 @@ export default function BottomSheet({
   const isDragging = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
-  const exitTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const phaseRef = useRef<SheetPhase>(phase);
   const dragYRef = useRef(0);
   const onCloseRef = useRef(onClose);
@@ -62,14 +61,16 @@ export default function BottomSheet({
 
   useEffect(() => {
     if (phase === "exiting") {
-      clearTimeout(exitTimer.current);
-      exitTimer.current = setTimeout(() => {
+      const timer = setTimeout(() => {
         setPhase("closed");
+        dragYRef.current = 0;
         setDragY(0);
       }, EXIT_DURATION);
+      return () => clearTimeout(timer);
     }
-    if (phase === "entering") {
-      clearTimeout(exitTimer.current);
+    if (phase === "settling") {
+      const timer = setTimeout(() => setPhase("open"), SETTLE_DURATION);
+      return () => clearTimeout(timer);
     }
   }, [phase]);
 
@@ -98,6 +99,8 @@ export default function BottomSheet({
         !scrollRef.current || scrollRef.current.scrollTop <= 0;
       if (!scrolledToTop) return;
       touchStartY.current = e.touches[0].clientY;
+      dragYRef.current = 0;
+      setDragY(0);
       isDragging.current = true;
       setPhase("dragging");
       hapticsRef.current.light();
@@ -123,20 +126,11 @@ export default function BottomSheet({
       if (dragYRef.current > DISMISS_THRESHOLD) {
         hapticsRef.current.medium();
         setPhase("exiting");
-        clearTimeout(exitTimer.current);
-        exitTimer.current = setTimeout(() => {
-          setPhase("closed");
-          dragYRef.current = 0;
-          setDragY(0);
-        }, EXIT_DURATION);
         onCloseRef.current();
       } else {
         setPhase("settling");
         dragYRef.current = 0;
         setDragY(0);
-        setTimeout(() => {
-          setPhase("open");
-        }, SETTLE_DURATION);
       }
     };
 

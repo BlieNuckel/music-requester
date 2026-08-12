@@ -160,6 +160,81 @@ describe("BottomSheet", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("does not call onClose when tapped after an earlier swipe dismiss", () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+
+    const { rerender } = render(
+      <BottomSheet isOpen={true} onClose={onClose}>
+        <button>inner button</button>
+      </BottomSheet>
+    );
+
+    act(() => {
+      const sheet = getSheetEl();
+      dispatchTouch(sheet, "touchstart", 100);
+      dispatchTouch(sheet, "touchmove", 300);
+      dispatchTouch(sheet, "touchend", 300);
+    });
+    expect(onClose).toHaveBeenCalledOnce();
+
+    rerender(
+      <BottomSheet isOpen={false} onClose={onClose}>
+        <button>inner button</button>
+      </BottomSheet>
+    );
+    act(() => {
+      vi.runAllTimers();
+    });
+
+    rerender(
+      <BottomSheet isOpen={true} onClose={onClose}>
+        <button>inner button</button>
+      </BottomSheet>
+    );
+    act(() => {
+      vi.runAllTimers();
+    });
+
+    act(() => {
+      const button = screen.getByText("inner button");
+      dispatchTouch(button, "touchstart", 200);
+      dispatchTouch(button, "touchend", 200);
+    });
+
+    expect(onClose).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
+
+  it("stays closed when a settle finishes after the sheet was closed", () => {
+    vi.useFakeTimers();
+
+    const { rerender } = render(
+      <BottomSheet isOpen={true} onClose={vi.fn()}>
+        <p>sheet content</p>
+      </BottomSheet>
+    );
+
+    act(() => {
+      const sheet = getSheetEl();
+      dispatchTouch(sheet, "touchstart", 100);
+      dispatchTouch(sheet, "touchmove", 140);
+      dispatchTouch(sheet, "touchend", 140);
+    });
+
+    rerender(
+      <BottomSheet isOpen={false} onClose={vi.fn()}>
+        <p>sheet content</p>
+      </BottomSheet>
+    );
+    act(() => {
+      vi.runAllTimers();
+    });
+
+    expect(screen.queryByText("sheet content")).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
   it("calls preventDefault on touchmove during a downward drag", () => {
     render(
       <BottomSheet isOpen={true} onClose={vi.fn()}>
