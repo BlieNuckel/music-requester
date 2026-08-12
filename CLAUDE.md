@@ -84,7 +84,7 @@ The result: Lidarr sees a normal indexer and download client, but downloads actu
 - Functional components with custom hooks — no class components
 - Tailwind utility classes only — no custom CSS files
 - `Promise.all()` for concurrent independent requests
-- Prettier enforced in CI (auto-commits formatting fixes)
+- Prettier enforced by `pnpm format:check` in CI and applied to staged files by the pre-commit hook (`pnpm-lock.yaml` is prettier-ignored — it stays in pnpm's own format)
 - `ApiError` class for throwing HTTP errors in routes/services — caught by `errorHandler`
 - `undici` used for server-side HTTP requests (not node-fetch)
 

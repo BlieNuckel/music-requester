@@ -2,3 +2,4 @@ build
 dist
 node_modules
 .claude
+pnpm-lock.yaml
