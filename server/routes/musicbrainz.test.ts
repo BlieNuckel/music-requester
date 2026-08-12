@@ -202,35 +202,43 @@ describe("GET /artist/:mbid", () => {
 
     const res = await request(app).get("/artist/missing");
     expect(res.status).toBe(404);
-    expect(mockFetchReleaseGroupsForArtist).not.toHaveBeenCalled();
   });
 
-  it("composes artist details, image and release groups", async () => {
+  it("composes artist details and image without waiting on the discography", async () => {
     const artist = { mbid: "a1", name: "Radiohead", type: "Group" };
-    const releaseGroups = [{ id: "rg-1", title: "OK Computer" }];
     mockGetArtistById.mockResolvedValue(artist);
-    mockFetchReleaseGroupsForArtist.mockResolvedValue(releaseGroups);
     mockGetArtistImage.mockResolvedValue("https://img/rh.jpg");
 
     const res = await request(app).get("/artist/a1");
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       artist: { ...artist, imageUrl: "https://img/rh.jpg" },
-      releaseGroups,
     });
     expect(mockGetArtistById).toHaveBeenCalledWith("a1");
-    expect(mockFetchReleaseGroupsForArtist).toHaveBeenCalledWith("a1");
     expect(mockGetArtistImage).toHaveBeenCalledWith("Radiohead");
+    expect(mockFetchReleaseGroupsForArtist).not.toHaveBeenCalled();
   });
 
   it("omits imageUrl when no image is found", async () => {
     mockGetArtistById.mockResolvedValue({ mbid: "a1", name: "Radiohead" });
-    mockFetchReleaseGroupsForArtist.mockResolvedValue([]);
     mockGetArtistImage.mockResolvedValue("");
 
     const res = await request(app).get("/artist/a1");
     expect(res.status).toBe(200);
     expect(res.body.artist.imageUrl).toBeUndefined();
+  });
+});
+
+describe("GET /artist/:mbid/release-groups", () => {
+  it("returns the artist's release groups", async () => {
+    const releaseGroups = [{ id: "rg-1", title: "OK Computer" }];
+    mockFetchReleaseGroupsForArtist.mockResolvedValue(releaseGroups);
+
+    const res = await request(app).get("/artist/a1/release-groups");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ releaseGroups });
+    expect(mockFetchReleaseGroupsForArtist).toHaveBeenCalledWith("a1");
+    expect(mockGetArtistById).not.toHaveBeenCalled();
   });
 });
 
@@ -309,7 +317,7 @@ describe("GET /album/:mbid", () => {
     expect(mockGetReleaseGroupLabel).not.toHaveBeenCalled();
   });
 
-  it("composes album details, label and more-from-artist", async () => {
+  it("returns album details without waiting on label or discography", async () => {
     const album = {
       mbid: "rg-1",
       title: "OK Computer",
@@ -319,42 +327,34 @@ describe("GET /album/:mbid", () => {
       primaryType: "Album",
       secondaryTypes: [],
     };
-    const label = { name: "Parlophone", mbid: "label-1" };
     mockGetAlbumDetails.mockResolvedValue(album);
-    mockFetchReleaseGroupsForArtist.mockResolvedValue([
-      { id: "rg-1", title: "OK Computer" },
-      { id: "rg-2", title: "Kid A" },
-    ]);
-    mockGetReleaseGroupLabel.mockResolvedValue(label);
 
     const res = await request(app).get("/album/rg-1");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({
-      album: { ...album, label },
-      moreFromArtist: [{ id: "rg-2", title: "Kid A" }],
-    });
+    expect(res.body).toEqual({ album });
     expect(mockGetAlbumDetails).toHaveBeenCalledWith("rg-1");
-    expect(mockFetchReleaseGroupsForArtist).toHaveBeenCalledWith("a1");
+    expect(mockFetchReleaseGroupsForArtist).not.toHaveBeenCalled();
+    expect(mockGetReleaseGroupLabel).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /release-group/:mbid/label", () => {
+  it("returns the primary label", async () => {
+    const label = { name: "Parlophone", mbid: "label-1" };
+    mockGetReleaseGroupLabel.mockResolvedValue(label);
+
+    const res = await request(app).get("/release-group/rg-1/label");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ label });
     expect(mockGetReleaseGroupLabel).toHaveBeenCalledWith("rg-1");
   });
 
-  it("skips more-from-artist when artist MBID is missing", async () => {
-    mockGetAlbumDetails.mockResolvedValue({
-      mbid: "rg-9",
-      title: "Mystery",
-      artistName: "Unknown Artist",
-      artistMbid: null,
-      firstReleaseDate: null,
-      primaryType: null,
-      secondaryTypes: [],
-    });
+  it("returns a null label when none is known", async () => {
     mockGetReleaseGroupLabel.mockResolvedValue(null);
 
-    const res = await request(app).get("/album/rg-9");
+    const res = await request(app).get("/release-group/rg-9/label");
     expect(res.status).toBe(200);
-    expect(res.body.moreFromArtist).toEqual([]);
-    expect(res.body.album.label).toBeNull();
-    expect(mockFetchReleaseGroupsForArtist).not.toHaveBeenCalled();
+    expect(res.body.label).toBeNull();
   });
 });
 

@@ -4,11 +4,12 @@ import ImageWithShimmer from "@/components/ImageWithShimmer";
 import { pastelColorFromId } from "@/utils/color";
 import AlbumActions from "./AlbumActions";
 import { AlbumLibraryPill } from "@/components/AlbumLibraryBadge";
-import type { AlbumDetails, ReleaseGroup } from "@/types";
+import type { AlbumDetails, AlbumLabel, ReleaseGroup } from "@/types";
 import type { AlbumLibraryInfo } from "@shared/albumLibrary";
 
 interface AlbumHeaderProps {
   album: AlbumDetails;
+  label?: AlbumLabel | null;
   inLibrary?: boolean;
   initialWanted?: boolean;
   library?: AlbumLibraryInfo | null;
@@ -32,15 +33,14 @@ function toReleaseGroup(album: AlbumDetails): ReleaseGroup {
   };
 }
 
-function buildSubtitle(album: AlbumDetails): string {
+function buildSubtitle(album: AlbumDetails, label?: AlbumLabel | null): string {
   const year = album.firstReleaseDate?.slice(0, 4);
-  return [album.primaryType, year, album.label?.name]
-    .filter(Boolean)
-    .join(" · ");
+  return [album.primaryType, year, label?.name].filter(Boolean).join(" · ");
 }
 
 export default function AlbumHeader({
   album,
+  label,
   inLibrary,
   initialWanted,
   library,
@@ -48,7 +48,7 @@ export default function AlbumHeader({
   const [coverError, setCoverError] = useState(false);
   const pastelBg = useMemo(() => pastelColorFromId(album.mbid), [album.mbid]);
   const coverUrl = `https://coverartarchive.org/release-group/${album.mbid}/front-500`;
-  const subtitle = buildSubtitle(album);
+  const subtitle = buildSubtitle(album, label);
 
   return (
     <div className="flex items-start gap-4 mb-8">

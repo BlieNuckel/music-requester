@@ -29,6 +29,11 @@ export interface ArtistSearchResult {
   imageUrl?: string;
 }
 
+export interface AlbumLabel {
+  name: string;
+  mbid: string;
+}
+
 export interface AlbumDetails {
   mbid: string;
   title: string;
@@ -37,7 +42,6 @@ export interface AlbumDetails {
   firstReleaseDate: string | null;
   primaryType: string | null;
   secondaryTypes: string[];
-  label: { name: string; mbid: string } | null;
 }
 
 export interface Track {

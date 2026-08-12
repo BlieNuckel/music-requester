@@ -90,6 +90,15 @@ router.get("/artist/id", async (req: Request, res: Response) => {
   res.json({ mbid: await getArtistMbidByName(name) });
 });
 
+router.get(
+  "/artist/:mbid/release-groups",
+  async (req: Request, res: Response) => {
+    const { mbid } = req.params;
+    const releaseGroups = await fetchReleaseGroupsForArtist(mbid as string);
+    res.json({ releaseGroups });
+  }
+);
+
 router.get("/artist/:mbid", async (req: Request, res: Response) => {
   const { mbid } = req.params;
   const artist = await getArtistById(mbid as string);
@@ -98,15 +107,9 @@ router.get("/artist/:mbid", async (req: Request, res: Response) => {
     return res.status(404).json({ error: "Artist not found" });
   }
 
-  const [releaseGroups, imageUrl] = await Promise.all([
-    fetchReleaseGroupsForArtist(mbid as string),
-    getArtistImage(artist.name),
-  ]);
+  const imageUrl = await getArtistImage(artist.name);
 
-  res.json({
-    artist: { ...artist, imageUrl: imageUrl || undefined },
-    releaseGroups,
-  });
+  res.json({ artist: { ...artist, imageUrl: imageUrl || undefined } });
 });
 
 router.get("/tracks/:releaseGroupId", async (req: Request, res: Response) => {
@@ -121,6 +124,14 @@ router.get("/tracks/:releaseGroupId", async (req: Request, res: Response) => {
 
   res.json({ media: enrichedMedia });
 });
+
+router.get(
+  "/release-group/:mbid/label",
+  async (req: Request, res: Response) => {
+    const { mbid } = req.params;
+    res.json({ label: await getReleaseGroupLabel(mbid as string) });
+  }
+);
 
 router.get("/release-group/:mbid", async (req: Request, res: Response) => {
   const { mbid } = req.params;
@@ -141,17 +152,7 @@ router.get("/album/:mbid", async (req: Request, res: Response) => {
     return res.status(404).json({ error: "Album not found" });
   }
 
-  const [moreFromArtist, label] = await Promise.all([
-    album.artistMbid
-      ? fetchReleaseGroupsForArtist(album.artistMbid)
-      : Promise.resolve([]),
-    getReleaseGroupLabel(mbid as string),
-  ]);
-
-  res.json({
-    album: { ...album, label },
-    moreFromArtist: moreFromArtist.filter((rg) => rg.id !== mbid),
-  });
+  res.json({ album });
 });
 
 function sendSSE(res: Response, event: string, data: unknown) {

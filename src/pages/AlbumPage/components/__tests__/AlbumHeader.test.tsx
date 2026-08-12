@@ -21,9 +21,10 @@ const makeAlbum = (overrides: Partial<AlbumDetails> = {}): AlbumDetails => ({
   firstReleaseDate: "1997-06-16",
   primaryType: "Album",
   secondaryTypes: [],
-  label: { name: "Parlophone", mbid: "label-1" },
   ...overrides,
 });
+
+const LABEL = { name: "Parlophone", mbid: "label-1" };
 
 function renderHeader(
   album: AlbumDetails,
@@ -42,12 +43,18 @@ afterEach(() => {
 
 describe("AlbumHeader", () => {
   it("renders the album title and a subtitle of type, year and label", () => {
-    renderHeader(makeAlbum());
+    renderHeader(makeAlbum(), { label: LABEL });
 
     expect(
       screen.getByRole("heading", { name: "OK Computer" })
     ).toBeInTheDocument();
     expect(screen.getByText("Album · 1997 · Parlophone")).toBeInTheDocument();
+  });
+
+  it("renders the subtitle without the label while the label is still loading", () => {
+    renderHeader(makeAlbum(), { label: null });
+
+    expect(screen.getByText("Album · 1997")).toBeInTheDocument();
   });
 
   it("links the artist name to the artist page when an MBID is present", () => {
