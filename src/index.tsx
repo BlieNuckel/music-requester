@@ -6,6 +6,7 @@ import App from "./App";
 import { AuthProvider } from "./context/AuthProvider";
 import { SettingsContextProvider } from "./context/SettingsContext";
 import { ThemeProvider } from "./context/ThemeContext";
+import { registerServiceWorker } from "./serviceWorker";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Root element not found");
@@ -24,3 +25,5 @@ root.render(
     </BrowserRouter>
   </React.StrictMode>
 );
+
+void registerServiceWorker();
