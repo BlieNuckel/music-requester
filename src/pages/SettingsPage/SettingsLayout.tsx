@@ -32,7 +32,6 @@ const settingsRoutes: SettingsRoute[] = [
     text: "Notifications",
     route: "/settings/notifications",
     regex: /^\/settings\/notifications/,
-    requiredPermission: Permission.ADMIN,
     skipMobileHeader: true,
   },
   {

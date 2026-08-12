@@ -15,6 +15,7 @@ import PurchaseDecisionSettingsPage from "./pages/SettingsPage/pages/PurchaseDec
 import UsersSettingsPage from "./pages/SettingsPage/pages/UsersSettingsPage";
 import LogsSettingsPage from "./pages/SettingsPage/pages/LogsSettingsPage";
 import NotificationsPage from "./pages/SettingsPage/notifications/NotificationsPage";
+import MyNotificationsPage from "./pages/SettingsPage/notifications/MyNotificationsPage";
 import EmailNotificationsPage from "./pages/SettingsPage/notifications/EmailNotificationsPage";
 import WebhookNotificationsPage from "./pages/SettingsPage/notifications/WebhookNotificationsPage";
 import OnboardingPage from "./pages/OnboardingPage/OnboardingPage";
@@ -67,9 +68,10 @@ function App() {
                 <Route
                   index
                   element={
-                    <ConditionalRedirect to="/settings/notifications/email" />
+                    <ConditionalRedirect to="/settings/notifications/mine" />
                   }
                 />
+                <Route path="mine" element={<MyNotificationsPage />} />
                 <Route path="email" element={<EmailNotificationsPage />} />
                 <Route path="webhook" element={<WebhookNotificationsPage />} />
               </Route>

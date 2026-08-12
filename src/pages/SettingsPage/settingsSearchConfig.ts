@@ -31,6 +31,7 @@ export type SettingsSection =
   | "recommendations"
   | "purchaseDecision"
   | "users"
+  | "myNotifications"
   | "logs";
 
 type SectionMeta = {
@@ -152,6 +153,19 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
     ],
     permission: Permission.MANAGE_USERS,
   },
+  myNotifications: {
+    label: "My Notifications",
+    tab: "notifications",
+    keywords: [
+      "notification",
+      "notifications",
+      "alerts",
+      "push",
+      "email",
+      "subscribe",
+      "mine",
+    ],
+  },
   logs: {
     label: "Logs",
     tab: "logs",
@@ -180,13 +194,6 @@ export function getVisibleTabs(userPermissions?: number): SettingsTab[] {
     ) {
       visibleSet.add(meta.tab);
     }
-  }
-
-  if (
-    userPermissions !== undefined &&
-    hasPermission(userPermissions, Permission.ADMIN)
-  ) {
-    visibleSet.add("notifications");
   }
 
   return TAB_ORDER.filter((tab) => visibleSet.has(tab));

@@ -23,6 +23,8 @@ import purchasesRoutes from "./routes/purchases";
 import wantedRoutes from "./routes/wanted";
 import followedRoutes from "./routes/followed";
 import discoverRoutes from "./routes/discover";
+import notificationsRoutes from "./routes/notifications";
+import { initializeNotifications } from "./services/notifications";
 import { startFollowedArtistPoller } from "./services/followed/poller";
 import { startRequestStatusPoller } from "./services/requests/statusPoller";
 import { startProfileRegenPoller } from "./services/profile/regenPoller";
@@ -62,6 +64,7 @@ app.use("/api/purchases", purchasesRoutes);
 app.use("/api/wanted", wantedRoutes);
 app.use("/api/followed", followedRoutes);
 app.use("/api/discover", requireAuth, discoverRoutes);
+app.use("/api/notifications", notificationsRoutes);
 
 if (process.env.NODE_ENV === "production") {
   app.use(express.static(path.join(__dirname, "..", "build")));
@@ -74,6 +77,7 @@ app.use(errorHandler);
 
 await initializeDatabase();
 initializeConfig();
+initializeNotifications();
 
 const followedPollIntervalMs =
   getConfig().followedArtistPollIntervalMs ?? 6 * 60 * 60 * 1000;

@@ -1,11 +1,23 @@
 import SettingsTabs, { type SettingsRoute } from "@/components/SettingsTabs";
-import { EnvelopeIcon } from "@heroicons/react/24/solid";
+import { BellIcon, EnvelopeIcon } from "@heroicons/react/24/solid";
+import { Permission } from "@shared/permissions";
 
 type NotificationsLayoutProps = {
   children: React.ReactNode;
 };
 
 const settingsRoutes: SettingsRoute[] = [
+  {
+    text: "Mine",
+    content: (
+      <span className="flex items-center gap-2">
+        <BellIcon className="h-4 w-4" />
+        Mine
+      </span>
+    ),
+    route: "/settings/notifications/mine",
+    regex: /^\/settings\/notifications\/mine/,
+  },
   {
     text: "Email",
     content: (
@@ -16,6 +28,7 @@ const settingsRoutes: SettingsRoute[] = [
     ),
     route: "/settings/notifications/email",
     regex: /^\/settings\/notifications\/email/,
+    requiredPermission: Permission.ADMIN,
   },
   {
     text: "Webhook",
@@ -39,6 +52,7 @@ const settingsRoutes: SettingsRoute[] = [
     ),
     route: "/settings/notifications/webhook",
     regex: /^\/settings\/notifications\/webhook/,
+    requiredPermission: Permission.ADMIN,
   },
 ];
 
