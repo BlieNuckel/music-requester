@@ -6,6 +6,11 @@ import type { ArtistDetails, ReleaseGroup } from "@/types";
 
 let mockState: {
   artist: ArtistDetails | null;
+  loading: boolean;
+  error: string | null;
+};
+
+let mockReleaseGroupsState: {
   releaseGroups: ReleaseGroup[];
   loading: boolean;
   error: string | null;
@@ -13,6 +18,10 @@ let mockState: {
 
 vi.mock("@/hooks/useArtistDetails", () => ({
   default: () => mockState,
+}));
+
+vi.mock("@/hooks/useArtistReleaseGroups", () => ({
+  default: () => mockReleaseGroupsState,
 }));
 
 vi.mock("@/hooks/useLibraryAlbums", () => ({
@@ -80,6 +89,10 @@ function renderPage() {
 beforeEach(() => {
   mockState = {
     artist: null,
+    loading: false,
+    error: null,
+  };
+  mockReleaseGroupsState = {
     releaseGroups: [],
     loading: false,
     error: null,
@@ -105,7 +118,7 @@ describe("ArtistPage", () => {
 
   it("renders sections with only the first one expanded", () => {
     mockState.artist = { mbid: "a1", name: "Radiohead", type: "Group" };
-    mockState.releaseGroups = [
+    mockReleaseGroupsState.releaseGroups = [
       makeRg({ id: "alb", title: "OK Computer", "primary-type": "Album" }),
       makeRg({ id: "ep", title: "Drill EP", "primary-type": "EP" }),
     ];
@@ -123,7 +136,7 @@ describe("ArtistPage", () => {
   it("shows a collapsed section's releases after expanding it", async () => {
     const user = userEvent.setup();
     mockState.artist = { mbid: "a1", name: "Radiohead", type: "Group" };
-    mockState.releaseGroups = [
+    mockReleaseGroupsState.releaseGroups = [
       makeRg({ id: "alb", title: "OK Computer", "primary-type": "Album" }),
       makeRg({ id: "ep", title: "Drill EP", "primary-type": "EP" }),
     ];
@@ -144,7 +157,9 @@ describe("ArtistPage", () => {
 
   it("hides the In Library badge when only an album matches the library", () => {
     mockState.artist = { mbid: "a1", name: "Radiohead" };
-    mockState.releaseGroups = [makeRg({ id: "in-lib", title: "Owned" })];
+    mockReleaseGroupsState.releaseGroups = [
+      makeRg({ id: "in-lib", title: "Owned" }),
+    ];
     renderPage();
 
     expect(screen.queryByText("In Library")).not.toBeInTheDocument();
@@ -152,7 +167,7 @@ describe("ArtistPage", () => {
 
   it("marks discography albums that are in the library", () => {
     mockState.artist = { mbid: "a1", name: "Radiohead" };
-    mockState.releaseGroups = [
+    mockReleaseGroupsState.releaseGroups = [
       makeRg({ id: "in-lib", title: "Owned" }),
       makeRg({ id: "missing", title: "Not owned" }),
     ];
@@ -170,11 +185,53 @@ describe("ArtistPage", () => {
 
   it("shows an empty message when the artist has no releases", () => {
     mockState.artist = { mbid: "a1", name: "Radiohead" };
-    mockState.releaseGroups = [];
+    mockReleaseGroupsState.releaseGroups = [];
     renderPage();
     expect(
       screen.getByText("No releases found for this artist.")
     ).toBeInTheDocument();
+  });
+
+  it("renders the header while the discography is still loading", () => {
+    mockState.artist = { mbid: "a1", name: "Radiohead" };
+    mockReleaseGroupsState = {
+      releaseGroups: [],
+      loading: true,
+      error: null,
+    };
+    renderPage();
+
+    expect(
+      screen.getByRole("heading", { name: "Radiohead" })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("No releases found for this artist.")
+    ).not.toBeInTheDocument();
+    expect(
+      document.querySelectorAll(".animate-shimmer").length
+    ).toBeGreaterThan(0);
+  });
+
+  it("keeps the rest of the page when the discography fails to load", () => {
+    mockState.artist = { mbid: "a1", name: "Radiohead" };
+    mockReleaseGroupsState = {
+      releaseGroups: [],
+      loading: false,
+      error: "Failed to load discography",
+    };
+    mockSimilar = {
+      artists: [{ name: "Muse", mbid: "muse-1", imageUrl: "", match: 0.9 }],
+      loading: false,
+    };
+    renderPage();
+
+    expect(
+      screen.getByRole("heading", { name: "Radiohead" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("We couldn't load this artist's releases.")
+    ).toBeInTheDocument();
+    expect(screen.getByText("Similar artists")).toBeInTheDocument();
   });
 
   it("renders the similar artists section when present", () => {

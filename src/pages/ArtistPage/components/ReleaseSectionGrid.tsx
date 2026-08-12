@@ -1,5 +1,6 @@
 import { useState } from "react";
 import ReleaseGroupCard from "@/components/ReleaseGroupCard";
+import ReleaseGridSkeleton from "./ReleaseGridSkeleton";
 import { ChevronRightIcon } from "@/components/icons";
 import type { ReleaseGroup } from "@/types";
 import type { AlbumLibraryInfo } from "@shared/albumLibrary";
@@ -10,6 +11,7 @@ interface ReleaseSectionGridProps {
   title: string;
   items: ReleaseGroup[];
   defaultExpanded?: boolean;
+  loading?: boolean;
   getAlbumLibrary?: (albumMbid: string) => AlbumLibraryInfo | null;
 }
 
@@ -17,6 +19,7 @@ export default function ReleaseSectionGrid({
   title,
   items,
   defaultExpanded = false,
+  loading = false,
   getAlbumLibrary,
 }: ReleaseSectionGridProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -35,11 +38,12 @@ export default function ReleaseSectionGrid({
           />
           {title}
           <span className="font-normal normal-case tracking-normal text-gray-400 dark:text-gray-500">
-            ({items.length})
+            {loading ? "(…)" : `(${items.length})`}
           </span>
         </button>
       </h2>
-      {expanded && (
+      {expanded && loading && <ReleaseGridSkeleton />}
+      {expanded && !loading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3 sm:gap-4">
           {items.map((rg, index) => (
             <div

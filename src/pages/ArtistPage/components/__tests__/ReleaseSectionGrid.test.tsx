@@ -99,6 +99,19 @@ describe("ReleaseSectionGrid", () => {
     );
   });
 
+  it("shows a placeholder count and skeleton cards while loading", () => {
+    render(
+      <ReleaseSectionGrid title="Albums" items={[]} defaultExpanded loading />
+    );
+
+    expect(
+      screen.getByRole("button", { name: /Albums\s*\(…\)/ })
+    ).toBeInTheDocument();
+    expect(
+      document.querySelectorAll(".animate-shimmer").length
+    ).toBeGreaterThan(0);
+  });
+
   it("rotates the chevron when expanded", async () => {
     const user = userEvent.setup();
     render(<ReleaseSectionGrid title="Albums" items={items} />);

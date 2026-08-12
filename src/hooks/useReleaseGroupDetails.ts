@@ -1,10 +1,9 @@
 import useAsyncData from "./useAsyncData";
 import type { FetchContext } from "./useAsyncData";
-import type { AlbumDetails, ReleaseGroup } from "../types";
+import type { AlbumDetails } from "../types";
 
 interface AlbumDetailsResponse {
   album: AlbumDetails;
-  moreFromArtist: ReleaseGroup[];
 }
 
 async function fetchAlbumDetails({
@@ -26,7 +25,6 @@ export default function useReleaseGroupDetails(mbid: string | undefined) {
 
   return {
     album: data?.album ?? null,
-    moreFromArtist: data?.moreFromArtist ?? [],
     loading,
     error,
   };

@@ -1,18 +1,24 @@
 import { useMemo } from "react";
 import { useParams } from "react-router-dom";
 import useArtistDetails from "@/hooks/useArtistDetails";
+import useArtistReleaseGroups from "@/hooks/useArtistReleaseGroups";
 import useLibraryAlbums from "@/hooks/useLibraryAlbums";
 import useLibraryArtists from "@/hooks/useLibraryArtists";
 import useSimilarArtists from "@/hooks/useSimilarArtists";
 import { groupArtistReleases } from "@/utils/groupArtistReleases";
 import ArtistHeader from "./components/ArtistHeader";
-import ReleaseSectionGrid from "./components/ReleaseSectionGrid";
+import ArtistDiscography from "./components/ArtistDiscography";
 import SimilarArtists from "./components/SimilarArtists";
 import ArtistPageSkeleton from "./components/ArtistPageSkeleton";
 
 export default function ArtistPage() {
   const { mbid } = useParams<{ mbid: string }>();
-  const { artist, releaseGroups, loading, error } = useArtistDetails(mbid);
+  const { artist, loading, error } = useArtistDetails(mbid);
+  const {
+    releaseGroups,
+    loading: releasesLoading,
+    error: releasesError,
+  } = useArtistReleaseGroups(mbid);
   const { getAlbumLibrary } = useLibraryAlbums();
   const { isArtistInLibrary } = useLibraryArtists();
   const { artists: similarArtists, loading: similarLoading } =
@@ -45,21 +51,12 @@ export default function ArtistPage() {
         inLibrary={isArtistInLibrary(mbid ?? "", artist.name)}
       />
 
-      {sections.length === 0 ? (
-        <p className="text-gray-400 dark:text-gray-500 text-sm">
-          No releases found for this artist.
-        </p>
-      ) : (
-        sections.map((section, index) => (
-          <ReleaseSectionGrid
-            key={section.title}
-            title={section.title}
-            items={section.items}
-            defaultExpanded={index === 0}
-            getAlbumLibrary={getAlbumLibrary}
-          />
-        ))
-      )}
+      <ArtistDiscography
+        sections={sections}
+        loading={releasesLoading}
+        error={releasesError}
+        getAlbumLibrary={getAlbumLibrary}
+      />
 
       <SimilarArtists
         artists={similarArtists}

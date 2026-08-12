@@ -16,11 +16,8 @@ describe("useArtistDetails", () => {
     expect(result.current.artist).toBeNull();
   });
 
-  it("loads artist details and release groups", async () => {
-    const payload = {
-      artist: { mbid: "a1", name: "Radiohead" },
-      releaseGroups: [{ id: "rg-1", title: "OK Computer" }],
-    };
+  it("loads artist details", async () => {
+    const payload = { artist: { mbid: "a1", name: "Radiohead" } };
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify(payload), { status: 200 })
     );
@@ -29,7 +26,6 @@ describe("useArtistDetails", () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.artist).toEqual(payload.artist);
-    expect(result.current.releaseGroups).toEqual(payload.releaseGroups);
     expect(vi.mocked(fetch).mock.calls[0][0]).toBe(
       "/api/musicbrainz/artist/a1"
     );
@@ -46,6 +42,5 @@ describe("useArtistDetails", () => {
 
     await waitFor(() => expect(result.current.error).toBe("Artist not found"));
     expect(result.current.artist).toBeNull();
-    expect(result.current.releaseGroups).toEqual([]);
   });
 });

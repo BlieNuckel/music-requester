@@ -1,17 +1,37 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import AlbumPage from "../AlbumPage";
-import type { AlbumDetails, ReleaseGroup } from "@/types";
+import type { AlbumDetails, AlbumLabel, ReleaseGroup } from "@/types";
 
 let mockState: {
   album: AlbumDetails | null;
-  moreFromArtist: ReleaseGroup[];
   loading: boolean;
   error: string | null;
 };
 
+let mockLabelState: { label: AlbumLabel | null; loading: boolean };
+
+let mockReleaseGroupsState: {
+  releaseGroups: ReleaseGroup[];
+  loading: boolean;
+  error: string | null;
+};
+
+let receivedArtistMbid: string | null | undefined;
+
 vi.mock("@/hooks/useReleaseGroupDetails", () => ({
   default: () => mockState,
+}));
+
+vi.mock("@/hooks/useReleaseGroupLabel", () => ({
+  default: () => mockLabelState,
+}));
+
+vi.mock("@/hooks/useArtistReleaseGroups", () => ({
+  default: (artistMbid: string | null | undefined) => {
+    receivedArtistMbid = artistMbid;
+    return mockReleaseGroupsState;
+  },
 }));
 
 vi.mock("@/hooks/useLibraryAlbums", () => ({
@@ -29,11 +49,13 @@ vi.mock("@/hooks/useWantedAlbums", () => ({
 vi.mock("../components/AlbumHeader", () => ({
   default: ({
     album,
+    label,
     inLibrary,
     initialWanted,
     library,
   }: {
     album: AlbumDetails;
+    label?: AlbumLabel | null;
     inLibrary?: boolean;
     initialWanted?: boolean;
     library?: { state: string; available: number; total: number } | null;
@@ -42,6 +64,7 @@ vi.mock("../components/AlbumHeader", () => ({
       data-testid="album-header"
       data-in-library={inLibrary}
       data-wanted={initialWanted}
+      data-label={label?.name ?? "none"}
       data-library-state={library?.state}
       data-track-availability={
         library ? `${library.available}/${library.total}` : undefined
@@ -59,8 +82,20 @@ vi.mock("../components/AlbumTracklist", () => ({
 }));
 
 vi.mock("@/pages/ArtistPage/components/ReleaseSectionGrid", () => ({
-  default: ({ title, items }: { title: string; items: ReleaseGroup[] }) => (
-    <div data-testid="more-from-artist" data-count={items.length}>
+  default: ({
+    title,
+    items,
+    loading,
+  }: {
+    title: string;
+    items: ReleaseGroup[];
+    loading?: boolean;
+  }) => (
+    <div
+      data-testid="more-from-artist"
+      data-count={items.length}
+      data-loading={loading}
+    >
       {title}
       {items.map((rg) => (
         <span key={rg.id}>{rg.title}</span>
@@ -77,7 +112,6 @@ const makeAlbum = (overrides: Partial<AlbumDetails> = {}): AlbumDetails => ({
   firstReleaseDate: "1997-06-16",
   primaryType: "Album",
   secondaryTypes: [],
-  label: null,
   ...overrides,
 });
 
@@ -101,12 +135,14 @@ function renderPage() {
 }
 
 beforeEach(() => {
-  mockState = {
-    album: null,
-    moreFromArtist: [],
+  mockState = { album: null, loading: false, error: null };
+  mockLabelState = { label: null, loading: false };
+  mockReleaseGroupsState = {
+    releaseGroups: [],
     loading: false,
     error: null,
   };
+  receivedArtistMbid = undefined;
 });
 
 describe("AlbumPage", () => {
@@ -143,9 +179,47 @@ describe("AlbumPage", () => {
     expect(header).toHaveAttribute("data-library-state", "partial");
   });
 
+  it("passes the separately loaded label to the header", () => {
+    mockState.album = makeAlbum();
+    mockLabelState = {
+      label: { name: "Parlophone", mbid: "label-1" },
+      loading: false,
+    };
+    renderPage();
+
+    expect(screen.getByTestId("album-header")).toHaveAttribute(
+      "data-label",
+      "Parlophone"
+    );
+  });
+
+  it("renders the header and tracklist while the discography is still loading", () => {
+    mockState.album = makeAlbum();
+    mockReleaseGroupsState = {
+      releaseGroups: [],
+      loading: true,
+      error: null,
+    };
+    renderPage();
+
+    expect(screen.getByTestId("album-header")).toBeInTheDocument();
+    expect(screen.getByTestId("album-tracklist")).toBeInTheDocument();
+    expect(screen.getByTestId("more-from-artist")).toHaveAttribute(
+      "data-loading",
+      "true"
+    );
+  });
+
+  it("looks up more-from-artist by the album's artist MBID", () => {
+    mockState.album = makeAlbum();
+    renderPage();
+
+    expect(receivedArtistMbid).toBe("a1");
+  });
+
   it("renders more-from-artist excluding the current album", () => {
     mockState.album = makeAlbum();
-    mockState.moreFromArtist = [
+    mockReleaseGroupsState.releaseGroups = [
       makeRg("rg-1", "OK Computer"),
       makeRg("rg-2", "Kid A"),
     ];
@@ -158,7 +232,7 @@ describe("AlbumPage", () => {
 
   it("hides more-from-artist when there are no other releases", () => {
     mockState.album = makeAlbum();
-    mockState.moreFromArtist = [];
+    mockReleaseGroupsState.releaseGroups = [];
     renderPage();
 
     expect(screen.queryByTestId("more-from-artist")).not.toBeInTheDocument();

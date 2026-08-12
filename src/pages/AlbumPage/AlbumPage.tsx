@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { useParams } from "react-router-dom";
 import useReleaseGroupDetails from "@/hooks/useReleaseGroupDetails";
+import useReleaseGroupLabel from "@/hooks/useReleaseGroupLabel";
+import useArtistReleaseGroups from "@/hooks/useArtistReleaseGroups";
 import useLibraryAlbums from "@/hooks/useLibraryAlbums";
 import useWantedAlbums from "@/hooks/useWantedAlbums";
 import ReleaseSectionGrid from "@/pages/ArtistPage/components/ReleaseSectionGrid";
@@ -10,14 +12,17 @@ import AlbumPageSkeleton from "./components/AlbumPageSkeleton";
 
 export default function AlbumPage() {
   const { mbid } = useParams<{ mbid: string }>();
-  const { album, moreFromArtist, loading, error } =
-    useReleaseGroupDetails(mbid);
+  const { album, loading, error } = useReleaseGroupDetails(mbid);
+  const { label } = useReleaseGroupLabel(mbid);
+  const { releaseGroups, loading: moreLoading } = useArtistReleaseGroups(
+    album?.artistMbid
+  );
   const { isAlbumInLibrary, getAlbumLibrary } = useLibraryAlbums();
   const { isAlbumWanted } = useWantedAlbums();
 
   const otherReleases = useMemo(
-    () => moreFromArtist.filter((rg) => rg.id !== album?.mbid),
-    [moreFromArtist, album?.mbid]
+    () => releaseGroups.filter((rg) => rg.id !== album?.mbid),
+    [releaseGroups, album?.mbid]
   );
 
   if (loading) return <AlbumPageSkeleton />;
@@ -39,6 +44,7 @@ export default function AlbumPage() {
     <div>
       <AlbumHeader
         album={album}
+        label={label}
         inLibrary={isAlbumInLibrary(album.mbid)}
         initialWanted={isAlbumWanted(album.mbid)}
         library={getAlbumLibrary(album.mbid)}
@@ -46,10 +52,11 @@ export default function AlbumPage() {
 
       <AlbumTracklist albumMbid={album.mbid} artistName={album.artistName} />
 
-      {otherReleases.length > 0 && (
+      {(moreLoading || otherReleases.length > 0) && (
         <ReleaseSectionGrid
           title="More from this artist"
           items={otherReleases}
+          loading={moreLoading}
           getAlbumLibrary={getAlbumLibrary}
         />
       )}

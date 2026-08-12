@@ -16,7 +16,7 @@ describe("useReleaseGroupDetails", () => {
     expect(result.current.album).toBeNull();
   });
 
-  it("loads album details and more-from-artist", async () => {
+  it("loads album details", async () => {
     const payload = {
       album: {
         mbid: "rg-1",
@@ -26,9 +26,7 @@ describe("useReleaseGroupDetails", () => {
         firstReleaseDate: "1997-06-16",
         primaryType: "Album",
         secondaryTypes: [],
-        label: { name: "Parlophone", mbid: "label-1" },
       },
-      moreFromArtist: [{ id: "rg-2", title: "Kid A" }],
     };
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify(payload), { status: 200 })
@@ -38,7 +36,6 @@ describe("useReleaseGroupDetails", () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.album).toEqual(payload.album);
-    expect(result.current.moreFromArtist).toEqual(payload.moreFromArtist);
     expect(vi.mocked(fetch).mock.calls[0][0]).toBe(
       "/api/musicbrainz/album/rg-1"
     );
@@ -55,6 +52,5 @@ describe("useReleaseGroupDetails", () => {
 
     await waitFor(() => expect(result.current.error).toBe("Album not found"));
     expect(result.current.album).toBeNull();
-    expect(result.current.moreFromArtist).toEqual([]);
   });
 });
