@@ -65,7 +65,7 @@ function SearchSkeletons() {
 export default function SearchPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { albums, artists, loading, error, search } = useSearch();
-  const { isAlbumInLibrary } = useLibraryAlbums();
+  const { getAlbumLibrary } = useLibraryAlbums();
   const { isArtistInLibrary } = useLibraryArtists();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -145,7 +145,7 @@ export default function SearchPage() {
                   >
                     <ReleaseGroupCard
                       releaseGroup={rg}
-                      inLibrary={isAlbumInLibrary(rg.id)}
+                      library={getAlbumLibrary(rg.id)}
                     />
                   </div>
                 ))}

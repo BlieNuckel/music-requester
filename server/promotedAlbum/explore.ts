@@ -4,6 +4,7 @@ import { fetchReleaseGroupsForArtist } from "../api/musicbrainz/releaseGroups";
 import { getArtistTopTags } from "../api/lastfm/artists";
 import type { MusicBrainzReleaseGroup } from "../api/musicbrainz/types";
 import type { PromotedAlbumConfig } from "../config";
+import type { AlbumLibraryInfo } from "../../shared/albumLibrary";
 import type {
   SimilarGraphSeed,
   SimilarGraphCandidate,
@@ -25,7 +26,7 @@ type ExploreContext = {
   config: PromotedAlbumConfig;
   recentlyShown: Set<string>;
   artistInLibrary: (artistMbid: string) => boolean;
-  albumInLibrary: (rgMbid: string) => boolean;
+  albumLibrary: (rgMbid: string) => AlbumLibraryInfo | null;
 };
 
 type EvaluatedCandidate = {
@@ -213,6 +214,8 @@ function assembleResult(
     ? "fallback_in_library"
     : "preferred_non_library";
 
+  const library = ctx.albumLibrary(album.id);
+
   const result: ExploreResult = {
     mode: "explore",
     album: {
@@ -225,7 +228,8 @@ function assembleResult(
     },
     seedArtist,
     newGenres,
-    inLibrary: ctx.albumInLibrary(album.id),
+    inLibrary: library !== null,
+    library,
     trace: buildExploreTrace(
       seedArtist,
       seedGenres,

@@ -182,6 +182,7 @@ describe("buildExploreResult", () => {
   };
 
   const notInLibrary = () => false;
+  const noLibraryAlbum = () => null;
 
   it("returns null for an empty graph without any network call", async () => {
     const result = await buildExploreResult({
@@ -189,7 +190,7 @@ describe("buildExploreResult", () => {
       config,
       recentlyShown: new Set(),
       artistInLibrary: notInLibrary,
-      albumInLibrary: notInLibrary,
+      albumLibrary: noLibraryAlbum,
     });
     expect(result).toBeNull();
     expect(mockFetchReleaseGroupsForArtist).not.toHaveBeenCalled();
@@ -215,7 +216,7 @@ describe("buildExploreResult", () => {
       config,
       recentlyShown: new Set(),
       artistInLibrary: notInLibrary,
-      albumInLibrary: notInLibrary,
+      albumLibrary: noLibraryAlbum,
     });
 
     expect(result).toBeNull();
@@ -245,7 +246,7 @@ describe("buildExploreResult", () => {
       config,
       recentlyShown: new Set(),
       artistInLibrary: notInLibrary,
-      albumInLibrary: notInLibrary,
+      albumLibrary: noLibraryAlbum,
     });
 
     expect(result).not.toBeNull();

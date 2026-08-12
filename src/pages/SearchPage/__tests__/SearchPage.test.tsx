@@ -24,8 +24,10 @@ vi.mock("@/hooks/useNavigateToArtist", () => ({
 
 vi.mock("@/hooks/useLibraryAlbums", () => ({
   default: () => ({
-    isAlbumInLibrary: (mbid: string) => libraryAlbumMbids.includes(mbid),
-    getTrackAvailability: () => null,
+    getAlbumLibrary: (mbid: string) =>
+      libraryAlbumMbids.includes(mbid)
+        ? { state: "complete", available: 7, total: 7 }
+        : null,
   }),
 }));
 
@@ -38,12 +40,15 @@ vi.mock("@/hooks/useLibraryArtists", () => ({
 vi.mock("@/components/ReleaseGroupCard", () => ({
   default: ({
     releaseGroup,
-    inLibrary,
+    library,
   }: {
     releaseGroup: { title: string };
-    inLibrary?: boolean;
+    library?: { state: string } | null;
   }) => (
-    <div data-testid="release-card" data-in-library={String(!!inLibrary)}>
+    <div
+      data-testid="release-card"
+      data-library-state={library?.state ?? "none"}
+    >
       {releaseGroup.title}
     </div>
   ),
@@ -154,7 +159,10 @@ describe("SearchPage", () => {
     renderSearchPage("Radiohead");
 
     const cards = screen.getAllByTestId("release-card");
-    expect(cards.map((c) => c.dataset.inLibrary)).toEqual(["true", "false"]);
+    expect(cards.map((c) => c.dataset.libraryState)).toEqual([
+      "complete",
+      "none",
+    ]);
   });
 
   it("marks only the artist results that are in the library", () => {

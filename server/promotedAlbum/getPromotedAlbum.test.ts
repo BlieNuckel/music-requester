@@ -306,6 +306,65 @@ describe("getPromotedAlbum", () => {
     expect(result!.inLibrary).toBe(true);
   });
 
+  it("reports the library state as requested when Lidarr holds no files", async () => {
+    mockLoadArtistWeights.mockResolvedValue(plexArtists);
+    mockGetArtistTopTags.mockResolvedValue(tags);
+    mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
+    mockLidarrGet.mockImplementation((path: string) => {
+      if (path === "/artist") {
+        return Promise.resolve({ ok: true, data: [] });
+      }
+      return Promise.resolve({
+        ok: true,
+        data: ["rg-alb-1", "rg-alb-2"].map((foreignAlbumId) => ({
+          foreignAlbumId,
+          statistics: {
+            trackFileCount: 0,
+            totalTrackCount: 7,
+            percentOfTracks: 0,
+          },
+        })),
+      });
+    });
+
+    const result = await getPromotedAlbum(userId);
+    expect(result!.inLibrary).toBe(true);
+    expect(result!.library).toEqual({
+      state: "requested",
+      available: 0,
+      total: 7,
+    });
+  });
+
+  it("reports the library state as complete when every track has a file", async () => {
+    mockLoadArtistWeights.mockResolvedValue(plexArtists);
+    mockGetArtistTopTags.mockResolvedValue(tags);
+    mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
+    mockLidarrGet.mockImplementation((path: string) => {
+      if (path === "/artist") {
+        return Promise.resolve({ ok: true, data: [] });
+      }
+      return Promise.resolve({
+        ok: true,
+        data: ["rg-alb-1", "rg-alb-2"].map((foreignAlbumId) => ({
+          foreignAlbumId,
+          statistics: {
+            trackFileCount: 7,
+            totalTrackCount: 7,
+            percentOfTracks: 100,
+          },
+        })),
+      });
+    });
+
+    const result = await getPromotedAlbum(userId);
+    expect(result!.library).toEqual({
+      state: "complete",
+      available: 7,
+      total: 7,
+    });
+  });
+
   it("marks inLibrary false when artist is in library but album is not", async () => {
     mockLoadArtistWeights.mockResolvedValue(plexArtists);
     mockGetArtistTopTags.mockResolvedValue(tags);
@@ -323,6 +382,7 @@ describe("getPromotedAlbum", () => {
     const result = await getPromotedAlbum(userId);
     expect(result).not.toBeNull();
     expect(result!.inLibrary).toBe(false);
+    expect(result!.library).toBeNull();
   });
 
   it("returns the cached result within the result-cache TTL", async () => {

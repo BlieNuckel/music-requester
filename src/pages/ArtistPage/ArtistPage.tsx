@@ -13,7 +13,7 @@ import ArtistPageSkeleton from "./components/ArtistPageSkeleton";
 export default function ArtistPage() {
   const { mbid } = useParams<{ mbid: string }>();
   const { artist, releaseGroups, loading, error } = useArtistDetails(mbid);
-  const { isAlbumInLibrary } = useLibraryAlbums();
+  const { getAlbumLibrary } = useLibraryAlbums();
   const { isArtistInLibrary } = useLibraryArtists();
   const { artists: similarArtists, loading: similarLoading } =
     useSimilarArtists(artist?.name, mbid);
@@ -56,7 +56,7 @@ export default function ArtistPage() {
             title={section.title}
             items={section.items}
             defaultExpanded={index === 0}
-            isAlbumInLibrary={isAlbumInLibrary}
+            getAlbumLibrary={getAlbumLibrary}
           />
         ))
       )}

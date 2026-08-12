@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import useHaptics from "@/hooks/useHaptics";
-import { MusicalNoteIcon, CheckIcon } from "@/components/icons";
+import { MusicalNoteIcon } from "@/components/icons";
 import ImageWithShimmer from "@/components/ImageWithShimmer";
+import AlbumLibraryBadge from "@/components/AlbumLibraryBadge";
+import type { AlbumLibraryState } from "@shared/albumLibrary";
 import { formatRelativeReleaseDate } from "@/utils/relativeDate";
 import type { NewReleaseItem, NewReleaseSource } from "@/types";
 
@@ -24,9 +26,18 @@ const SOURCE_DOT_CLASSES: Record<NewReleaseSource, string> = {
 
 const LIDARR_STATUS_LABELS = {
   downloading: "Downloading",
-  wanted: "Wanted",
+  wanted: "Requested, not downloaded",
   imported: "In library",
 } as const;
+
+const LIDARR_STATUS_BADGE_STATES: Record<
+  keyof typeof LIDARR_STATUS_LABELS,
+  AlbumLibraryState
+> = {
+  downloading: "partial",
+  wanted: "requested",
+  imported: "complete",
+};
 
 function cardHref(item: NewReleaseItem): string {
   if (item.releaseGroupMbid) return `/album/${item.releaseGroupMbid}`;
@@ -77,13 +88,11 @@ export default function NewReleaseCard({ item }: NewReleaseCardProps) {
           )}
         </div>
         {item.lidarrStatus && (
-          <span
-            className="absolute bottom-1 right-1 flex items-center justify-center w-5 h-5 bg-amber-300 text-black rounded-full border-2 border-black shadow-cartoon-sm"
-            aria-label={LIDARR_STATUS_LABELS[item.lidarrStatus]}
-            title={LIDARR_STATUS_LABELS[item.lidarrStatus]}
-          >
-            <CheckIcon className="w-3 h-3" />
-          </span>
+          <AlbumLibraryBadge
+            state={LIDARR_STATUS_BADGE_STATES[item.lidarrStatus]}
+            label={LIDARR_STATUS_LABELS[item.lidarrStatus]}
+            className="absolute bottom-1 right-1"
+          />
         )}
       </div>
       <h3 className="mt-2 text-gray-900 dark:text-gray-100 font-medium text-xs truncate">

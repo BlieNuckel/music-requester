@@ -3,14 +3,15 @@ import { Link } from "react-router-dom";
 import ImageWithShimmer from "@/components/ImageWithShimmer";
 import { pastelColorFromId } from "@/utils/color";
 import AlbumActions from "./AlbumActions";
-import type { TrackAvailability } from "@/hooks/useLibraryAlbums";
+import { AlbumLibraryPill } from "@/components/AlbumLibraryBadge";
 import type { AlbumDetails, ReleaseGroup } from "@/types";
+import type { AlbumLibraryInfo } from "@shared/albumLibrary";
 
 interface AlbumHeaderProps {
   album: AlbumDetails;
   inLibrary?: boolean;
   initialWanted?: boolean;
-  trackAvailability?: TrackAvailability | null;
+  library?: AlbumLibraryInfo | null;
 }
 
 function toReleaseGroup(album: AlbumDetails): ReleaseGroup {
@@ -42,7 +43,7 @@ export default function AlbumHeader({
   album,
   inLibrary,
   initialWanted,
-  trackAvailability,
+  library,
 }: AlbumHeaderProps) {
   const [coverError, setCoverError] = useState(false);
   const pastelBg = useMemo(() => pastelColorFromId(album.mbid), [album.mbid]);
@@ -70,11 +71,7 @@ export default function AlbumHeader({
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">
             {album.title}
           </h1>
-          {inLibrary && trackAvailability && (
-            <span className="text-xs bg-amber-300 text-black px-1.5 py-0.5 rounded-full border-2 border-black font-bold shadow-cartoon-sm whitespace-nowrap">
-              {trackAvailability.available}/{trackAvailability.total} tracks
-            </span>
-          )}
+          {library && <AlbumLibraryPill info={library} />}
         </div>
         {album.artistMbid ? (
           <Link

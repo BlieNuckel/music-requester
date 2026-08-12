@@ -2,16 +2,20 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ReleaseSectionGrid from "../ReleaseSectionGrid";
 import type { ReleaseGroup } from "@/types";
+import type { AlbumLibraryInfo } from "@shared/albumLibrary";
 
 vi.mock("@/components/ReleaseGroupCard", () => ({
   default: ({
     releaseGroup,
-    inLibrary,
+    library,
   }: {
     releaseGroup: ReleaseGroup;
-    inLibrary?: boolean;
+    library?: AlbumLibraryInfo | null;
   }) => (
-    <div data-testid={`rg-${releaseGroup.id}`} data-in-library={inLibrary}>
+    <div
+      data-testid={`rg-${releaseGroup.id}`}
+      data-library-state={library?.state ?? "none"}
+    >
       {releaseGroup.title}
     </div>
   ),
@@ -79,17 +83,19 @@ describe("ReleaseSectionGrid", () => {
         title="Albums"
         items={items}
         defaultExpanded
-        isAlbumInLibrary={(mbid) => mbid === "one"}
+        getAlbumLibrary={(mbid: string) =>
+          mbid === "one" ? { state: "requested", available: 0, total: 7 } : null
+        }
       />
     );
 
     expect(screen.getByTestId("rg-one")).toHaveAttribute(
-      "data-in-library",
-      "true"
+      "data-library-state",
+      "requested"
     );
     expect(screen.getByTestId("rg-two")).toHaveAttribute(
-      "data-in-library",
-      "false"
+      "data-library-state",
+      "none"
     );
   });
 

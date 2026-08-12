@@ -131,6 +131,7 @@ vi.mock("../TracksPreviewModal", () => ({
 
 const albumData: PromotedAlbumData = {
   mode: "within_taste",
+  library: null,
   album: {
     name: "OK Computer",
     mbid: "alb-1",
@@ -176,6 +177,7 @@ const albumData: PromotedAlbumData = {
 
 const exploreData: PromotedAlbumData = {
   mode: "explore",
+  library: null,
   album: {
     name: "Blue Album",
     mbid: "rg-jazz-1",

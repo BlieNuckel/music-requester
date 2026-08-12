@@ -1,4 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
+import {
+  deriveAlbumLibraryInfo,
+  type AlbumLibraryInfo,
+} from "@shared/albumLibrary";
 
 type LibraryAlbum = {
   id: number;
@@ -10,11 +14,6 @@ type LibraryAlbum = {
     totalTrackCount: number;
     percentOfTracks: number;
   };
-};
-
-export type TrackAvailability = {
-  available: number;
-  total: number;
 };
 
 export default function useLibraryAlbums() {
@@ -42,13 +41,11 @@ export default function useLibraryAlbums() {
   const isAlbumInLibrary = (albumMbid: string) =>
     libraryAlbumsByMbid.has(albumMbid);
 
-  const getTrackAvailability = (
-    albumMbid: string
-  ): TrackAvailability | null => {
-    const stats = libraryAlbumsByMbid.get(albumMbid)?.statistics;
-    if (!stats || stats.totalTrackCount === 0) return null;
-    return { available: stats.trackFileCount, total: stats.totalTrackCount };
+  const getAlbumLibrary = (albumMbid: string): AlbumLibraryInfo | null => {
+    const album = libraryAlbumsByMbid.get(albumMbid);
+    if (!album) return null;
+    return deriveAlbumLibraryInfo(album.statistics);
   };
 
-  return { isAlbumInLibrary, getTrackAvailability };
+  return { isAlbumInLibrary, getAlbumLibrary };
 }
