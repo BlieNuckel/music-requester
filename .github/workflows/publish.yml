@@ -50,6 +50,24 @@ jobs:
       - name: Test server
         run: pnpm run test:server
 
+  nix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # Builds the flake package, which fails loudly when a dependency bump
+      # leaves nix/package.nix's pnpmDeps hash stale. Without this, the break
+      # only surfaces on a user's nixos-rebuild.
+      - name: Build the Nix package
+        run: nix build .#tunearr --print-build-logs
+
   publish:
     needs: ci
     if: github.event_name != 'pull_request'
