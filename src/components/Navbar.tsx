@@ -8,6 +8,7 @@ import {
   autoUpdate,
 } from "@floating-ui/react-dom";
 import useHaptics from "../hooks/useHaptics";
+import LogoLockup from "./LogoLockup";
 
 const links = [
   { to: "/", label: "Discover" },
@@ -58,47 +59,7 @@ export default function Navbar() {
     <nav className="bg-white border-b-4 border-black">
       <div className="max-w-6xl mx-auto px-4 flex items-center justify-between h-14">
         <NavLink to="/" className="flex items-center gap-2 group">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 32 32"
-            className="w-7 h-7"
-          >
-            <circle
-              cx="16"
-              cy="16"
-              r="14"
-              fill="#FCD34D"
-              stroke="black"
-              strokeWidth="2"
-            />
-            <circle
-              cx="16"
-              cy="16"
-              r="10"
-              fill="none"
-              stroke="black"
-              strokeWidth="1.5"
-            />
-            <circle
-              cx="16"
-              cy="16"
-              r="6"
-              fill="#F472B6"
-              stroke="black"
-              strokeWidth="2"
-            />
-            <circle
-              cx="16"
-              cy="16"
-              r="2"
-              fill="white"
-              stroke="black"
-              strokeWidth="1.5"
-            />
-          </svg>
-          <span className="hidden sm:inline text-lg font-bold text-gray-900 group-hover:text-amber-500 transition-colors">
-            Tunearr
-          </span>
+          <LogoLockup size="sm" wordmarkClassName="hidden sm:inline-block" />
         </NavLink>
 
         <div ref={menuRef}>

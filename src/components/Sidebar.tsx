@@ -10,6 +10,7 @@ import UserAvatar from "@/components/UserAvatar";
 import NotificationBadge from "@/components/NotificationBadge";
 import useUnseenReleaseCount from "@/hooks/useUnseenReleaseCount";
 import { useAuth } from "@/context/useAuth";
+import LogoLockup from "./LogoLockup";
 
 type NavItem = {
   to: string;
@@ -180,47 +181,7 @@ export default function Sidebar() {
       <header className="md:hidden fixed top-0 left-0 right-0 bg-white dark:bg-gray-800 border-b-4 border-black z-40">
         <div className="px-4 py-3 flex items-center justify-between">
           <NavLink to="/" className="flex items-center gap-2 group">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 32 32"
-              className="w-8 h-8 flex-shrink-0"
-            >
-              <circle
-                cx="16"
-                cy="16"
-                r="14"
-                fill="#FCD34D"
-                stroke="black"
-                strokeWidth="2"
-              />
-              <circle
-                cx="16"
-                cy="16"
-                r="10"
-                fill="none"
-                stroke="black"
-                strokeWidth="1.5"
-              />
-              <circle
-                cx="16"
-                cy="16"
-                r="6"
-                fill="#F472B6"
-                stroke="black"
-                strokeWidth="2"
-              />
-              <circle
-                cx="16"
-                cy="16"
-                r="2"
-                fill="white"
-                stroke="black"
-                strokeWidth="1.5"
-              />
-            </svg>
-            <span className="text-xl font-bold text-gray-900 dark:text-gray-100 group-hover:text-amber-500 transition-colors">
-              Tunearr
-            </span>
+            <LogoLockup size="md" />
           </NavLink>
         </div>
       </header>
@@ -229,47 +190,7 @@ export default function Sidebar() {
       <aside className="hidden md:flex w-64 h-screen overflow-y-auto bg-white dark:bg-gray-800 border-r-4 border-black flex-col shrink-0">
         <div className="p-6 border-b-4 border-black">
           <NavLink to="/" className="flex items-center gap-3 group">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 32 32"
-              className="w-10 h-10 flex-shrink-0"
-            >
-              <circle
-                cx="16"
-                cy="16"
-                r="14"
-                fill="#FCD34D"
-                stroke="black"
-                strokeWidth="2"
-              />
-              <circle
-                cx="16"
-                cy="16"
-                r="10"
-                fill="none"
-                stroke="black"
-                strokeWidth="1.5"
-              />
-              <circle
-                cx="16"
-                cy="16"
-                r="6"
-                fill="#F472B6"
-                stroke="black"
-                strokeWidth="2"
-              />
-              <circle
-                cx="16"
-                cy="16"
-                r="2"
-                fill="white"
-                stroke="black"
-                strokeWidth="1.5"
-              />
-            </svg>
-            <span className="text-2xl font-bold text-gray-900 dark:text-gray-100 group-hover:text-amber-500 transition-colors">
-              Tunearr
-            </span>
+            <LogoLockup size="lg" />
           </NavLink>
         </div>
 
