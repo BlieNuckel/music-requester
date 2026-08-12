@@ -14,6 +14,7 @@ import { isPlaceholderArtist } from "../utils/artistFilter";
 import { findUserById } from "../auth/users";
 import { updateExplorationHistory } from "../db/userProfile";
 import type { DerivedProfile } from "../db/entity/UserProfile";
+import { getMonitoredAlbums } from "../services/lidarr/albums";
 import { buildExploreResult } from "./explore";
 import { loadFreshProfile } from "./profileService";
 import type {
@@ -302,9 +303,11 @@ async function loadLibraryMbids(): Promise<{
   let libraryArtistMbids = new Set<string>();
   let libraryAlbums = new Map<string, LidarrAlbum>();
   try {
+    // Lidarr keeps a row for every album in a tracked artist's discography, so
+    // only the monitored ones say anything about what this library holds or wants.
     const [artistResult, albumResult] = await Promise.all([
       lidarrGet<LidarrArtist[]>("/artist"),
-      lidarrGet<LidarrAlbum[]>("/album"),
+      getMonitoredAlbums(),
     ]);
     if (artistResult.ok) {
       libraryArtistMbids = new Set(
