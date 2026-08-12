@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Request, Response, NextFunction } from "express";
 
-const mockGetPromotedAlbum = vi.fn();
+const mockGetPromotedAlbums = vi.fn();
 
 vi.mock("../promotedAlbum/getPromotedAlbum", () => ({
-  getPromotedAlbum: (...args: unknown[]) => mockGetPromotedAlbum(...args),
+  getPromotedAlbums: (...args: unknown[]) => mockGetPromotedAlbums(...args),
 }));
 
 import express from "express";
@@ -33,41 +33,55 @@ beforeEach(() => {
 });
 
 describe("GET /", () => {
-  it("returns promoted album data", async () => {
+  it("returns the promoted album list", async () => {
     const app = express();
     app.use(withUser("plex-token-123"));
     app.use("/", promotedAlbumRouter);
 
-    const data = {
-      album: {
-        name: "OK Computer",
-        mbid: "alb-1",
-        artistName: "Radiohead",
-        artistMbid: "art-1",
-        coverUrl: "https://coverartarchive.org/release-group/alb-1/front-500",
-        year: "1997",
+    const data = [
+      {
+        album: {
+          name: "OK Computer",
+          mbid: "alb-1",
+          artistName: "Radiohead",
+          artistMbid: "art-1",
+          coverUrl: "https://coverartarchive.org/release-group/alb-1/front-500",
+          year: "1997",
+        },
+        tag: "alternative",
+        inLibrary: false,
       },
-      tag: "alternative",
-      inLibrary: false,
-    };
-    mockGetPromotedAlbum.mockResolvedValue(data);
+      {
+        album: {
+          name: "Homogenic",
+          mbid: "alb-2",
+          artistName: "Bjork",
+          artistMbid: "art-2",
+          coverUrl: "https://coverartarchive.org/release-group/alb-2/front-500",
+          year: "1997",
+        },
+        tag: "trip hop",
+        inLibrary: false,
+      },
+    ];
+    mockGetPromotedAlbums.mockResolvedValue(data);
 
     const res = await request(app).get("/");
     expect(res.status).toBe(200);
     expect(res.body).toEqual(data);
-    expect(mockGetPromotedAlbum).toHaveBeenCalledWith(1, false);
+    expect(mockGetPromotedAlbums).toHaveBeenCalledWith(1, false);
   });
 
-  it("returns null when no album found", async () => {
+  it("returns an empty list when no albums are found", async () => {
     const app = express();
     app.use(withUser("plex-token-123"));
     app.use("/", promotedAlbumRouter);
 
-    mockGetPromotedAlbum.mockResolvedValue(null);
+    mockGetPromotedAlbums.mockResolvedValue([]);
 
     const res = await request(app).get("/");
     expect(res.status).toBe(200);
-    expect(res.body).toBeNull();
+    expect(res.body).toEqual([]);
   });
 
   it("forwards refresh param as forceRefresh", async () => {
@@ -75,19 +89,19 @@ describe("GET /", () => {
     app.use(withUser("plex-token-123"));
     app.use("/", promotedAlbumRouter);
 
-    mockGetPromotedAlbum.mockResolvedValue(null);
+    mockGetPromotedAlbums.mockResolvedValue([]);
 
     await request(app).get("/?refresh=true");
-    expect(mockGetPromotedAlbum).toHaveBeenCalledWith(1, true);
+    expect(mockGetPromotedAlbums).toHaveBeenCalledWith(1, true);
   });
 
-  it("returns null without calling service when there is no authenticated user", async () => {
+  it("returns an empty list without calling the service when there is no authenticated user", async () => {
     const app = express();
     app.use("/", promotedAlbumRouter);
 
     const res = await request(app).get("/");
     expect(res.status).toBe(200);
-    expect(res.body).toBeNull();
-    expect(mockGetPromotedAlbum).not.toHaveBeenCalled();
+    expect(res.body).toEqual([]);
+    expect(mockGetPromotedAlbums).not.toHaveBeenCalled();
   });
 });

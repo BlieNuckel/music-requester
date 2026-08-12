@@ -21,6 +21,7 @@ export {
   HandThumbDownIcon as DeclineIcon,
   EllipsisVerticalIcon,
   ArrowLeftIcon,
+  ChevronLeftIcon,
   ChevronRightIcon,
   XMarkIcon,
   DocumentIcon,

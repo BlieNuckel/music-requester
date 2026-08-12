@@ -4,7 +4,7 @@ import type {
   ExploreTrace,
   TraceSelectionReason,
   TraceSimilarArtist,
-} from "@/hooks/usePromotedAlbum";
+} from "@/hooks/usePromotedAlbums";
 import Modal from "@/components/Modal";
 
 interface RecommendationTraceModalProps {

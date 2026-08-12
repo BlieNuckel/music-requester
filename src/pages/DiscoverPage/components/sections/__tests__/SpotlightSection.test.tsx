@@ -3,48 +3,58 @@ import SpotlightSection from "../SpotlightSection";
 
 const mockRefresh = vi.fn();
 
-let mockPromotedAlbum: unknown = null;
+let mockPromotedAlbums: unknown[] = [];
 let mockLoading = false;
 let mockError: string | null = null;
 
-vi.mock("@/hooks/usePromotedAlbum", () => ({
+vi.mock("@/hooks/usePromotedAlbums", () => ({
   default: () => ({
-    promotedAlbum: mockPromotedAlbum,
+    promotedAlbums: mockPromotedAlbums,
     loading: mockLoading,
     error: mockError,
     refresh: mockRefresh,
   }),
 }));
 
-vi.mock("../../PromotedAlbum", () => ({
-  default: ({ loading }: { loading: boolean }) => (
-    <div data-testid="promoted-album">{loading ? "loading" : "loaded"}</div>
+vi.mock("../../PromotedAlbumCarousel", () => ({
+  default: ({ albums, loading }: { albums: unknown[]; loading: boolean }) => (
+    <div data-testid="promoted-album-carousel" data-count={albums.length}>
+      {loading ? "loading" : "loaded"}
+    </div>
   ),
 }));
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockPromotedAlbum = null;
+  mockPromotedAlbums = [];
   mockLoading = false;
   mockError = null;
 });
 
 describe("SpotlightSection", () => {
-  it("renders PromotedAlbum while loading", () => {
+  it("renders the carousel while loading", () => {
     mockLoading = true;
     render(<SpotlightSection onStatusChange={vi.fn()} />);
-    expect(screen.getByTestId("promoted-album")).toBeInTheDocument();
+    expect(screen.getByTestId("promoted-album-carousel")).toBeInTheDocument();
   });
 
-  it("renders PromotedAlbum when data is available", () => {
-    mockPromotedAlbum = { album: { name: "OK Computer" } };
+  it("passes every album through to the carousel", () => {
+    mockPromotedAlbums = [
+      { album: { name: "OK Computer" } },
+      { album: { name: "Homogenic" } },
+    ];
     render(<SpotlightSection onStatusChange={vi.fn()} />);
-    expect(screen.getByTestId("promoted-album")).toBeInTheDocument();
+    expect(screen.getByTestId("promoted-album-carousel")).toHaveAttribute(
+      "data-count",
+      "2"
+    );
   });
 
   it("renders nothing when loaded without data", () => {
     render(<SpotlightSection onStatusChange={vi.fn()} />);
-    expect(screen.queryByTestId("promoted-album")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("promoted-album-carousel")
+    ).not.toBeInTheDocument();
   });
 
   it("reports loading while the hook is loading", () => {
@@ -55,7 +65,7 @@ describe("SpotlightSection", () => {
   });
 
   it("reports ready when data arrives", () => {
-    mockPromotedAlbum = { album: { name: "OK Computer" } };
+    mockPromotedAlbums = [{ album: { name: "OK Computer" } }];
     const onStatusChange = vi.fn();
     render(<SpotlightSection onStatusChange={onStatusChange} />);
     expect(onStatusChange).toHaveBeenCalledWith("ready");

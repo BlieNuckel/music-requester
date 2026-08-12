@@ -92,10 +92,12 @@ export type ExploreResult = {
   trace: ExploreTrace;
 };
 
+export type PromotedAlbumEntry = WithinTasteResult | ExploreResult;
+
 /** A built recommendation plus the key used for cross-shuffle anti-repeat. */
 export type BuiltAlbum = {
-  result: WithinTasteResult | ExploreResult;
+  result: PromotedAlbumEntry;
   rememberKey: string;
 };
 
-export type PromotedAlbumResult = WithinTasteResult | ExploreResult | null;
+export type PromotedAlbumResult = PromotedAlbumEntry | null;

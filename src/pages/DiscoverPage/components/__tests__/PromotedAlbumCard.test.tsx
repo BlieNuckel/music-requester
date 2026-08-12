@@ -1,17 +1,14 @@
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import PromotedAlbum from "../PromotedAlbum";
-import type { PromotedAlbumData } from "@/hooks/usePromotedAlbum";
+import PromotedAlbumCard from "../PromotedAlbumCard";
+import type { PromotedAlbumData } from "@/hooks/usePromotedAlbums";
 
 const mockRequestAlbum = vi.fn();
-const mockReset = vi.fn();
 const mockFetchTracks = vi.fn();
-const mockResetTracks = vi.fn();
 const mockStop = vi.fn();
 const mockToggle = vi.fn();
 const mockAddToWanted = vi.fn();
 const mockRemoveFromWanted = vi.fn();
-const mockResetWanted = vi.fn();
 let mockLidarrState = "idle";
 let mockLidarrError: string | null = null;
 let mockWantedState = "idle";
@@ -21,7 +18,7 @@ vi.mock("@/hooks/useLidarr", () => ({
     state: mockLidarrState,
     errorMsg: mockLidarrError,
     requestAlbum: mockRequestAlbum,
-    reset: mockReset,
+    reset: vi.fn(),
   }),
 }));
 
@@ -31,7 +28,7 @@ vi.mock("@/hooks/useReleaseTracks", () => ({
     loading: false,
     error: null,
     fetchTracks: mockFetchTracks,
-    reset: mockResetTracks,
+    reset: vi.fn(),
   }),
 }));
 
@@ -41,7 +38,7 @@ vi.mock("@/hooks/useWanted", () => ({
     errorMsg: null,
     addToWanted: mockAddToWanted,
     removeFromWanted: mockRemoveFromWanted,
-    reset: mockResetWanted,
+    reset: vi.fn(),
   }),
 }));
 
@@ -218,10 +215,12 @@ const exploreData: PromotedAlbumData = {
   },
 };
 
-const mockRefresh = vi.fn();
-
-function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>);
+function renderCard(data: PromotedAlbumData = albumData) {
+  return render(
+    <MemoryRouter>
+      <PromotedAlbumCard data={data} />
+    </MemoryRouter>
+  );
 }
 
 beforeEach(() => {
@@ -231,11 +230,9 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("PromotedAlbum", () => {
+describe("PromotedAlbumCard", () => {
   it("renders album info", () => {
-    renderWithRouter(
-      <PromotedAlbum data={albumData} loading={false} onRefresh={mockRefresh} />
-    );
+    renderCard();
     expect(screen.getByText("OK Computer")).toBeInTheDocument();
     expect(screen.getByText("Radiohead")).toBeInTheDocument();
     expect(screen.getByText("· 1997")).toBeInTheDocument();
@@ -245,120 +242,45 @@ describe("PromotedAlbum", () => {
   });
 
   it("does not render year separator when year is empty", () => {
-    const noYearData: PromotedAlbumData = {
-      ...albumData,
-      album: { ...albumData.album, year: "" },
-    };
-    renderWithRouter(
-      <PromotedAlbum
-        data={noYearData}
-        loading={false}
-        onRefresh={mockRefresh}
-      />
-    );
+    renderCard({ ...albumData, album: { ...albumData.album, year: "" } });
     expect(screen.getByText("Radiohead")).toBeInTheDocument();
     expect(screen.queryByText(/·/)).not.toBeInTheDocument();
   });
 
   it("links artist name to search page with artist search type", () => {
-    renderWithRouter(
-      <PromotedAlbum data={albumData} loading={false} onRefresh={mockRefresh} />
-    );
+    renderCard();
     const artistLink = screen.getByText("Radiohead").closest("a");
     expect(artistLink).toHaveAttribute("href", "/search?q=Radiohead");
   });
 
   it("renders cover image", () => {
-    renderWithRouter(
-      <PromotedAlbum data={albumData} loading={false} onRefresh={mockRefresh} />
-    );
+    renderCard();
     const img = screen.getByAltText("OK Computer cover");
     expect(img).toHaveAttribute("src", albumData.album.coverUrl);
   });
 
   it("shows pastel fallback on cover error", () => {
-    renderWithRouter(
-      <PromotedAlbum data={albumData} loading={false} onRefresh={mockRefresh} />
-    );
+    renderCard();
     const img = screen.getByAltText("OK Computer cover");
     fireEvent.error(img);
     expect(screen.queryByAltText("OK Computer cover")).not.toBeInTheDocument();
   });
 
-  it("calls onRefresh when shuffle button clicked", () => {
-    vi.useFakeTimers();
-    renderWithRouter(
-      <PromotedAlbum data={albumData} loading={false} onRefresh={mockRefresh} />
-    );
-    fireEvent.click(screen.getByLabelText("Shuffle recommendation"));
-
-    expect(mockRefresh).not.toHaveBeenCalled();
-
-    act(() => {
-      vi.advanceTimersByTime(300);
-    });
-
-    expect(mockRefresh).toHaveBeenCalled();
-
-    vi.useRealTimers();
-  });
-
-  it("resets lidarr state when shuffle button clicked", () => {
-    vi.useFakeTimers();
-    mockLidarrState = "success";
-    renderWithRouter(
-      <PromotedAlbum data={albumData} loading={false} onRefresh={mockRefresh} />
-    );
-    fireEvent.click(screen.getByLabelText("Shuffle recommendation"));
-    expect(mockReset).toHaveBeenCalled();
-    vi.useRealTimers();
-  });
-
-  it("disables shuffle button during animation", () => {
-    vi.useFakeTimers();
-    renderWithRouter(
-      <PromotedAlbum data={albumData} loading={false} onRefresh={mockRefresh} />
-    );
-    const button = screen.getByLabelText("Shuffle recommendation");
-
-    fireEvent.click(button);
-    expect(button).toBeDisabled();
-
-    act(() => {
-      vi.advanceTimersByTime(350);
-    });
-
-    expect(button).not.toBeDisabled();
-
-    vi.useRealTimers();
-  });
-
   it("opens modal on monitor button click", () => {
-    renderWithRouter(
-      <PromotedAlbum data={albumData} loading={false} onRefresh={mockRefresh} />
-    );
+    renderCard();
     fireEvent.click(screen.getByTestId("monitor-button"));
     expect(screen.getByTestId("purchase-modal")).toBeInTheDocument();
   });
 
   it("calls requestAlbum via modal add button", () => {
-    renderWithRouter(
-      <PromotedAlbum data={albumData} loading={false} onRefresh={mockRefresh} />
-    );
+    renderCard();
     fireEvent.click(screen.getByTestId("monitor-button"));
     fireEvent.click(screen.getByText("Request Album"));
     expect(mockRequestAlbum).toHaveBeenCalledWith({ albumMbid: "alb-1" });
   });
 
   it("shows already_monitored state when inLibrary", () => {
-    const inLibraryData = { ...albumData, inLibrary: true };
-    renderWithRouter(
-      <PromotedAlbum
-        data={inLibraryData}
-        loading={false}
-        onRefresh={mockRefresh}
-      />
-    );
+    renderCard({ ...albumData, inLibrary: true });
     expect(screen.getByTestId("monitor-button")).toHaveAttribute(
       "data-state",
       "already_monitored"
@@ -366,92 +288,33 @@ describe("PromotedAlbum", () => {
   });
 
   it("does not open modal when inLibrary is true", () => {
-    const inLibraryData = { ...albumData, inLibrary: true };
-    renderWithRouter(
-      <PromotedAlbum
-        data={inLibraryData}
-        loading={false}
-        onRefresh={mockRefresh}
-      />
-    );
+    renderCard({ ...albumData, inLibrary: true });
     fireEvent.click(screen.getByTestId("monitor-button"));
     expect(screen.queryByTestId("purchase-modal")).not.toBeInTheDocument();
   });
 
   it("closes modal when close button clicked", () => {
-    renderWithRouter(
-      <PromotedAlbum data={albumData} loading={false} onRefresh={mockRefresh} />
-    );
+    renderCard();
     fireEvent.click(screen.getByTestId("monitor-button"));
     expect(screen.getByTestId("purchase-modal")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Close"));
     expect(screen.queryByTestId("purchase-modal")).not.toBeInTheDocument();
   });
 
-  it("renders section heading", () => {
-    renderWithRouter(
-      <PromotedAlbum data={albumData} loading={false} onRefresh={mockRefresh} />
-    );
-    expect(screen.getByText("Recommended for you")).toBeInTheDocument();
-  });
-
-  it("shows skeleton loaders when loading is true with no data", () => {
-    renderWithRouter(
-      <PromotedAlbum data={null} loading={true} onRefresh={mockRefresh} />
-    );
-
-    const skeletons = document.querySelectorAll(
-      ".animate-pulse, .animate-shimmer"
-    );
-    expect(skeletons.length).toBeGreaterThan(0);
-
-    expect(screen.queryByText("OK Computer")).not.toBeInTheDocument();
-  });
-
-  it("shows skeleton loaders when loading is true even with existing data (shuffle)", () => {
-    renderWithRouter(
-      <PromotedAlbum data={albumData} loading={true} onRefresh={mockRefresh} />
-    );
-
-    // Should show skeleton loaders
-    const skeletons = document.querySelectorAll(
-      ".animate-pulse, .animate-shimmer"
-    );
-    expect(skeletons.length).toBeGreaterThan(0);
-
-    // Should not show the old album data
-    expect(screen.queryByText("OK Computer")).not.toBeInTheDocument();
-  });
-
-  it("disables shuffle button when loading", () => {
-    renderWithRouter(
-      <PromotedAlbum data={albumData} loading={true} onRefresh={mockRefresh} />
-    );
-
-    const button = screen.getByLabelText("Shuffle recommendation");
-    expect(button).toBeDisabled();
-  });
-
   it("tag chip is a clickable button", () => {
-    renderWithRouter(
-      <PromotedAlbum data={albumData} loading={false} onRefresh={mockRefresh} />
-    );
+    renderCard();
     const tagChip = screen.getByText("Because you listen to alternative");
     expect(tagChip.tagName).toBe("BUTTON");
   });
 
   it("clicking tag chip opens trace modal", () => {
-    renderWithRouter(
-      <PromotedAlbum data={albumData} loading={false} onRefresh={mockRefresh} />
-    );
+    renderCard();
     fireEvent.click(screen.getByText("Because you listen to alternative"));
     expect(screen.getByTestId("trace-modal")).toBeInTheDocument();
   });
 
   it("closes trace modal when close button clicked", () => {
-    renderWithRouter(
-      <PromotedAlbum data={albumData} loading={false} onRefresh={mockRefresh} />
-    );
+    renderCard();
     fireEvent.click(screen.getByText("Because you listen to alternative"));
     expect(screen.getByTestId("trace-modal")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Close Trace"));
@@ -460,13 +323,7 @@ describe("PromotedAlbum", () => {
 
   describe("explore mode", () => {
     it("shows the 'fans also love' chip instead of the tag chip", () => {
-      renderWithRouter(
-        <PromotedAlbum
-          data={exploreData}
-          loading={false}
-          onRefresh={mockRefresh}
-        />
-      );
+      renderCard(exploreData);
       expect(
         screen.getByText("Fans of Radiohead also love this")
       ).toBeInTheDocument();
@@ -476,24 +333,12 @@ describe("PromotedAlbum", () => {
     });
 
     it("shows the new-genre badge", () => {
-      renderWithRouter(
-        <PromotedAlbum
-          data={exploreData}
-          loading={false}
-          onRefresh={mockRefresh}
-        />
-      );
+      renderCard(exploreData);
       expect(screen.getByText("New genre: jazz")).toBeInTheDocument();
     });
 
     it("clicking the explore chip opens the trace modal", () => {
-      renderWithRouter(
-        <PromotedAlbum
-          data={exploreData}
-          loading={false}
-          onRefresh={mockRefresh}
-        />
-      );
+      renderCard(exploreData);
       fireEvent.click(screen.getByText("Fans of Radiohead also love this"));
       expect(screen.getByTestId("trace-modal")).toBeInTheDocument();
     });
@@ -501,108 +346,45 @@ describe("PromotedAlbum", () => {
 
   describe("wanted", () => {
     it("shows 'Add to wanted' option when not wanted", () => {
-      renderWithRouter(
-        <PromotedAlbum
-          data={albumData}
-          loading={false}
-          onRefresh={mockRefresh}
-        />
-      );
+      renderCard();
       expect(screen.getByText("Add to wanted")).toBeInTheDocument();
     });
 
     it("shows 'Remove from wanted' option when wanted", () => {
       mockWantedState = "wanted";
-      renderWithRouter(
-        <PromotedAlbum
-          data={albumData}
-          loading={false}
-          onRefresh={mockRefresh}
-        />
-      );
+      renderCard();
       expect(screen.getByText("Remove from wanted")).toBeInTheDocument();
     });
 
     it("calls addToWanted with album mbid", () => {
-      renderWithRouter(
-        <PromotedAlbum
-          data={albumData}
-          loading={false}
-          onRefresh={mockRefresh}
-        />
-      );
+      renderCard();
       fireEvent.click(screen.getByText("Add to wanted"));
       expect(mockAddToWanted).toHaveBeenCalledWith("alb-1");
     });
 
     it("calls removeFromWanted with album mbid", () => {
       mockWantedState = "wanted";
-      renderWithRouter(
-        <PromotedAlbum
-          data={albumData}
-          loading={false}
-          onRefresh={mockRefresh}
-        />
-      );
+      renderCard();
       fireEvent.click(screen.getByText("Remove from wanted"));
       expect(mockRemoveFromWanted).toHaveBeenCalledWith("alb-1");
-    });
-
-    it("resets wanted state on shuffle", () => {
-      vi.useFakeTimers();
-      renderWithRouter(
-        <PromotedAlbum
-          data={albumData}
-          loading={false}
-          onRefresh={mockRefresh}
-        />
-      );
-      fireEvent.click(screen.getByLabelText("Shuffle recommendation"));
-      expect(mockResetWanted).toHaveBeenCalled();
-      vi.useRealTimers();
     });
   });
 
   describe("track preview", () => {
-    it("renders preview button when album is loaded", () => {
-      renderWithRouter(
-        <PromotedAlbum
-          data={albumData}
-          loading={false}
-          onRefresh={mockRefresh}
-        />
-      );
+    it("renders preview button", () => {
+      renderCard();
       expect(screen.getByLabelText("Preview tracks")).toBeInTheDocument();
       expect(screen.getByText("Preview")).toBeInTheDocument();
     });
 
-    it("does not render preview button when loading", () => {
-      renderWithRouter(
-        <PromotedAlbum data={null} loading={true} onRefresh={mockRefresh} />
-      );
-      expect(screen.queryByLabelText("Preview tracks")).not.toBeInTheDocument();
-    });
-
     it("fetches tracks when preview button is clicked the first time", () => {
-      renderWithRouter(
-        <PromotedAlbum
-          data={albumData}
-          loading={false}
-          onRefresh={mockRefresh}
-        />
-      );
+      renderCard();
       fireEvent.click(screen.getByLabelText("Preview tracks"));
       expect(mockFetchTracks).toHaveBeenCalledWith("alb-1", "Radiohead");
     });
 
     it("does not re-fetch tracks when already fetched for the same album", () => {
-      renderWithRouter(
-        <PromotedAlbum
-          data={albumData}
-          loading={false}
-          onRefresh={mockRefresh}
-        />
-      );
+      renderCard();
       fireEvent.click(screen.getByLabelText("Preview tracks"));
       expect(mockFetchTracks).toHaveBeenCalledTimes(1);
 
@@ -612,63 +394,18 @@ describe("PromotedAlbum", () => {
     });
 
     it("opens the tracks modal after clicking preview", () => {
-      renderWithRouter(
-        <PromotedAlbum
-          data={albumData}
-          loading={false}
-          onRefresh={mockRefresh}
-        />
-      );
+      renderCard();
       expect(screen.queryByTestId("tracks-modal")).not.toBeInTheDocument();
       fireEvent.click(screen.getByLabelText("Preview tracks"));
       expect(screen.getByTestId("tracks-modal")).toBeInTheDocument();
     });
 
     it("stops audio when closing the tracks modal", () => {
-      renderWithRouter(
-        <PromotedAlbum
-          data={albumData}
-          loading={false}
-          onRefresh={mockRefresh}
-        />
-      );
+      renderCard();
       fireEvent.click(screen.getByLabelText("Preview tracks"));
       fireEvent.click(screen.getByText("Close Tracks"));
       expect(mockStop).toHaveBeenCalled();
       expect(screen.queryByTestId("tracks-modal")).not.toBeInTheDocument();
-    });
-
-    it("stops audio and closes the tracks modal on shuffle", () => {
-      vi.useFakeTimers();
-      renderWithRouter(
-        <PromotedAlbum
-          data={albumData}
-          loading={false}
-          onRefresh={mockRefresh}
-        />
-      );
-      fireEvent.click(screen.getByLabelText("Preview tracks"));
-      expect(screen.getByTestId("tracks-modal")).toBeInTheDocument();
-
-      fireEvent.click(screen.getByLabelText("Shuffle recommendation"));
-      expect(mockStop).toHaveBeenCalled();
-      expect(screen.queryByTestId("tracks-modal")).not.toBeInTheDocument();
-
-      vi.useRealTimers();
-    });
-
-    it("resets track state on shuffle so new album re-fetches", () => {
-      vi.useFakeTimers();
-      renderWithRouter(
-        <PromotedAlbum
-          data={albumData}
-          loading={false}
-          onRefresh={mockRefresh}
-        />
-      );
-      fireEvent.click(screen.getByLabelText("Shuffle recommendation"));
-      expect(mockResetTracks).toHaveBeenCalled();
-      vi.useRealTimers();
     });
   });
 });

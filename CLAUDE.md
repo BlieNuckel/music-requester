@@ -29,7 +29,7 @@ Full-stack TypeScript app: React 19 frontend + Express 5 backend. Vite proxies `
 
 **Frontend (`/src`):** React with React Router DOM, Tailwind CSS v4 for styling. Path aliases: `@/*` maps to `./src/*`, `@shared/*` maps to `./shared/*`. Pages live under `src/pages/` with co-located sub-components and `__tests__/` directories:
 
-- `/` — DiscoverPage (definition-driven bento grid: sections registered in `sections.ts`, arranged by `layout.ts`; includes promoted album spotlight, promoted artists, and the new releases shelf)
+- `/` — DiscoverPage (definition-driven bento grid: sections registered in `sections.ts`, arranged by `layout.ts`; includes the promoted album spotlight carousel, promoted artists, and the new releases shelf)
 - `/search` — SearchPage (MusicBrainz album search)
 - `/artist/:mbid` — ArtistPage (artist details, discography, similar artists, collapsible sections)
 - `/album/:mbid` — AlbumPage (release group details, tracks, purchase/request actions)

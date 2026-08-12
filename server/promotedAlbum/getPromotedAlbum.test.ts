@@ -46,23 +46,25 @@ vi.mock("../config", () => ({
   getConfigValue: (...args: unknown[]) => mockGetConfigValue(...args),
 }));
 
-import { getPromotedAlbum, clearPromotedAlbumCache } from "./getPromotedAlbum";
+import { getPromotedAlbums, clearPromotedAlbumCache } from "./getPromotedAlbum";
 import { initializeDatabase, closeDatabase, getDataSource } from "../db";
 import type { WithinTasteResult, ExploreResult } from "./types";
 
+/** Single-pick view of the carousel batch, so per-selection cases stay readable. */
+async function getOne(userId: number, forceRefresh = false) {
+  const [first] = await getPromotedAlbums(userId, forceRefresh, 1);
+  return first ?? null;
+}
+
 /** Narrows a result to within-taste; the suite forces this via explorationRate: 0. */
-function wt(
-  result: Awaited<ReturnType<typeof getPromotedAlbum>>
-): WithinTasteResult {
+function wt(result: Awaited<ReturnType<typeof getOne>>): WithinTasteResult {
   if (!result || result.mode !== "within_taste") {
     throw new Error("expected a within_taste result");
   }
   return result;
 }
 
-function ex(
-  result: Awaited<ReturnType<typeof getPromotedAlbum>>
-): ExploreResult {
+function ex(result: Awaited<ReturnType<typeof getOne>>): ExploreResult {
   if (!result || result.mode !== "explore") {
     throw new Error("expected an explore result");
   }
@@ -162,7 +164,18 @@ const albumsPage = {
   pagination: { page: 1, totalPages: 5 },
 };
 
-describe("getPromotedAlbum", () => {
+/** Deep enough for a full five-slide carousel plus anti-repeat headroom. */
+const bigAlbumsPage = {
+  albums: Array.from({ length: 8 }, (_, i) => ({
+    name: `Album ${i + 1}`,
+    mbid: `alb-${i + 1}`,
+    artistName: "Radiohead",
+    artistMbid: "art-1",
+  })),
+  pagination: { page: 1, totalPages: 5 },
+};
+
+describe("getPromotedAlbums", () => {
   it("returns a promoted album on happy path with correct shape", async () => {
     mockLoadArtistWeights.mockResolvedValue(plexArtists);
     mockGetArtistTopTags.mockResolvedValue(tags);
@@ -172,7 +185,7 @@ describe("getPromotedAlbum", () => {
       data: [],
     });
 
-    const result = await getPromotedAlbum(userId);
+    const result = await getOne(userId);
     expect(result).not.toBeNull();
     expect(result!.album).toEqual({
       name: expect.any(String),
@@ -201,7 +214,7 @@ describe("getPromotedAlbum", () => {
       )) as { id: number }[]
     )[0].id;
 
-    const result = await getPromotedAlbum(tokenlessId);
+    const result = await getOne(tokenlessId);
     expect(result).toBeNull();
     expect(mockLoadArtistWeights).not.toHaveBeenCalled();
   });
@@ -212,7 +225,7 @@ describe("getPromotedAlbum", () => {
     mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
     mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-    await getPromotedAlbum(userId);
+    await getOne(userId);
 
     expect(mockGetTopAlbumsByTag).toHaveBeenCalledTimes(2);
     const calls = mockGetTopAlbumsByTag.mock.calls;
@@ -225,7 +238,7 @@ describe("getPromotedAlbum", () => {
   it("returns null when Plex has no artists", async () => {
     mockLoadArtistWeights.mockResolvedValue([]);
 
-    const result = await getPromotedAlbum(userId);
+    const result = await getOne(userId);
     expect(result).toBeNull();
   });
 
@@ -236,7 +249,7 @@ describe("getPromotedAlbum", () => {
       { name: "favorites", count: 80 },
     ]);
 
-    const result = await getPromotedAlbum(userId);
+    const result = await getOne(userId);
     expect(result).toBeNull();
   });
 
@@ -244,7 +257,7 @@ describe("getPromotedAlbum", () => {
     mockLoadArtistWeights.mockResolvedValue(plexArtists);
     mockGetArtistTopTags.mockRejectedValue(new Error("API error"));
 
-    const result = await getPromotedAlbum(userId);
+    const result = await getOne(userId);
     expect(result).toBeNull();
   });
 
@@ -259,7 +272,7 @@ describe("getPromotedAlbum", () => {
     });
     mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-    const result = await getPromotedAlbum(userId);
+    const result = await getOne(userId);
     expect(result).toBeNull();
   });
 
@@ -280,7 +293,7 @@ describe("getPromotedAlbum", () => {
     });
     mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-    const result = await getPromotedAlbum(userId);
+    const result = await getOne(userId);
     expect(result!.album.artistName).toBe("Radiohead");
   });
 
@@ -304,7 +317,7 @@ describe("getPromotedAlbum", () => {
       });
     });
 
-    const result = await getPromotedAlbum(userId);
+    const result = await getOne(userId);
     expect(result).not.toBeNull();
     expect(result!.inLibrary).toBe(true);
   });
@@ -331,7 +344,7 @@ describe("getPromotedAlbum", () => {
       });
     });
 
-    const result = await getPromotedAlbum(userId);
+    const result = await getOne(userId);
     expect(result!.inLibrary).toBe(true);
     expect(result!.library).toEqual({
       state: "requested",
@@ -362,7 +375,7 @@ describe("getPromotedAlbum", () => {
       });
     });
 
-    const result = await getPromotedAlbum(userId);
+    const result = await getOne(userId);
     expect(result!.inLibrary).toBe(false);
     expect(result!.library).toBeNull();
   });
@@ -389,7 +402,7 @@ describe("getPromotedAlbum", () => {
       });
     });
 
-    const result = await getPromotedAlbum(userId);
+    const result = await getOne(userId);
     expect(result!.library).toEqual({
       state: "complete",
       available: 7,
@@ -411,7 +424,7 @@ describe("getPromotedAlbum", () => {
       return Promise.resolve({ ok: true, data: [] });
     });
 
-    const result = await getPromotedAlbum(userId);
+    const result = await getOne(userId);
     expect(result).not.toBeNull();
     expect(result!.inLibrary).toBe(false);
     expect(result!.library).toBeNull();
@@ -423,11 +436,11 @@ describe("getPromotedAlbum", () => {
     mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
     mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-    const first = await getPromotedAlbum(userId);
+    const first = await getOne(userId);
     mockLoadArtistWeights.mockClear();
     mockGetTopAlbumsByTag.mockClear();
 
-    const second = await getPromotedAlbum(userId);
+    const second = await getOne(userId);
     expect(second).toEqual(first);
     expect(mockLoadArtistWeights).not.toHaveBeenCalled();
     expect(mockGetTopAlbumsByTag).not.toHaveBeenCalled();
@@ -442,10 +455,10 @@ describe("getPromotedAlbum", () => {
     const userA = await createUserWithToken("user-a-token");
     const userB = await createUserWithToken("user-b-token");
 
-    await getPromotedAlbum(userA);
+    await getOne(userA);
     mockLoadArtistWeights.mockClear();
 
-    await getPromotedAlbum(userB);
+    await getOne(userB);
     expect(mockLoadArtistWeights).toHaveBeenCalledWith(
       expect.any(Number),
       "user-b-token",
@@ -460,11 +473,11 @@ describe("getPromotedAlbum", () => {
     mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
     mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-    await getPromotedAlbum(userId);
+    await getOne(userId);
     mockLoadArtistWeights.mockClear();
     mockGetTopAlbumsByTag.mockClear();
 
-    await getPromotedAlbum(userId, true);
+    await getOne(userId, true);
     expect(mockLoadArtistWeights).not.toHaveBeenCalled();
     expect(mockGetTopAlbumsByTag).toHaveBeenCalled();
   });
@@ -475,7 +488,7 @@ describe("getPromotedAlbum", () => {
     mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
     mockLidarrGet.mockRejectedValue(new Error("Connection refused"));
 
-    const result = await getPromotedAlbum(userId);
+    const result = await getOne(userId);
     expect(result).not.toBeNull();
     expect(result!.inLibrary).toBe(false);
   });
@@ -486,7 +499,7 @@ describe("getPromotedAlbum", () => {
     mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
     mockLidarrGet.mockResolvedValue({ ok: false, status: 500, data: {} });
 
-    const result = await getPromotedAlbum(userId);
+    const result = await getOne(userId);
     expect(result).not.toBeNull();
     expect(result!.inLibrary).toBe(false);
   });
@@ -498,12 +511,12 @@ describe("getPromotedAlbum", () => {
     mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
     mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-    await getPromotedAlbum(userId);
+    await getOne(userId);
     mockLoadArtistWeights.mockClear();
     mockGetTopAlbumsByTag.mockClear();
 
     vi.advanceTimersByTime(31 * 60 * 1000);
-    await getPromotedAlbum(userId);
+    await getOne(userId);
     expect(mockLoadArtistWeights).not.toHaveBeenCalled();
     expect(mockGetTopAlbumsByTag).toHaveBeenCalled();
 
@@ -517,11 +530,11 @@ describe("getPromotedAlbum", () => {
     mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
     mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-    await getPromotedAlbum(userId);
+    await getOne(userId);
     mockLoadArtistWeights.mockClear();
 
     vi.advanceTimersByTime((1440 + 1) * 60 * 1000);
-    await getPromotedAlbum(userId);
+    await getOne(userId);
     expect(mockLoadArtistWeights).toHaveBeenCalled();
 
     vi.useRealTimers();
@@ -538,11 +551,11 @@ describe("getPromotedAlbum", () => {
     mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
     mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-    await getPromotedAlbum(userId);
+    await getOne(userId);
     mockGetTopAlbumsByTag.mockClear();
 
     vi.advanceTimersByTime(6 * 60 * 1000);
-    await getPromotedAlbum(userId);
+    await getOne(userId);
     expect(mockGetTopAlbumsByTag).toHaveBeenCalled();
 
     vi.useRealTimers();
@@ -566,7 +579,7 @@ describe("getPromotedAlbum", () => {
     mockGetTopAlbumsByTag.mockResolvedValue(duplicatedPage);
     mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-    const result = await getPromotedAlbum(userId);
+    const result = await getOne(userId);
     expect(result).not.toBeNull();
     // MBID is converted from release to release-group
     expect(result!.album.mbid).toBe("rg-alb-1");
@@ -579,7 +592,7 @@ describe("getPromotedAlbum", () => {
     mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
     mockGetReleaseGroupIdFromRelease.mockResolvedValue(null);
 
-    const result = await getPromotedAlbum(userId);
+    const result = await getOne(userId);
     expect(result).toBeNull();
   });
 
@@ -590,8 +603,8 @@ describe("getPromotedAlbum", () => {
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-      const first = await getPromotedAlbum(userId);
-      const second = await getPromotedAlbum(userId, true);
+      const first = await getOne(userId);
+      const second = await getOne(userId, true);
 
       expect(first).not.toBeNull();
       expect(second).not.toBeNull();
@@ -604,12 +617,12 @@ describe("getPromotedAlbum", () => {
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-      const first = await getPromotedAlbum(userId);
+      const first = await getOne(userId);
 
       // Simulate a restart: in-memory result cache is gone, DB persists.
       clearPromotedAlbumCache();
 
-      const second = await getPromotedAlbum(userId, true);
+      const second = await getOne(userId, true);
       expect(second!.album.mbid).not.toBe(first!.album.mbid);
     });
 
@@ -622,11 +635,85 @@ describe("getPromotedAlbum", () => {
       });
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-      const first = await getPromotedAlbum(userId);
-      const second = await getPromotedAlbum(userId, true);
+      const first = await getOne(userId);
+      const second = await getOne(userId, true);
 
       expect(first).not.toBeNull();
       expect(second!.album.mbid).toBe(first!.album.mbid);
+    });
+  });
+
+  describe("carousel batch", () => {
+    function mockHappyPath(albums = bigAlbumsPage) {
+      mockLoadArtistWeights.mockResolvedValue(plexArtists);
+      mockGetArtistTopTags.mockResolvedValue(tags);
+      mockGetTopAlbumsByTag.mockResolvedValue(albums);
+      mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
+    }
+
+    it("returns five distinct albums by default", async () => {
+      mockHappyPath();
+
+      const results = await getPromotedAlbums(userId);
+      expect(results).toHaveLength(5);
+      expect(new Set(results.map((r) => r.album.mbid)).size).toBe(5);
+    });
+
+    it("returns the requested number of albums", async () => {
+      mockHappyPath();
+
+      const results = await getPromotedAlbums(userId, false, 3);
+      expect(results).toHaveLength(3);
+    });
+
+    it("returns a shorter batch when the pool cannot fill it", async () => {
+      mockHappyPath(albumsPage);
+
+      const results = await getPromotedAlbums(userId, false, 5);
+      expect(results).toHaveLength(2);
+      expect(new Set(results.map((r) => r.album.mbid)).size).toBe(2);
+    });
+
+    it("returns an empty list when nothing can be built", async () => {
+      mockLoadArtistWeights.mockResolvedValue([]);
+
+      const results = await getPromotedAlbums(userId);
+      expect(results).toEqual([]);
+    });
+
+    it("serves the whole batch from cache on the next call", async () => {
+      mockHappyPath();
+
+      const first = await getPromotedAlbums(userId);
+      mockGetTopAlbumsByTag.mockClear();
+
+      const second = await getPromotedAlbums(userId);
+      expect(second).toEqual(first);
+      expect(mockGetTopAlbumsByTag).not.toHaveBeenCalled();
+    });
+
+    it("rebuilds when the cached batch is smaller than the requested count", async () => {
+      mockHappyPath();
+
+      await getPromotedAlbums(userId, false, 1);
+      mockGetTopAlbumsByTag.mockClear();
+
+      const results = await getPromotedAlbums(userId, false, 4);
+      expect(results).toHaveLength(4);
+      expect(mockGetTopAlbumsByTag).toHaveBeenCalled();
+    });
+
+    it("remembers every album in the batch for anti-repeat", async () => {
+      mockHappyPath();
+
+      const first = await getPromotedAlbums(userId, false, 3);
+      const second = await getPromotedAlbums(userId, true, 3);
+
+      const firstMbids = new Set(first.map((r) => r.album.mbid));
+      expect(second).toHaveLength(3);
+      for (const result of second) {
+        expect(firstMbids.has(result.album.mbid)).toBe(false);
+      }
     });
   });
 
@@ -637,7 +724,7 @@ describe("getPromotedAlbum", () => {
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-      const result = await getPromotedAlbum(userId);
+      const result = await getOne(userId);
       expect(wt(result).trace.plexArtists).toHaveLength(2);
       expect(wt(result).trace.plexArtists.map((a) => a.name)).toEqual([
         "Radiohead",
@@ -651,7 +738,7 @@ describe("getPromotedAlbum", () => {
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-      const result = await getPromotedAlbum(userId);
+      const result = await getOne(userId);
       const picked = wt(result).trace.plexArtists.filter((a) => a.picked);
       expect(picked).toHaveLength(2);
     });
@@ -662,7 +749,7 @@ describe("getPromotedAlbum", () => {
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-      const result = await getPromotedAlbum(userId);
+      const result = await getOne(userId);
       expect(wt(result).trace.chosenTag.name).toBe(wt(result).tag);
     });
 
@@ -672,7 +759,7 @@ describe("getPromotedAlbum", () => {
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-      const result = await getPromotedAlbum(userId);
+      const result = await getOne(userId);
       const { albumPool } = wt(result).trace;
       expect(albumPool.page1Count).toBe(2);
       expect(albumPool.deepPageCount).toBe(2);
@@ -687,7 +774,7 @@ describe("getPromotedAlbum", () => {
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-      const result = await getPromotedAlbum(userId);
+      const result = await getOne(userId);
       expect(result!.trace.selectionReason).toBe("preferred_non_library");
     });
 
@@ -711,7 +798,7 @@ describe("getPromotedAlbum", () => {
         });
       });
 
-      const result = await getPromotedAlbum(userId);
+      const result = await getOne(userId);
       expect(result!.trace.selectionReason).toBe("fallback_in_library");
     });
 
@@ -721,7 +808,7 @@ describe("getPromotedAlbum", () => {
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-      const result = await getPromotedAlbum(userId);
+      const result = await getOne(userId);
       const altTag = wt(result).trace.weightedTags.find(
         (t) => t.name === "alternative"
       );
@@ -737,7 +824,7 @@ describe("getPromotedAlbum", () => {
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-      const result = await getPromotedAlbum(userId);
+      const result = await getOne(userId);
       const radiohead = wt(result).trace.plexArtists.find(
         (a) => a.name === "Radiohead"
       );
@@ -757,7 +844,7 @@ describe("getPromotedAlbum", () => {
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-      await getPromotedAlbum(userId);
+      await getOne(userId);
       expect(mockLoadArtistWeights).toHaveBeenCalledWith(
         expect.any(Number),
         "test-plex-token",
@@ -776,7 +863,7 @@ describe("getPromotedAlbum", () => {
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-      await getPromotedAlbum(userId);
+      await getOne(userId);
       expect(mockLoadArtistWeights).toHaveBeenCalledWith(
         expect.any(Number),
         "test-plex-token",
@@ -795,7 +882,7 @@ describe("getPromotedAlbum", () => {
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-      const result = await getPromotedAlbum(userId);
+      const result = await getOne(userId);
       if (result) {
         expect(wt(result).tag).toBe("rock");
       }
@@ -838,7 +925,7 @@ describe("getPromotedAlbum", () => {
         return Promise.resolve({ ok: true, data: [] });
       });
 
-      const result = await getPromotedAlbum(userId);
+      const result = await getOne(userId);
       expect(result).not.toBeNull();
       expect(result!.trace.selectionReason).toBe("preferred_library");
       expect(result!.album.artistMbid).toBe("lib-art-1");
@@ -854,7 +941,7 @@ describe("getPromotedAlbum", () => {
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-      const result = await getPromotedAlbum(userId);
+      const result = await getOne(userId);
       expect(result).not.toBeNull();
       expect(result!.trace.selectionReason).toBe("no_preference");
     });
@@ -870,7 +957,7 @@ describe("getPromotedAlbum", () => {
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
-      await getPromotedAlbum(userId);
+      await getOne(userId);
       const calls = mockGetTopAlbumsByTag.mock.calls;
       expect(calls[1][1]).toBe("5");
     });
@@ -945,7 +1032,7 @@ describe("getPromotedAlbum", () => {
     it("surfaces a genre-distant album from a similar artist", async () => {
       setupExplore();
 
-      const result = await getPromotedAlbum(userId);
+      const result = await getOne(userId);
       expect(ex(result).mode).toBe("explore");
       expect(ex(result).seedArtist).toBe("Radiohead");
       expect(ex(result).album.name).toBe("Blue Album");
@@ -957,14 +1044,14 @@ describe("getPromotedAlbum", () => {
     it("reports the new genres the seed does not share", async () => {
       setupExplore();
 
-      const result = await getPromotedAlbum(userId);
+      const result = await getOne(userId);
       expect(ex(result).newGenres).toEqual(["jazz", "bebop"]);
     });
 
     it("chooses the genre-distant candidate, not the same-genre one", async () => {
       setupExplore();
 
-      const result = await getPromotedAlbum(userId);
+      const result = await getOne(userId);
       const { candidates, chosenArtist } = ex(result).trace;
       expect(chosenArtist).toBe("Jazz Cat");
 
@@ -981,7 +1068,7 @@ describe("getPromotedAlbum", () => {
       mockGetArtistMbidByName.mockResolvedValue(null);
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
 
-      const result = await getPromotedAlbum(userId);
+      const result = await getOne(userId);
       expect(result!.mode).toBe("within_taste");
     });
 
@@ -990,7 +1077,7 @@ describe("getPromotedAlbum", () => {
       mockGetSimilarArtists.mockResolvedValue([]);
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
 
-      const result = await getPromotedAlbum(userId);
+      const result = await getOne(userId);
       expect(result!.mode).toBe("within_taste");
     });
 
@@ -999,19 +1086,19 @@ describe("getPromotedAlbum", () => {
       mockGetArtistTopTags.mockResolvedValue(genreByArtist["Radiohead"]);
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
 
-      const result = await getPromotedAlbum(userId);
+      const result = await getOne(userId);
       expect(result!.mode).toBe("within_taste");
     });
 
     it("builds the similar graph once at regen, not per explore request", async () => {
       setupExplore();
 
-      await getPromotedAlbum(userId);
+      await getOne(userId);
       expect(mockGetSimilarArtists).toHaveBeenCalled();
       mockGetArtistMbidByName.mockClear();
       mockGetSimilarArtists.mockClear();
 
-      const second = await getPromotedAlbum(userId, true);
+      const second = await getOne(userId, true);
       expect(ex(second).mode).toBe("explore");
       expect(mockGetArtistMbidByName).not.toHaveBeenCalled();
       expect(mockGetSimilarArtists).not.toHaveBeenCalled();
@@ -1030,8 +1117,8 @@ describe("getPromotedAlbum", () => {
         )
       );
 
-      const first = await getPromotedAlbum(userId);
-      const second = await getPromotedAlbum(userId, true);
+      const first = await getOne(userId);
+      const second = await getOne(userId, true);
       expect(ex(first).album.mbid).not.toBe(ex(second).album.mbid);
     });
   });

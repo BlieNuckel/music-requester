@@ -7,18 +7,18 @@ const render = (ui: React.ReactElement) =>
     wrapper: ({ children }) => <MemoryRouter>{children}</MemoryRouter>,
   });
 
-const mockRefreshPromotedAlbum = vi.fn();
+const mockRefreshPromotedAlbums = vi.fn();
 const mockRefreshArtists = vi.fn();
 
-let mockPromotedAlbum: unknown = null;
+let mockPromotedAlbums: unknown[] = [];
 let mockPromotedArtists: unknown = null;
 
-vi.mock("@/hooks/usePromotedAlbum", () => ({
+vi.mock("@/hooks/usePromotedAlbums", () => ({
   default: () => ({
-    promotedAlbum: mockPromotedAlbum,
+    promotedAlbums: mockPromotedAlbums,
     loading: false,
     error: null,
-    refresh: mockRefreshPromotedAlbum,
+    refresh: mockRefreshPromotedAlbums,
   }),
 }));
 
@@ -31,16 +31,18 @@ vi.mock("@/hooks/usePromotedArtists", () => ({
   }),
 }));
 
-vi.mock("../components/PromotedAlbum", () => ({
+vi.mock("../components/PromotedAlbumCarousel", () => ({
   default: ({
-    data,
+    albums,
     onRefresh,
   }: {
-    data: { album: { name: string } };
+    albums: { album: { name: string } }[];
     onRefresh: () => void;
   }) => (
     <div data-testid="promoted-album">
-      <span>{data.album.name}</span>
+      {albums.map((a) => (
+        <span key={a.album.name}>{a.album.name}</span>
+      ))}
       <button onClick={onRefresh}>Refresh Album</button>
     </div>
   ),
@@ -65,7 +67,7 @@ vi.mock("../components/PromotedArtists", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockPromotedAlbum = null;
+  mockPromotedAlbums = [];
   mockPromotedArtists = null;
 });
 
@@ -75,24 +77,24 @@ describe("DiscoverPage", () => {
     expect(screen.getByText("Discover")).toBeInTheDocument();
   });
 
-  it("renders promoted album when data is available", () => {
-    mockPromotedAlbum = { album: { name: "OK Computer" } };
+  it("renders promoted albums when data is available", () => {
+    mockPromotedAlbums = [{ album: { name: "OK Computer" } }];
     render(<DiscoverPage />);
     expect(screen.getByTestId("promoted-album")).toBeInTheDocument();
     expect(screen.getByText("OK Computer")).toBeInTheDocument();
   });
 
-  it("does not render promoted album when data is null", () => {
-    mockPromotedAlbum = null;
+  it("does not render promoted albums when the list is empty", () => {
+    mockPromotedAlbums = [];
     render(<DiscoverPage />);
     expect(screen.queryByTestId("promoted-album")).not.toBeInTheDocument();
   });
 
   it("calls refresh when promoted album refresh clicked", () => {
-    mockPromotedAlbum = { album: { name: "OK Computer" } };
+    mockPromotedAlbums = [{ album: { name: "OK Computer" } }];
     render(<DiscoverPage />);
     fireEvent.click(screen.getByText("Refresh Album"));
-    expect(mockRefreshPromotedAlbum).toHaveBeenCalled();
+    expect(mockRefreshPromotedAlbums).toHaveBeenCalled();
   });
 
   it("renders promoted artists when data is available", () => {
