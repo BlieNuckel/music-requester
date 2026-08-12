@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 124">
+<g transform="translate(0 6) scale(1.08)"><rect width="100" height="100" rx="22.5" fill="#FCD34D" /><circle cx="50" cy="50" r="39" fill="#000000" /><g fill="none" stroke="#FFFFFF" stroke-width="5.1" stroke-linecap="round"><path d="M 17.7 44.3 A 32.8 32.8 0 0 1 75.1 28.9" /><path d="M 72.0 58.0 A 23.4 23.4 0 0 1 34.9 68.0" /></g><circle cx="50" cy="50" r="5.3" fill="#FCD34D" /></g>
+<text x="140" y="84" font-family="Helvetica, Arial, sans-serif" font-size="62" font-weight="bold" fill="#F9FAFB" letter-spacing="-2">Tunearr</text>
+<path d="M 142 100 Q 200 111 336 96" fill="none" stroke="#F472B6" stroke-width="9" stroke-linecap="round" />
+</svg>

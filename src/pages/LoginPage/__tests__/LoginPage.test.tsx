@@ -34,6 +34,7 @@ describe("LoginPage", () => {
     expect(
       screen.getByRole("heading", { name: "Sign in to Tunearr" })
     ).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Tunearr" })).toBeInTheDocument();
     expect(screen.getByLabelText("Username")).toBeInTheDocument();
     expect(screen.getByLabelText("Password")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign In" })).toBeInTheDocument();

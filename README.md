@@ -1,8 +1,9 @@
 <p align="center">
-  <img src="public/favicon.svg" alt="Tunearr" width="80" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/lockup-dark.png" />
+    <img src="docs/brand/lockup-light.png" alt="Tunearr" width="360" />
+  </picture>
 </p>
-
-<h1 align="center">Tunearr</h1>
 
 <p align="center">
   A self-hosted web app for discovering, requesting, and managing music through Lidarr — with multi-user requests, taste-based recommendations, and optional Soulseek integration.

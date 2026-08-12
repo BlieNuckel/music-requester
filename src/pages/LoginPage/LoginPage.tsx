@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { useAuth } from "@/context/useAuth";
 import useHaptics from "@/hooks/useHaptics";
+import LogoLockup from "@/components/LogoLockup";
 
 export default function LoginPage() {
   const { login, plexLogin } = useAuth();
@@ -49,10 +50,14 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-amber-50 dark:bg-gray-900 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
+        <div className="flex justify-center mb-6">
+          <LogoLockup size="lg" />
+        </div>
+
         <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border-2 border-black dark:border-gray-600 shadow-cartoon-lg">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-6 text-center">
-            Sign in to Tunearr
-          </h1>
+          {/* The card's purpose is obvious on screen; keep a heading for
+              assistive tech, which has no such context. */}
+          <h1 className="sr-only">Sign in to Tunearr</h1>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
