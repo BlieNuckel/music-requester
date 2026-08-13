@@ -3,8 +3,10 @@ import { isPlaceholderArtist } from "../utils/artistFilter";
 import {
   ingestUserTrackPlays,
   latestRatings,
+  reconstructAlbumTrackCounts,
   reconstructPlayCounts,
   reconstructTrackPlayCounts,
+  rollupToArtistCatalogue,
   rollupToArtists,
 } from "../services/profile/signalIngestion";
 import type {
@@ -28,6 +30,8 @@ export type ArtistWeight = {
   distributionFactor?: number;
   ratingBreadth?: number;
   ratingMultiplier?: number;
+  /** Tracks the library holds by this artist; absent until a catalogue capture has run. */
+  availableTracks?: number;
 };
 
 /**
@@ -63,6 +67,19 @@ type JoinedRating = {
 
 type RatingTotals = { weighted: number; weight: number; offTopWeight: number };
 
+/** Everything the one-hit discount weighs an artist against, all keyed by artist name. */
+export type DistributionEvidence = {
+  distributions: Map<string, ArtistPlayRollup>;
+  ratings: Map<string, ArtistRatingSignal>;
+  availability: Map<string, number>;
+};
+
+export type DistributionOptions = {
+  distributionWeight: number;
+  minPlays: number;
+  minAvailableTracks: number;
+};
+
 /**
  * Play weights plus the window they were actually measured over: `windowStart` is null when
  * the series was too shallow (or the window empty) and the weights fell back to all-time.
@@ -79,6 +96,7 @@ export type ArtistWeightOptions = {
   ratingWeight: number;
   distributionWeight: number;
   minPlaysForDistribution: number;
+  minAvailableTracksForDistribution: number;
   now?: number;
 };
 
@@ -225,24 +243,33 @@ export function deriveArtistDistributions(
  * Without that term the two multipliers model the same question and pull the same direction
  * whichever track is starred.
  *
+ * Artists whose library catalogue is `minAvailableTracks` or smaller are exempt outright:
+ * played-only data cannot tell an artist the library holds one track by from an artist whose
+ * other eleven tracks were never played, and only the second deserves a discount. Without a
+ * catalogue capture the artist is simply absent from `availability` and the discount applies
+ * as before.
+ *
  * `distributionWeight` of `0` is a no-op, so the correction is switchable from settings.
  * Artists below `minPlays` are left alone — at a handful of plays `topTrackShare` is noise,
  * not concentration — as are artists with no track-level data at all.
  */
 export function applyDistributionFactor(
   plays: ArtistWeight[],
-  distributions: Map<string, ArtistPlayRollup>,
-  ratings: Map<string, ArtistRatingSignal>,
-  distributionWeight: number,
-  minPlays: number
+  evidence: DistributionEvidence,
+  options: DistributionOptions
 ): ArtistWeight[] {
+  const { distributionWeight, minPlays, minAvailableTracks } = options;
   if (distributionWeight === 0) return plays;
 
   return plays.map((play) => {
-    const dist = distributions.get(play.name);
+    const available = evidence.availability.get(play.name);
+    const dist = evidence.distributions.get(play.name);
     if (!dist || dist.playCount < minPlays || dist.playCount <= 0) return play;
+    if (available !== undefined && available <= minAvailableTracks) {
+      return { ...play, availableTracks: available };
+    }
 
-    const signal = ratings.get(play.name);
+    const signal = evidence.ratings.get(play.name);
     const topTrackShare = dist.topTrackPlayCount / dist.playCount;
     const distributionFactor =
       1 - distributionWeight * topTrackShare * (1 - (signal?.breadth ?? 0));
@@ -253,8 +280,46 @@ export function applyDistributionFactor(
       topTrackShare,
       distributionFactor,
       ...(signal ? { ratingBreadth: signal.breadth } : {}),
+      ...(available !== undefined ? { availableTracks: available } : {}),
     };
   });
+}
+
+/**
+ * How many tracks the library holds per artist, from the catalogue capture, floored by what
+ * the other two series already prove exists: every track ever seen played, plus every rated
+ * track absent from the play fold (`getRatedItems` filters on rating, not on plays, so a
+ * rated-but-unplayed track is proof of a track the play sweep never fetched).
+ *
+ * The floor matters because it needs no capture at all — it covers the window before the
+ * first album walk runs, and any artist the walk missed. Both sources can only push the
+ * count up, and a higher count only ever means *fewer* exemptions, so an over-estimate
+ * degrades to the pre-existing behaviour rather than to a wrong one.
+ */
+export function deriveTrackAvailability(
+  albumEvents: UserSignalEvent[],
+  tracks: Map<string, TrackPlayState>,
+  ratingEvents: UserSignalEvent[]
+): Map<string, number> {
+  const available = rollupToArtistCatalogue(
+    reconstructAlbumTrackCounts(albumEvents, Infinity)
+  );
+
+  const known = new Map<string, number>();
+  for (const track of tracks.values()) {
+    if (!track.artistName) continue;
+    known.set(track.artistName, (known.get(track.artistName) ?? 0) + 1);
+  }
+  for (const payload of latestRatings(ratingEvents).values()) {
+    if (payload.kind !== "track" || payload.rating <= 0) continue;
+    if (!payload.artist || tracks.has(payload.ratingKey)) continue;
+    known.set(payload.artist, (known.get(payload.artist) ?? 0) + 1);
+  }
+
+  for (const [name, count] of known) {
+    available.set(name, Math.max(available.get(name) ?? 0, count));
+  }
+  return available;
 }
 
 /** Album `ratingKey` → the plays its tracks hold, so an album rating joins onto listening. */
@@ -412,6 +477,7 @@ export async function loadArtistWeights(
     ratingWeight,
     distributionWeight,
     minPlaysForDistribution,
+    minAvailableTracksForDistribution,
   } = options;
   const now = options.now ?? Date.now();
 
@@ -422,21 +488,35 @@ export async function loadArtistWeights(
     trackEvents = await getSignalEvents(userId, "plex_track_plays");
   }
 
+  const ratingEvents = await getSignalEvents(userId, "plex_rating");
+  const albumEvents = await getSignalEvents(userId, "plex_album_tracks");
+
   const plays = derivePlayWeights(trackEvents, legacyEvents, now, windowMs);
   const trackPlays = deriveWindowedTrackPlays(trackEvents, plays.windowStart);
+  const allTimeTracks = reconstructTrackPlayCounts(trackEvents, Infinity);
   const distributions = deriveArtistDistributions(trackPlays);
   const ratings = aggregateArtistRatings(
-    await getSignalEvents(userId, "plex_rating"),
+    ratingEvents,
     trackPlays,
     distributions
   );
 
   const spread = applyDistributionFactor(
     plays.weights,
-    distributions,
-    ratings,
-    distributionWeight,
-    minPlaysForDistribution
+    {
+      distributions,
+      ratings,
+      availability: deriveTrackAvailability(
+        albumEvents,
+        allTimeTracks,
+        ratingEvents
+      ),
+    },
+    {
+      distributionWeight,
+      minPlays: minPlaysForDistribution,
+      minAvailableTracks: minAvailableTracksForDistribution,
+    }
   );
   return applyRatingMultiplier(spread, ratings, ratingWeight).filter(
     (weight) => !isPlaceholderArtist(weight.name)

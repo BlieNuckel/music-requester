@@ -273,4 +273,44 @@ describe("RecommendationTraceModal", () => {
       expect(screen.queryByTestId("artist-rating")).not.toBeInTheDocument();
     });
   });
+
+  describe("catalogue exemption", () => {
+    it("shows the library track count for an exempted artist", () => {
+      renderModal({
+        plexArtists: [
+          {
+            name: "Singles Only",
+            viewCount: 50,
+            picked: true,
+            tagContributions: [],
+            availableTracks: 1,
+          },
+        ],
+      });
+
+      expect(screen.getByTestId("artist-catalogue")).toHaveTextContent(
+        "1 in library"
+      );
+    });
+
+    it("omits it for an artist that was discounted anyway", () => {
+      renderModal({
+        plexArtists: [
+          {
+            name: "Deep Catalogue",
+            viewCount: 50,
+            picked: true,
+            tagContributions: [],
+            distinctTracksPlayed: 1,
+            topTrackShare: 1,
+            distributionFactor: 0.5,
+            availableTracks: 12,
+          },
+        ],
+      });
+
+      expect(screen.queryByTestId("artist-catalogue")).not.toBeInTheDocument();
+      expect(screen.getByTestId("artist-spread")).toBeInTheDocument();
+    });
+  });
 });

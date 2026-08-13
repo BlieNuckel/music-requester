@@ -264,6 +264,15 @@ export default function RecommendationsSection({
         step={1}
         description="Artists below this many plays in the trend window keep their full weight — at a handful of plays, how they're spread is noise rather than a preference."
       />
+      <NumberField
+        label="Small Catalogue Exemption"
+        value={config.minAvailableTracksForDistribution}
+        onChange={(v) => update("minAvailableTracksForDistribution", v)}
+        min={0}
+        max={50}
+        step={1}
+        description="Artists with this many tracks or fewer in your library keep their full weight — playing one of their two tracks isn't a one-hit habit, there was nothing else to play. 0 turns the exemption off."
+      />
 
       <NumberField
         label="Top Artists Count"

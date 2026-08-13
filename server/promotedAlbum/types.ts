@@ -26,6 +26,8 @@ export type TraceArtistEntry = {
   /** Absent for artists with nothing rated. */
   ratingBreadth?: number;
   ratingMultiplier?: number;
+  /** Absent until a catalogue capture has run for this user. */
+  availableTracks?: number;
 };
 
 export type TraceWeightedTag = {

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const mockGetRatedItems = vi.fn();
 const mockGetItemRating = vi.fn();
 const mockGetAllTrackPlayCounts = vi.fn();
+const mockGetAllAlbumTrackCounts = vi.fn();
 
 vi.mock("../../api/plex/ratings", () => ({
   getRatedItems: (...args: unknown[]) => mockGetRatedItems(...args),
@@ -12,21 +13,30 @@ vi.mock("../../api/plex/trackPlayCounts", () => ({
   getAllTrackPlayCounts: (...args: unknown[]) =>
     mockGetAllTrackPlayCounts(...args),
 }));
+vi.mock("../../api/plex/albumTrackCounts", () => ({
+  getAllAlbumTrackCounts: (...args: unknown[]) =>
+    mockGetAllAlbumTrackCounts(...args),
+}));
 
 import {
   latestRatings,
   diffRatings,
   detectUnratings,
-  playsDue,
+  captureDue,
   reconstructPlayCounts,
   reconstructTrackPlayCounts,
   rollupToArtists,
   rollupToAlbums,
+  reconstructAlbumTrackCounts,
+  rollupToArtistCatalogue,
   ingestUserRatings,
   ingestUserTrackPlays,
+  ingestUserAlbumTracks,
   type PlexRatingPayload,
+  type PlexAlbumTracksPayload,
   type PlexTrackPlaysPayload,
   type TrackPlayState,
+  type AlbumTrackState,
 } from "./signalIngestion";
 import { initializeDatabase, closeDatabase, getDataSource } from "../../db";
 import { getSignalEvents } from "../../db/userProfile";
@@ -425,6 +435,138 @@ describe("rollupToArtists with a baseline", () => {
   });
 });
 
+function albumState(
+  ratingKey: string,
+  artistName: string,
+  trackCount: number,
+  overrides: Partial<AlbumTrackState> = {}
+): AlbumTrackState {
+  return {
+    ratingKey,
+    title: `alb${ratingKey}`,
+    artistKey: `ak-${artistName}`,
+    artistName,
+    trackCount,
+    ...overrides,
+  };
+}
+
+function albumTracksEvent(
+  albums: AlbumTrackState[],
+  recordedAt: string
+): UserSignalEvent {
+  return {
+    id: 0,
+    user_id: 1,
+    kind: "plex_album_tracks",
+    payload: JSON.stringify({ albums } satisfies PlexAlbumTracksPayload),
+    recorded_at: recordedAt,
+  } as UserSignalEvent;
+}
+
+describe("reconstructAlbumTrackCounts", () => {
+  it("folds deltas last-write-wins and carries unchanged albums forward", () => {
+    const albums = reconstructAlbumTrackCounts(
+      [
+        albumTracksEvent(
+          [albumState("1", "A", 10), albumState("2", "A", 5)],
+          "2026-01-01T00:00:00.000Z"
+        ),
+        albumTracksEvent(
+          [albumState("1", "A", 12)],
+          "2026-02-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+    expect(albums.get("1")?.trackCount).toBe(12);
+    expect(albums.get("2")?.trackCount).toBe(5);
+  });
+
+  it("ignores events recorded after the cutoff", () => {
+    const albums = reconstructAlbumTrackCounts(
+      [
+        albumTracksEvent(
+          [albumState("1", "A", 10)],
+          "2026-01-01T00:00:00.000Z"
+        ),
+        albumTracksEvent(
+          [albumState("1", "A", 12)],
+          "2026-03-01T00:00:00.000Z"
+        ),
+      ],
+      Date.parse("2026-02-01T00:00:00.000Z")
+    );
+    expect(albums.get("1")?.trackCount).toBe(10);
+  });
+});
+
+describe("rollupToArtistCatalogue", () => {
+  it("sums an artist's albums into one track count", () => {
+    const albums = reconstructAlbumTrackCounts(
+      [
+        albumTracksEvent(
+          [
+            albumState("1", "A", 10),
+            albumState("2", "A", 4),
+            albumState("3", "B", 1),
+          ],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+    const catalogue = rollupToArtistCatalogue(albums);
+    expect(catalogue.get("A")).toBe(14);
+    expect(catalogue.get("B")).toBe(1);
+  });
+
+  it("groups by artistKey, keeping a renamed artist as one bucket", () => {
+    const albums = reconstructAlbumTrackCounts(
+      [
+        albumTracksEvent(
+          [
+            albumState("1", "Old", 6, { artistKey: "k1" }),
+            albumState("2", "New", 4, { artistKey: "k1" }),
+          ],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+    expect(rollupToArtistCatalogue(albums).get("Old")).toBe(10);
+  });
+
+  it("keeps the larger catalogue when two artists share a name", () => {
+    const albums = reconstructAlbumTrackCounts(
+      [
+        albumTracksEvent(
+          [
+            albumState("1", "Nova", 3, { artistKey: "k1" }),
+            albumState("2", "Nova", 9, { artistKey: "k2" }),
+          ],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+    expect(rollupToArtistCatalogue(albums).get("Nova")).toBe(9);
+  });
+
+  it("drops albums with no artist attribution at all", () => {
+    const albums = reconstructAlbumTrackCounts(
+      [
+        albumTracksEvent(
+          [albumState("1", "", 5, { artistKey: "" })],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+    expect(rollupToArtistCatalogue(albums).size).toBe(0);
+  });
+});
+
 describe("rollupToAlbums", () => {
   it("sums track plays per album", () => {
     const tracks = reconstructTrackPlayCounts(
@@ -481,24 +623,24 @@ describe("detectUnratings", () => {
   });
 });
 
-describe("playsDue", () => {
+describe("captureDue", () => {
   const now = Date.parse("2026-06-28T12:00:00.000Z");
   const day = 24 * 60 * 60 * 1000;
 
   it("is due when no plays capture exists", () => {
-    expect(playsDue([], now, day)).toBe(true);
+    expect(captureDue([], now, day)).toBe(true);
   });
 
   it("is not due when the last plays capture is within the interval", () => {
     const recent = {
       recorded_at: "2026-06-28T06:00:00.000Z",
     } as UserSignalEvent;
-    expect(playsDue([recent], now, day)).toBe(false);
+    expect(captureDue([recent], now, day)).toBe(false);
   });
 
   it("is due when the last plays capture is older than the interval", () => {
     const old = { recorded_at: "2026-06-26T06:00:00.000Z" } as UserSignalEvent;
-    expect(playsDue([old], now, day)).toBe(true);
+    expect(captureDue([old], now, day)).toBe(true);
   });
 });
 
@@ -588,6 +730,48 @@ describe("ingestion (with DB)", () => {
     expect(delta.tracks.map((t) => [t.ratingKey, t.playCount])).toEqual([
       ["1", 30],
     ]);
+  });
+
+  it("writes a catalogue capture, then nothing when nothing changed", async () => {
+    mockGetAllAlbumTrackCounts.mockResolvedValue([
+      {
+        ratingKey: "alb1",
+        title: "Prologue",
+        artistKey: "art1",
+        artistName: "Andromedik",
+        trackCount: 11,
+      },
+    ]);
+
+    await ingestUserAlbumTracks(1, "tok");
+    await ingestUserAlbumTracks(1, "tok");
+
+    const events = await getSignalEvents(1, "plex_album_tracks");
+    expect(events).toHaveLength(1);
+    const payload = JSON.parse(events[0].payload) as PlexAlbumTracksPayload;
+    expect(payload.albums[0].trackCount).toBe(11);
+  });
+
+  it("records a track count that went down as well as up", async () => {
+    const album = {
+      ratingKey: "alb1",
+      title: "Prologue",
+      artistKey: "art1",
+      artistName: "Andromedik",
+      trackCount: 11,
+    };
+    mockGetAllAlbumTrackCounts.mockResolvedValueOnce([album]);
+    await ingestUserAlbumTracks(1, "tok");
+    mockGetAllAlbumTrackCounts.mockResolvedValueOnce([
+      { ...album, trackCount: 9 },
+    ]);
+
+    await ingestUserAlbumTracks(1, "tok");
+
+    const events = await getSignalEvents(1, "plex_album_tracks");
+    expect(events).toHaveLength(2);
+    const payload = JSON.parse(events[1].payload) as PlexAlbumTracksPayload;
+    expect(payload.albums[0].trackCount).toBe(9);
   });
 
   it("writes nothing when no count increased", async () => {

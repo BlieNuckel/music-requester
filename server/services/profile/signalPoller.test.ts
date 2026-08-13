@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const mockGetConfigValue = vi.fn();
 const mockGetRatedItems = vi.fn();
 const mockGetAllTrackPlayCounts = vi.fn();
+const mockGetAllAlbumTrackCounts = vi.fn();
 
 vi.mock("../../config", () => ({
   getConfigValue: (...args: unknown[]) => mockGetConfigValue(...args),
@@ -13,6 +14,10 @@ vi.mock("../../api/plex/ratings", () => ({
 vi.mock("../../api/plex/trackPlayCounts", () => ({
   getAllTrackPlayCounts: (...args: unknown[]) =>
     mockGetAllTrackPlayCounts(...args),
+}));
+vi.mock("../../api/plex/albumTrackCounts", () => ({
+  getAllAlbumTrackCounts: (...args: unknown[]) =>
+    mockGetAllAlbumTrackCounts(...args),
 }));
 
 import { runSignalIngestionOnce } from "./signalPoller";
@@ -53,6 +58,15 @@ beforeEach(async () => {
       viewCount: 120,
     },
   ]);
+  mockGetAllAlbumTrackCounts.mockResolvedValue([
+    {
+      ratingKey: "alb1",
+      title: "Prologue",
+      artistKey: "art1",
+      artistName: "Andromedik",
+      trackCount: 11,
+    },
+  ]);
 });
 afterEach(async () => {
   vi.clearAllMocks();
@@ -69,6 +83,9 @@ describe("runSignalIngestionOnce", () => {
     for (const userId of [1, 2]) {
       expect(await getSignalEvents(userId, "plex_rating")).toHaveLength(1);
       expect(await getSignalEvents(userId, "plex_track_plays")).toHaveLength(1);
+      expect(await getSignalEvents(userId, "plex_album_tracks")).toHaveLength(
+        1
+      );
     }
   });
 
@@ -98,6 +115,34 @@ describe("runSignalIngestionOnce", () => {
     await runSignalIngestionOnce();
 
     expect(await getSignalEvents(1, "plex_track_plays")).toHaveLength(1);
+  });
+
+  it("does not walk the catalogue again within the weekly interval", async () => {
+    await createUser("alice", "tok-a");
+
+    await runSignalIngestionOnce();
+    await runSignalIngestionOnce(Date.now() + 2 * 24 * 60 * 60 * 1000);
+
+    expect(await getSignalEvents(1, "plex_album_tracks")).toHaveLength(1);
+    expect(mockGetAllAlbumTrackCounts).toHaveBeenCalledTimes(1);
+  });
+
+  it("walks the catalogue again once the interval has passed", async () => {
+    await createUser("alice", "tok-a");
+
+    await runSignalIngestionOnce();
+    mockGetAllAlbumTrackCounts.mockResolvedValue([
+      {
+        ratingKey: "alb1",
+        title: "Prologue",
+        artistKey: "art1",
+        artistName: "Andromedik",
+        trackCount: 12,
+      },
+    ]);
+    await runSignalIngestionOnce(Date.now() + 8 * 24 * 60 * 60 * 1000);
+
+    expect(await getSignalEvents(1, "plex_album_tracks")).toHaveLength(2);
   });
 
   it("isolates per-user failures so the sweep continues", async () => {

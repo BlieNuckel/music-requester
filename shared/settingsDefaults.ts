@@ -32,6 +32,7 @@ export type PromotedAlbumSettings = {
   ratingWeight: number;
   distributionWeight: number;
   minPlaysForDistribution: number;
+  minAvailableTracksForDistribution: number;
 };
 
 export type PurchaseDecisionSettings = {
@@ -78,6 +79,7 @@ export const DEFAULT_PROMOTED_ALBUM: PromotedAlbumSettings = {
   ratingWeight: 0.5,
   distributionWeight: 0.5,
   minPlaysForDistribution: 5,
+  minAvailableTracksForDistribution: 3,
 };
 
 export const DEFAULT_PURCHASE_DECISION: PurchaseDecisionSettings = {

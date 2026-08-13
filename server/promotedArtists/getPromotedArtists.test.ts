@@ -75,6 +75,7 @@ const baseConfig: PromotedAlbumConfig = {
   ratingWeight: 0.5,
   distributionWeight: 0,
   minPlaysForDistribution: 5,
+  minAvailableTracksForDistribution: 0,
 };
 
 const TOP_ARTISTS = [
@@ -144,6 +145,7 @@ describe("getPromotedArtists", () => {
       ratingWeight: 0.5,
       distributionWeight: 0,
       minPlaysForDistribution: 5,
+      minAvailableTracksForDistribution: 0,
     });
   });
 

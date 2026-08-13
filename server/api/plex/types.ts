@@ -36,6 +36,27 @@ export type PlexTracksResponse = {
   };
 };
 
+/**
+ * An album row from a section listing. `leafCount` is Plex's track count for the album;
+ * `childCount` is carried as a fallback because which of the two a given PMS version
+ * populates on a section listing is not guaranteed.
+ */
+export type PlexAlbumMetadata = {
+  ratingKey: string;
+  title: string;
+  leafCount?: number;
+  childCount?: number;
+  parentRatingKey?: string;
+  parentTitle?: string;
+};
+
+export type PlexAlbumsResponse = {
+  MediaContainer: {
+    totalSize?: number;
+    Metadata?: PlexAlbumMetadata[];
+  };
+};
+
 export type PlexHistoryMetadata = {
   grandparentTitle?: string;
   grandparentThumb?: string;

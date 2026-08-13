@@ -193,6 +193,12 @@ function validatePositiveInt(value: unknown, name: string) {
   }
 }
 
+function validateNonNegativeInt(value: unknown, name: string) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new Error(`${name} must be a non-negative integer`);
+  }
+}
+
 function validateRatio(value: unknown, name: string) {
   if (typeof value !== "number" || value < 0 || value > 1) {
     throw new Error(`${name} must be a number between 0 and 1`);
@@ -251,6 +257,10 @@ function validatePromotedAlbumConfig(config: PromotedAlbumConfig) {
   validatePositiveInt(
     config.minPlaysForDistribution,
     "minPlaysForDistribution"
+  );
+  validateNonNegativeInt(
+    config.minAvailableTracksForDistribution,
+    "minAvailableTracksForDistribution"
   );
   if (typeof config.ratingWeight !== "number" || config.ratingWeight < 0) {
     throw new Error("ratingWeight must be a non-negative number");

@@ -163,6 +163,7 @@ const defaultPromotedAlbumConfig: PromotedAlbumConfig = {
   ratingWeight: 0.5,
   distributionWeight: 0,
   minPlaysForDistribution: 5,
+  minAvailableTracksForDistribution: 0,
 };
 
 let userId: number;
