@@ -38,6 +38,8 @@ export async function runProfileRegenOnce(now = Date.now()): Promise<void> {
     const candidates = await getProfileRegenCandidates();
 
     let regenerated = 0;
+    // Deliberately serial: each regen fans out to Plex and Last.fm, so running users
+    // concurrently would burst both rate limiters for no gain on a background sweep.
     for (const candidate of candidates) {
       if (isProfileFresh(candidate.profile, config, now)) continue;
       const lastUsed = Date.parse(candidate.profile.last_used_at);

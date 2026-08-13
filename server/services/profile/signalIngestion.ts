@@ -3,7 +3,7 @@ import {
   getAllTrackPlayCounts,
   type TrackPlayCount,
 } from "../../api/plex/trackPlayCounts";
-import { appendSignalEvent, getSignalEvents } from "../../db/userProfile";
+import { appendSignalEvents, getSignalEvents } from "../../db/userProfile";
 import { createLogger } from "../../logger";
 import type { UserSignalEvent } from "../../db/entity/UserSignalEvent";
 import type { PlexRatedItem } from "../../api/plex/types";
@@ -81,6 +81,51 @@ const MAX_TRACKS_PER_EVENT = 2000;
  */
 const UNRATE_CANDIDATE_CAP = 50;
 
+/** Parallel per-item Plex reads while confirming un-ratings. */
+const UNRATE_CONFIRM_CONCURRENCY = 5;
+
+/**
+ * Fold an append-only event series into keyed state, last-write-wins.
+ *
+ * REQUIRES the series in the order it was written, oldest first — which is what
+ * `getSignalEvents` returns (`ORDER BY recorded_at, id`). Order carries two meanings
+ * here: a later event overwrites an earlier one for the same key, and the scan stops
+ * at the first event past `cutoffMs`. Hand this an unordered series and it silently
+ * returns wrong state rather than failing, so don't.
+ *
+ * A payload that won't parse is skipped and counted; a systematically malformed write
+ * would otherwise degrade profiles with nothing in the logs to explain it.
+ */
+function foldEvents<TPayload, TValue>(
+  events: UserSignalEvent[],
+  cutoffMs: number,
+  entries: (payload: TPayload) => Iterable<[string, TValue]>,
+  label: string
+): Map<string, TValue> {
+  const state = new Map<string, TValue>();
+  let unparsed = 0;
+
+  for (const event of events) {
+    if (Date.parse(event.recorded_at) > cutoffMs) break;
+    let payload: TPayload;
+    try {
+      payload = JSON.parse(event.payload) as TPayload;
+    } catch {
+      unparsed += 1;
+      continue;
+    }
+    if (!payload) continue;
+    for (const [key, value] of entries(payload)) {
+      state.set(key, value);
+    }
+  }
+
+  if (unparsed > 0) {
+    log.warn(`Skipped ${unparsed} unparsable ${label} event(s)`);
+  }
+  return state;
+}
+
 /**
  * Latest known rating per `ratingKey`, replayed from the append-only `plex_rating`
  * log. Events arrive oldest-first, so a later write overwrites an earlier one.
@@ -88,18 +133,15 @@ const UNRATE_CANDIDATE_CAP = 50;
 export function latestRatings(
   events: UserSignalEvent[]
 ): Map<string, PlexRatingPayload> {
-  const map = new Map<string, PlexRatingPayload>();
-  for (const event of events) {
-    try {
-      const payload = JSON.parse(event.payload) as PlexRatingPayload;
-      if (payload && typeof payload.ratingKey === "string") {
-        map.set(payload.ratingKey, payload);
-      }
-    } catch {
-      continue;
-    }
-  }
-  return map;
+  return foldEvents<PlexRatingPayload, PlexRatingPayload>(
+    events,
+    Infinity,
+    (payload) =>
+      typeof payload.ratingKey === "string"
+        ? [[payload.ratingKey, payload]]
+        : [],
+    "plex_rating"
+  );
 }
 
 /**
@@ -149,10 +191,31 @@ export function detectUnratings(
 }
 
 /**
+ * Confirm one candidate against live Plex. A per-item read guards against the
+ * `userRating>=1` filter quirk (an un-starred item simply vanishes, indistinguishable
+ * from a glitch). Null means "don't record a clear for this one" — either Plex still
+ * reports a rating, or the confirmation read failed and we'd rather skip than guess.
+ */
+async function confirmUnrating(
+  plexToken: string,
+  previous: Map<string, PlexRatingPayload>,
+  ratingKey: string
+): Promise<PlexRatingPayload | null> {
+  let liveRating: number | null;
+  try {
+    liveRating = await getItemRating(plexToken, ratingKey);
+  } catch {
+    return null;
+  }
+  if (liveRating !== null && liveRating > 0) return null;
+
+  const prior = previous.get(ratingKey);
+  return prior ? { ...prior, rating: 0 } : null;
+}
+
+/**
  * Confirm each candidate un-rating against live Plex and append a `rating = 0` clear
- * for the genuinely-unrated ones. A per-item read guards against the `userRating>=1`
- * filter quirk (an un-starred item simply vanishes, indistinguishable from a glitch);
- * a failed confirm skips that candidate rather than recording a false clear.
+ * for the genuinely-unrated ones, as one batched write.
  */
 async function recordUnratings(
   userId: number,
@@ -160,21 +223,20 @@ async function recordUnratings(
   previous: Map<string, PlexRatingPayload>,
   candidates: string[]
 ): Promise<number> {
-  let written = 0;
-  for (const ratingKey of candidates) {
-    let liveRating: number | null;
-    try {
-      liveRating = await getItemRating(plexToken, ratingKey);
-    } catch {
-      continue;
-    }
-    if (liveRating !== null && liveRating > 0) continue;
-    const prior = previous.get(ratingKey);
-    if (!prior) continue;
-    await appendSignalEvent(userId, "plex_rating", { ...prior, rating: 0 });
-    written += 1;
+  const clears: PlexRatingPayload[] = [];
+
+  // Capped rather than fully parallel: these are per-item reads against the user's
+  // own Plex server, and the candidate list can be UNRATE_CANDIDATE_CAP long.
+  for (let i = 0; i < candidates.length; i += UNRATE_CONFIRM_CONCURRENCY) {
+    const batch = candidates.slice(i, i + UNRATE_CONFIRM_CONCURRENCY);
+    const confirmed = await Promise.all(
+      batch.map((ratingKey) => confirmUnrating(plexToken, previous, ratingKey))
+    );
+    clears.push(...confirmed.filter((clear) => clear !== null));
   }
-  return written;
+
+  await appendSignalEvents(userId, "plex_rating", clears);
+  return clears.length;
 }
 
 /**
@@ -190,9 +252,7 @@ export async function ingestUserRatings(
   const current = await getRatedItems(plexToken);
   const previous = latestRatings(await getSignalEvents(userId, "plex_rating"));
   const changes = diffRatings(previous, current);
-  for (const change of changes) {
-    await appendSignalEvent(userId, "plex_rating", change);
-  }
+  await appendSignalEvents(userId, "plex_rating", changes);
 
   let removals = 0;
   if (current.length > 0) {
@@ -219,19 +279,15 @@ export function reconstructPlayCounts(
   events: UserSignalEvent[],
   cutoffMs: number
 ): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const event of events) {
-    if (Date.parse(event.recorded_at) > cutoffMs) break;
-    try {
-      const payload = JSON.parse(event.payload) as PlexPlaysPayload;
-      for (const artist of payload.artists ?? []) {
-        counts.set(artist.name, artist.playCount);
-      }
-    } catch {
-      continue;
-    }
-  }
-  return counts;
+  return foldEvents<PlexPlaysPayload, number>(
+    events,
+    cutoffMs,
+    (payload) =>
+      (payload.artists ?? []).map(
+        (artist) => [artist.name, artist.playCount] as [string, number]
+      ),
+    "plex_plays"
+  );
 }
 
 /**
@@ -244,21 +300,15 @@ export function reconstructTrackPlayCounts(
   events: UserSignalEvent[],
   cutoffMs: number
 ): Map<string, TrackPlayState> {
-  const tracks = new Map<string, TrackPlayState>();
-  for (const event of events) {
-    if (Date.parse(event.recorded_at) > cutoffMs) break;
-    try {
-      const payload = JSON.parse(event.payload) as PlexTrackPlaysPayload;
-      for (const track of payload.tracks ?? []) {
-        if (track && typeof track.ratingKey === "string") {
-          tracks.set(track.ratingKey, track);
-        }
-      }
-    } catch {
-      continue;
-    }
-  }
-  return tracks;
+  return foldEvents<PlexTrackPlaysPayload, TrackPlayState>(
+    events,
+    cutoffMs,
+    (payload) =>
+      (payload.tracks ?? [])
+        .filter((track) => track && typeof track.ratingKey === "string")
+        .map((track) => [track.ratingKey, track] as [string, TrackPlayState]),
+    "plex_track_plays"
+  );
 }
 
 /**
@@ -361,14 +411,13 @@ export async function ingestUserTrackPlays(
   );
   if (changed.length === 0) return;
 
+  const chunks: PlexTrackPlaysPayload[] = [];
   for (let i = 0; i < changed.length; i += MAX_TRACKS_PER_EVENT) {
-    const tracks = changed
-      .slice(i, i + MAX_TRACKS_PER_EVENT)
-      .map(toTrackPlayState);
-    await appendSignalEvent(userId, "plex_track_plays", {
-      tracks,
-    } satisfies PlexTrackPlaysPayload);
+    chunks.push({
+      tracks: changed.slice(i, i + MAX_TRACKS_PER_EVENT).map(toTrackPlayState),
+    });
   }
+  await appendSignalEvents(userId, "plex_track_plays", chunks);
 }
 
 /** Whether a new plays capture is due — true when none exists or the last is older than the interval. */

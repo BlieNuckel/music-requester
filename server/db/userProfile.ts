@@ -181,6 +181,30 @@ export async function appendSignalEvent(
   return repo.save(entity);
 }
 
+/**
+ * Append many events of one kind in a single insert. Rows share a `recorded_at`, and
+ * `getSignalEvents` breaks that tie on `id`, so insertion order is preserved on read —
+ * which is what the last-write-wins folds depend on.
+ */
+export async function appendSignalEvents(
+  userId: number,
+  kind: string,
+  payloads: unknown[]
+): Promise<void> {
+  if (payloads.length === 0) return;
+
+  const repo = getDataSource().getRepository(UserSignalEvent);
+  const recordedAt = new Date().toISOString();
+  await repo.insert(
+    payloads.map((payload) => ({
+      user_id: userId,
+      kind,
+      payload: JSON.stringify(payload),
+      recorded_at: recordedAt,
+    }))
+  );
+}
+
 /** A persisted profile paired with its owner's Plex token, for background regeneration. */
 export type ProfileRegenCandidate = {
   userId: number;
