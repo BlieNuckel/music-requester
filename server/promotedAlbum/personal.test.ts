@@ -15,9 +15,11 @@ import {
   buildPersonalResult,
   collectCandidates,
   eligibleAlbums,
+  preferredPool,
   withinTastePool,
   type PersonalContext,
 } from "./personal";
+import { preferenceRule } from "./preference";
 
 const config = {
   genreOverlapThreshold: 0.15,
@@ -162,6 +164,46 @@ describe("withinTastePool", () => {
     const { pool, widened } = withinTastePool(candidates, 0.15);
     expect(pool).toHaveLength(1);
     expect(widened).toBe(true);
+  });
+});
+
+describe("preferredPool", () => {
+  const owned = { ...nearNeighbour, name: "Owned", artistMbid: "mbid-owned" };
+  const inLibrary = (mbid: string) => mbid === "mbid-owned";
+
+  it("keeps only the artists the user does not own under prefer_new", () => {
+    const candidates = collectCandidates([
+      seed("Slowdive", 100, ["shoegaze"], [owned, nearNeighbour]),
+    ]);
+    const { pool, relaxed } = preferredPool(
+      candidates,
+      preferenceRule("prefer_new", inLibrary)
+    );
+    expect(pool.map((c) => c.candidate.name)).toEqual(["Near Band"]);
+    expect(relaxed).toBe(false);
+  });
+
+  it("keeps the owned artists under prefer_library", () => {
+    const candidates = collectCandidates([
+      seed("Slowdive", 100, ["shoegaze"], [owned, nearNeighbour]),
+    ]);
+    const { pool } = preferredPool(
+      candidates,
+      preferenceRule("prefer_library", inLibrary)
+    );
+    expect(pool.map((c) => c.candidate.name)).toEqual(["Owned"]);
+  });
+
+  it("relaxes rather than emptying when every neighbour is on the wrong side", () => {
+    const candidates = collectCandidates([
+      seed("Slowdive", 100, ["shoegaze"], [owned]),
+    ]);
+    const { pool, relaxed } = preferredPool(
+      candidates,
+      preferenceRule("prefer_new", inLibrary)
+    );
+    expect(pool).toHaveLength(1);
+    expect(relaxed).toBe(true);
   });
 });
 
@@ -318,7 +360,14 @@ describe("buildPersonalResult", () => {
     expect(mockFetchReleaseGroupsForArtist).toHaveBeenCalledTimes(2);
   });
 
-  it("tries the non-library neighbour first under prefer_new", async () => {
+  it("never draws an artist the user already owns under prefer_new", async () => {
+    const owned = Array.from({ length: 5 }, (_, i) => ({
+      ...nearNeighbour,
+      name: `Owned ${i}`,
+      artistMbid: `mbid-owned-${i}`,
+      score: 1,
+    }));
+
     const built = await buildPersonalResult(
       context({
         similarGraph: [
@@ -326,10 +375,29 @@ describe("buildPersonalResult", () => {
             "Slowdive",
             100,
             ["shoegaze", "dream pop"],
-            [
-              { ...nearNeighbour, name: "Owned", artistMbid: "mbid-owned" },
-              nearNeighbour,
-            ]
+            [...owned, { ...nearNeighbour, score: 0.01 }]
+          ),
+        ],
+        artistInLibrary: (mbid) => mbid.startsWith("mbid-owned"),
+      })
+    );
+
+    const result = personal(built);
+    expect(result.album.artistName).toBe("Near Band");
+    expect(result.trace.selectionReason).toBe("preferred_non_library");
+    expect(result.trace.relaxedPreference).toBe(false);
+    expect(mockFetchReleaseGroupsForArtist).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to owned neighbours rather than returning nothing", async () => {
+    const built = await buildPersonalResult(
+      context({
+        similarGraph: [
+          seed(
+            "Slowdive",
+            100,
+            ["shoegaze", "dream pop"],
+            [{ ...nearNeighbour, name: "Owned", artistMbid: "mbid-owned" }]
           ),
         ],
         artistInLibrary: (mbid) => mbid === "mbid-owned",
@@ -337,9 +405,9 @@ describe("buildPersonalResult", () => {
     );
 
     const result = personal(built);
-    expect(result.album.artistName).toBe("Near Band");
-    expect(result.trace.selectionReason).toBe("preferred_non_library");
-    expect(mockFetchReleaseGroupsForArtist).toHaveBeenCalledTimes(1);
+    expect(result.album.artistName).toBe("Owned");
+    expect(result.trace.relaxedPreference).toBe(true);
+    expect(result.trace.selectionReason).toBe("fallback_in_library");
   });
 
   it("spends one unit of the shared budget per neighbour tried", async () => {

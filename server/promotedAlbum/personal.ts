@@ -11,7 +11,7 @@ import { isPlaceholderArtist } from "../utils/artistFilter";
 import { weightedRandomPick, shuffle, type Rng } from "../utils/random";
 import { jaccard } from "./explore";
 import { normalizeAlbumKey } from "./knownAlbums";
-import { preferenceRule, orderByPreference } from "./preference";
+import { preferenceRule } from "./preference";
 import type { PreferenceRule } from "./preference";
 import type {
   BuiltAlbum,
@@ -121,6 +121,29 @@ export function withinTastePool(
 }
 
 /**
+ * The neighbours this band is actually about: the ones on the preferred side of the library
+ * line. Ordering the walk by preference — which this replaces — cannot help when the draw
+ * itself never surfaced an unowned neighbour, and for a user who owns most of their graph
+ * every draw comes back owned, so "adjacent to your taste and you don't have it" quietly
+ * stops happening. Filtering before the draw is what makes the library line load-bearing
+ * rather than a tiebreak among whatever three artists the weights happened to pick.
+ *
+ * Falls back to the whole pool when the preferred side is empty, and the trace records it —
+ * a recommendation the user already owns beats no recommendation.
+ */
+export function preferredPool(
+  pool: PersonalCandidate[],
+  rule: PreferenceRule
+): { pool: PersonalCandidate[]; relaxed: boolean } {
+  const preferred = pool.filter((c) =>
+    rule.isPreferred(c.candidate.artistMbid)
+  );
+  return preferred.length > 0
+    ? { pool: preferred, relaxed: false }
+    : { pool, relaxed: true };
+}
+
+/**
  * A candidate artist's albums worth recommending: a release type that is an album rather than
  * a live/remix/compilation package, dated, and not one this user already listens to. The type
  * filter is wider than explore's `primary-type === "Album"` on purpose — an EP by an artist
@@ -193,7 +216,7 @@ function assembleResult(
   pool: PersonalCandidate[],
   chosen: PersonalCandidate,
   album: MusicBrainzReleaseGroup,
-  widened: boolean,
+  bands: { widened: boolean; relaxed: boolean },
   rule: PreferenceRule
 ): BuiltAlbum {
   const sharedGenres = [...chosen.genres].filter((g) =>
@@ -211,7 +234,8 @@ function assembleResult(
     chosenArtist: chosen.candidate.name,
     chosenGenres: [...chosen.genres],
     sharedGenres,
-    widened,
+    widened: bands.widened,
+    relaxedPreference: bands.relaxed,
     selectionReason,
   };
 
@@ -261,23 +285,32 @@ export async function buildPersonalResult(
     candidates,
     ctx.config.genreOverlapThreshold
   );
-  const drawn = weightedRandomPick(pool, (c) => c.weight, ARTIST_ATTEMPTS, rng);
   const rule = preferenceRule(
     ctx.config.libraryPreference,
     ctx.artistInLibrary
   );
+  const { pool: drawable, relaxed } = preferredPool(pool, rule);
+  const drawn = weightedRandomPick(
+    drawable,
+    (c) => c.weight,
+    ARTIST_ATTEMPTS,
+    rng
+  );
 
-  for (const chosen of orderByPreference(
-    drawn,
-    (c) => c.candidate.artistMbid,
-    rule
-  )) {
+  for (const chosen of drawn) {
     if (ctx.budget && ctx.budget.remaining <= 0) break;
     if (ctx.budget) ctx.budget.remaining -= 1;
 
     const album = await pickAlbumFor(chosen, ctx, rng);
     if (album) {
-      return assembleResult(ctx, pool, chosen, album, widened, rule);
+      return assembleResult(
+        ctx,
+        drawable,
+        chosen,
+        album,
+        { widened, relaxed },
+        rule
+      );
     }
   }
 

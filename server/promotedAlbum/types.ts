@@ -94,6 +94,8 @@ export type PersonalTrace = {
   sharedGenres: string[];
   /** True when no neighbour was close enough and the pool fell back to the whole graph. */
   widened: boolean;
+  /** True when every close neighbour was on the wrong side of the library preference. */
+  relaxedPreference: boolean;
   selectionReason: TraceSelectionReason;
 };
 

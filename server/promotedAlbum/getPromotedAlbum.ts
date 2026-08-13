@@ -422,16 +422,18 @@ function buildPersonal(
 }
 
 /**
- * One recommendation: explore first when the coin says so, then the user's own graph, and
- * the genre's global album chart only when neither produced anything. The tag path is the
- * fallback rather than the default because it knows nothing about this user past one tag
- * string — but it is also the only source that works before a graph exists, so it stays.
+ * One recommendation: a genre jump when this slot is an explore slot, then the adjacent band
+ * off the user's own graph, and the genre's global album chart only when neither produced
+ * anything. The tag path is the fallback rather than the default because it knows nothing
+ * about this user past one tag string — but it is also the only source that works before a
+ * graph exists, so it stays.
  */
 async function buildOnePick(
   ctx: PickContext,
-  excluded: Set<string>
+  excluded: Set<string>,
+  explore: boolean
 ): Promise<BuiltAlbum | null> {
-  if (ctx.rng() < ctx.config.explorationRate) {
+  if (explore) {
     const explored = await buildExplore(ctx, excluded);
     if (explored) return explored;
   }
@@ -443,9 +445,24 @@ async function buildOnePick(
 }
 
 /**
- * Build up to `count` distinct recommendations in one pass. Every pick re-rolls
- * the explore/within-taste coin and adds its album to the exclusion set, so the
- * carousel spans several tags instead of repeating one pool.
+ * How many of this build's picks attempt a genre jump. `explorationRate` used to be a coin
+ * re-flipped per pick, which let a five-album carousel come back all jumps or none by chance;
+ * as a quota over the build it is the proportion it reads as, and every carousel spans both
+ * bands. The fractional remainder stays a coin so the dial still means something for a single
+ * pick.
+ */
+function exploreSlots(rate: number, count: number, rng: Rng): number {
+  const exact = Math.min(1, Math.max(0, rate)) * count;
+  const whole = Math.floor(exact);
+  return whole + (rng() < exact - whole ? 1 : 0);
+}
+
+/**
+ * Build up to `count` distinct recommendations in one pass. The explore slots are allocated
+ * up front rather than re-rolled per pick, and every pick adds its album to the exclusion
+ * set, so the carousel spans both bands instead of repeating one pool. A slot is spent when
+ * its attempt is made: an explore slot that yields nothing falls through to the adjacent band
+ * rather than making every later attempt retry the same empty graph corner.
  */
 async function buildPicks(
   ctx: PickContext,
@@ -456,13 +473,17 @@ async function buildPicks(
   const excluded = new Set(recentlyShown);
   const pickedAlbums = new Set<string>();
   const attemptLimit = count + PICK_ATTEMPT_SLACK;
+  let exploresLeft = exploreSlots(ctx.config.explorationRate, count, ctx.rng);
 
   for (
     let attempt = 0;
     attempt < attemptLimit && picks.length < count;
     attempt += 1
   ) {
-    const built = await buildOnePick(ctx, excluded);
+    const explore = exploresLeft > 0;
+    if (explore) exploresLeft -= 1;
+
+    const built = await buildOnePick(ctx, excluded, explore);
     if (!built) continue;
 
     excluded.add(built.rememberKey);

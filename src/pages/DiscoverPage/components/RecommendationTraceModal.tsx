@@ -355,6 +355,15 @@ function SharedGenresStage({ trace }: { trace: PersonalTrace }) {
           No close-enough neighbour, so the whole graph was considered.
         </p>
       )}
+      {trace.relaxedPreference && (
+        <p
+          data-testid="personal-relaxed"
+          className="mt-2 text-[11px] text-gray-500 dark:text-gray-400 italic"
+        >
+          Every neighbour here was on the wrong side of your library preference,
+          so it was set aside for this pick.
+        </p>
+      )}
     </StageCard>
   );
 }

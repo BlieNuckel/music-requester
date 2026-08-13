@@ -364,14 +364,14 @@ export default function RecommendationsSection({
           label="Exploration mix"
           value={config.explorationRate}
           onChange={(v) => update("explorationRate", v)}
-          description="How often a recommendation breaks out of your usual genres (similar vibe, different genre) instead of staying within your taste. 0% never explores; 100% always tries."
+          description="What share of each set of recommendations breaks out of your usual genres (similar vibe, different genre) rather than staying next to what you already play. 40% of five recommendations means two genre jumps every time, not a coin flip per album. 0% never explores; 100% always tries."
         />
 
         <PercentField
           label="Genre difference threshold"
           value={config.genreOverlapThreshold}
           onChange={(v) => update("genreOverlapThreshold", v)}
-          description="Maximum genre overlap a similar artist may share with the seed to still count as 'different genre'. Lower means stricter — more distant genres only."
+          description="Where the line between the two bands falls: a similar artist sharing less genre overlap than this counts as a genre jump, and one sharing more is treated as next to your taste. Nothing is discarded either way — lower means the jumps land further out."
         />
 
         <NumberField

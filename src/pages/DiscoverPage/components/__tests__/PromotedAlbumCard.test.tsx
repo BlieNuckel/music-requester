@@ -204,6 +204,7 @@ const personalData: PromotedAlbumData = {
     chosenGenres: ["shoegaze", "noise pop"],
     sharedGenres: ["shoegaze"],
     widened: false,
+    relaxedPreference: false,
     selectionReason: "preferred_non_library",
   },
 };

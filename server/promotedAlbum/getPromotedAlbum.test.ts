@@ -1486,6 +1486,42 @@ describe("injected randomness and clock", () => {
     expect(result.mode).toBe("within_taste");
   });
 
+  it("spends the exploration rate as a share of the carousel, not a coin per pick", async () => {
+    setupBothPaths();
+    const twoEach = (prefix: string, artist: string, mbid: string) => [
+      {
+        id: `${prefix}-1`,
+        score: 1,
+        title: `${artist} One`,
+        "primary-type": "Album",
+        "first-release-date": "1990-01-01",
+        "artist-credit": [{ name: artist, artist: { id: mbid, name: artist } }],
+      },
+      {
+        id: `${prefix}-2`,
+        score: 1,
+        title: `${artist} Two`,
+        "primary-type": "Album",
+        "first-release-date": "1992-01-01",
+        "artist-credit": [{ name: artist, artist: { id: mbid, name: artist } }],
+      },
+    ];
+    mockFetchReleaseGroupsForArtist.mockImplementation((mbid: string) =>
+      Promise.resolve(
+        mbid === "mbid-jazz"
+          ? twoEach("rg-jazz", "Jazz Cat", "mbid-jazz")
+          : twoEach("rg-rock", "Rock Clone", "mbid-rock")
+      )
+    );
+
+    // explorationRate 0.5 over 4 picks = exactly 2 genre jumps, no coin per pick.
+    const albums = await getAlbums(userId, false, 4, { rng: seqRng([0.2]) });
+
+    expect(albums).toHaveLength(4);
+    expect(albums.filter((a) => a.mode === "explore")).toHaveLength(2);
+    expect(albums.filter((a) => a.mode === "personal")).toHaveLength(2);
+  });
+
   it("derives the deep page from the configured range", async () => {
     setupBothPaths();
 
