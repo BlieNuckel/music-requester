@@ -9,7 +9,7 @@ import type {
   SimilarGraphSeed,
   SimilarGraphCandidate,
 } from "../db/entity/UserProfile";
-import { weightedRandomPick, shuffle } from "../utils/random";
+import { weightedRandomPick, shuffle, type Rng } from "../utils/random";
 import { isPlaceholderArtist } from "../utils/artistFilter";
 import type {
   BuiltAlbum,
@@ -27,6 +27,7 @@ type ExploreContext = {
   recentlyShown: Set<string>;
   artistInLibrary: (artistMbid: string) => boolean;
   albumLibrary: (rgMbid: string) => AlbumLibraryInfo | null;
+  rng?: Rng;
 };
 
 type EvaluatedCandidate = {
@@ -156,7 +157,8 @@ function evaluateSeed(
 
 async function pickAlbumFromArtist(
   artistMbid: string,
-  recentlyShown: Set<string>
+  recentlyShown: Set<string>,
+  rng: Rng
 ): Promise<MusicBrainzReleaseGroup | null> {
   const releaseGroups = await fetchReleaseGroupsForArtist(artistMbid);
   const albums = releaseGroups.filter(
@@ -164,7 +166,7 @@ async function pickAlbumFromArtist(
   );
   if (albums.length === 0) return null;
 
-  const shuffled = shuffle(albums);
+  const shuffled = shuffle(albums, rng);
   const fresh = shuffled.filter((rg) => !recentlyShown.has(rg.id));
   const pool = fresh.length > 0 ? fresh : shuffled;
   return pool[0] ?? null;
@@ -256,9 +258,10 @@ export async function buildExploreResult(
   ctx: ExploreContext
 ): Promise<BuiltAlbum | null> {
   const { similarGraph, config, recentlyShown } = ctx;
+  const rng = ctx.rng ?? Math.random;
   if (similarGraph.length === 0) return null;
 
-  const [seed] = weightedRandomPick(similarGraph, (s) => s.viewCount, 1);
+  const [seed] = weightedRandomPick(similarGraph, (s) => s.viewCount, 1, rng);
   if (!seed) return null;
 
   const seedGenres = new Set(seed.seedGenres);
@@ -277,7 +280,8 @@ export async function buildExploreResult(
   for (const chosen of ranked) {
     const album = await pickAlbumFromArtist(
       chosen.candidate.artistMbid,
-      recentlyShown
+      recentlyShown,
+      rng
     );
     if (album) {
       return assembleResult(

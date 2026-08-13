@@ -9,7 +9,7 @@ import {
   type AlbumLibraryInfo,
 } from "../../shared/albumLibrary";
 import type { LibraryPreference, PromotedAlbumConfig } from "../config";
-import { weightedRandomPick, shuffle } from "../utils/random";
+import { weightedRandomPick, shuffle, type Rng } from "../utils/random";
 import { createTtlMap } from "../utils/ttlMap";
 import { isPlaceholderArtist } from "../utils/artistFilter";
 import { findUserById } from "../auth/users";
@@ -36,6 +36,33 @@ type WeightedTag = { name: string; weight: number };
 type LibraryLookups = {
   artistInLibrary: (mbid: string) => boolean;
   albumLibrary: (mbid: string) => AlbumLibraryInfo | null;
+};
+
+/** One Last.fm tag-chart album, before it has been resolved to a release group. */
+type CandidateAlbum = {
+  mbid: string;
+  artistMbid: string;
+  name: string;
+  artistName: string;
+};
+
+type AlbumSelection = {
+  album: CandidateAlbum;
+  rgMbid: string;
+  year: string;
+  reason: TraceSelectionReason;
+};
+
+type GetRgInfo = (mbid: string) => Promise<ReleaseGroupInfo | null>;
+
+/**
+ * Injected clock and randomness. Both default to the globals; tests pass their own so
+ * the selection rules (how often we explore, how deep we page) can be asserted directly
+ * instead of stubbing `Math.random` for every decision at once.
+ */
+export type PromotedAlbumDeps = {
+  rng?: Rng;
+  now?: () => number;
 };
 
 /** How many recommendations the spotlight carousel presents. */
@@ -89,101 +116,19 @@ function buildTraceFromProfile(
   };
 }
 
-function selectAlbumPreferNew(
-  shuffled: {
-    mbid: string;
-    artistMbid: string;
-    name: string;
-    artistName: string;
-  }[],
-  artistInLibrary: (mbid: string) => boolean,
-  getRgInfo: (mbid: string) => Promise<ReleaseGroupInfo | null>
-): Promise<{
-  album: (typeof shuffled)[0];
-  rgMbid: string;
-  year: string;
-  reason: TraceSelectionReason;
-} | null> {
-  return selectAlbumWithPreference(
-    shuffled,
-    (a) => !artistInLibrary(a.artistMbid),
-    getRgInfo,
-    "preferred_non_library",
-    "fallback_in_library"
-  );
-}
-
-function selectAlbumPreferLibrary(
-  shuffled: {
-    mbid: string;
-    artistMbid: string;
-    name: string;
-    artistName: string;
-  }[],
-  artistInLibrary: (mbid: string) => boolean,
-  getRgInfo: (mbid: string) => Promise<ReleaseGroupInfo | null>
-): Promise<{
-  album: (typeof shuffled)[0];
-  rgMbid: string;
-  year: string;
-  reason: TraceSelectionReason;
-} | null> {
-  return selectAlbumWithPreference(
-    shuffled,
-    (a) => artistInLibrary(a.artistMbid),
-    getRgInfo,
-    "preferred_library",
-    "fallback_non_library"
-  );
-}
-
-async function selectAlbumNoPreference(
-  shuffled: {
-    mbid: string;
-    artistMbid: string;
-    name: string;
-    artistName: string;
-  }[],
-  getRgInfo: (mbid: string) => Promise<ReleaseGroupInfo | null>
-): Promise<{
-  album: (typeof shuffled)[0];
-  rgMbid: string;
-  year: string;
-  reason: TraceSelectionReason;
-} | null> {
-  for (const album of shuffled) {
-    const rgInfo = await getRgInfo(album.mbid);
-    if (rgInfo) {
-      return {
-        album,
-        rgMbid: rgInfo.id,
-        year: rgInfo.firstReleaseDate.slice(0, 4),
-        reason: "no_preference",
-      };
-    }
-  }
-  return null;
-}
-
+/**
+ * Walk the shuffled pool and take the first album that resolves to a release group AND
+ * satisfies `isPreferred`, falling back to the first that merely resolves. Albums that
+ * don't resolve are skipped entirely.
+ */
 async function selectAlbumWithPreference(
-  shuffled: {
-    mbid: string;
-    artistMbid: string;
-    name: string;
-    artistName: string;
-  }[],
-  isPreferred: (album: (typeof shuffled)[0]) => boolean,
-  getRgInfo: (mbid: string) => Promise<ReleaseGroupInfo | null>,
+  shuffled: CandidateAlbum[],
+  isPreferred: (album: CandidateAlbum) => boolean,
+  getRgInfo: GetRgInfo,
   preferredReason: TraceSelectionReason,
   fallbackReason: TraceSelectionReason
-): Promise<{
-  album: (typeof shuffled)[0];
-  rgMbid: string;
-  year: string;
-  reason: TraceSelectionReason;
-} | null> {
-  let fallback:
-    { album: (typeof shuffled)[0]; rgMbid: string; year: string } | undefined;
+): Promise<AlbumSelection | null> {
+  let fallback: Omit<AlbumSelection, "reason"> | undefined;
 
   for (const album of shuffled) {
     const rgInfo = await getRgInfo(album.mbid);
@@ -202,23 +147,36 @@ async function selectAlbumWithPreference(
 }
 
 function selectAlbum(
-  shuffled: {
-    mbid: string;
-    artistMbid: string;
-    name: string;
-    artistName: string;
-  }[],
+  shuffled: CandidateAlbum[],
   artistInLibrary: (mbid: string) => boolean,
   libraryPreference: LibraryPreference,
-  getRgInfo: (mbid: string) => Promise<ReleaseGroupInfo | null>
-) {
+  getRgInfo: GetRgInfo
+): Promise<AlbumSelection | null> {
   switch (libraryPreference) {
     case "prefer_new":
-      return selectAlbumPreferNew(shuffled, artistInLibrary, getRgInfo);
+      return selectAlbumWithPreference(
+        shuffled,
+        (a) => !artistInLibrary(a.artistMbid),
+        getRgInfo,
+        "preferred_non_library",
+        "fallback_in_library"
+      );
     case "prefer_library":
-      return selectAlbumPreferLibrary(shuffled, artistInLibrary, getRgInfo);
+      return selectAlbumWithPreference(
+        shuffled,
+        (a) => artistInLibrary(a.artistMbid),
+        getRgInfo,
+        "preferred_library",
+        "fallback_non_library"
+      );
     case "no_preference":
-      return selectAlbumNoPreference(shuffled, getRgInfo);
+      return selectAlbumWithPreference(
+        shuffled,
+        () => true,
+        getRgInfo,
+        "no_preference",
+        "no_preference"
+      );
   }
 }
 
@@ -232,7 +190,8 @@ async function buildWithinTasteFromProfile(
   config: PromotedAlbumConfig,
   recentlyShown: Set<string>,
   artistInLibrary: (mbid: string) => boolean,
-  albumLibrary: (mbid: string) => AlbumLibraryInfo | null
+  albumLibrary: (mbid: string) => AlbumLibraryInfo | null,
+  rng: Rng
 ): Promise<BuiltAlbum | null> {
   const weightedTags: WeightedTag[] = profile.genreVector.map((g) => ({
     name: g.tag,
@@ -240,13 +199,11 @@ async function buildWithinTasteFromProfile(
   }));
   if (weightedTags.length === 0) return null;
 
-  const [chosenTag] = weightedRandomPick(weightedTags, (t) => t.weight, 1);
+  const [chosenTag] = weightedRandomPick(weightedTags, (t) => t.weight, 1, rng);
   if (!chosenTag) return null;
 
   const range = config.deepPageMax - config.deepPageMin + 1;
-  const deepPage = String(
-    Math.floor(Math.random() * range) + config.deepPageMin
-  );
+  const deepPage = String(Math.floor(rng() * range) + config.deepPageMin);
   const [page1, pageDeep] = await Promise.all([
     getTopAlbumsByTag(chosenTag.name, "1"),
     getTopAlbumsByTag(chosenTag.name, deepPage),
@@ -264,7 +221,7 @@ async function buildWithinTasteFromProfile(
 
   const freshAlbums = allAlbums.filter((a) => !recentlyShown.has(a.mbid));
   const candidatePool = freshAlbums.length > 0 ? freshAlbums : allAlbums;
-  const shuffled = shuffle(candidatePool);
+  const shuffled = shuffle(candidatePool, rng);
 
   const picked = await selectAlbum(
     shuffled,
@@ -347,7 +304,8 @@ function buildExplore(
   config: PromotedAlbumConfig,
   recentlyShown: Set<string>,
   artistInLibrary: (mbid: string) => boolean,
-  albumLibrary: (mbid: string) => AlbumLibraryInfo | null
+  albumLibrary: (mbid: string) => AlbumLibraryInfo | null,
+  rng: Rng
 ): Promise<BuiltAlbum | null> {
   return buildExploreResult({
     similarGraph: profile.similarGraph,
@@ -355,6 +313,7 @@ function buildExplore(
     recentlyShown,
     artistInLibrary,
     albumLibrary,
+    rng,
   });
 }
 
@@ -363,15 +322,17 @@ async function buildOnePick(
   profile: DerivedProfile,
   config: PromotedAlbumConfig,
   excluded: Set<string>,
-  library: LibraryLookups
+  library: LibraryLookups,
+  rng: Rng
 ): Promise<BuiltAlbum | null> {
-  if (Math.random() < config.explorationRate) {
+  if (rng() < config.explorationRate) {
     const explored = await buildExplore(
       profile,
       config,
       excluded,
       library.artistInLibrary,
-      library.albumLibrary
+      library.albumLibrary,
+      rng
     );
     if (explored) return explored;
   }
@@ -380,7 +341,8 @@ async function buildOnePick(
     config,
     excluded,
     library.artistInLibrary,
-    library.albumLibrary
+    library.albumLibrary,
+    rng
   );
 }
 
@@ -394,7 +356,8 @@ async function buildPicks(
   config: PromotedAlbumConfig,
   recentlyShown: Set<string>,
   library: LibraryLookups,
-  count: number
+  count: number,
+  rng: Rng
 ): Promise<BuiltAlbum[]> {
   const picks: BuiltAlbum[] = [];
   const excluded = new Set(recentlyShown);
@@ -406,9 +369,12 @@ async function buildPicks(
     attempt < attemptLimit && picks.length < count;
     attempt += 1
   ) {
-    const built = await buildOnePick(profile, config, excluded, library);
+    const built = await buildOnePick(profile, config, excluded, library, rng);
     if (!built) continue;
 
+    // Two different ID spaces on purpose: `rememberKey` is the release MBID the source
+    // chart returned, which is what exclusion history is keyed on, while the carousel
+    // dedups on the release-GROUP MBID the user actually sees.
     excluded.add(built.rememberKey);
     if (pickedAlbums.has(built.result.album.mbid)) continue;
 
@@ -422,12 +388,16 @@ async function buildPicks(
 export async function getPromotedAlbums(
   userId: number,
   forceRefresh = false,
-  count = SPOTLIGHT_COUNT
+  count = SPOTLIGHT_COUNT,
+  deps: PromotedAlbumDeps = {}
 ): Promise<PromotedAlbumEntry[]> {
+  const rng = deps.rng ?? Math.random;
+  const now = deps.now ?? Date.now;
+
   const config = getConfigValue("promotedAlbum");
   const resultTtlMs = config.cacheDurationMinutes * 60 * 1000;
 
-  const cached = forceRefresh ? undefined : resultCache.get(userId);
+  const cached = forceRefresh ? undefined : resultCache.get(userId, now());
   if (cached && cached.length >= count) {
     return cached.slice(0, count);
   }
@@ -447,7 +417,8 @@ export async function getPromotedAlbums(
     config,
     new Set(recentAlbums),
     library,
-    count
+    count,
+    rng
   );
   if (picks.length === 0) return [];
 
@@ -459,7 +430,7 @@ export async function getPromotedAlbums(
   await updateExplorationHistory(userId, { albums: nextAlbums });
 
   const results = picks.map((p) => p.result);
-  resultCache.set(userId, results, resultTtlMs);
+  resultCache.set(userId, results, resultTtlMs, now());
 
   return results;
 }
