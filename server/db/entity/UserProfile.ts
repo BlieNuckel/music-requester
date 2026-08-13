@@ -43,12 +43,14 @@ export type DerivedProfile = {
     distinctTracksPlayed?: number;
     topTrackShare?: number;
     distributionFactor?: number;
+    ratingBreadth?: number;
+    ratingMultiplier?: number;
   }[];
   similarGraph: SimilarGraphSeed[];
   explorationHistory: { albums: string[]; artists: string[] };
 };
 
-export const DERIVED_PROFILE_SCHEMA_VERSION = 5;
+export const DERIVED_PROFILE_SCHEMA_VERSION = 6;
 
 /** Derived, regenerable cache — one row per user, the whole profile as one document. */
 @Entity("user_profiles")

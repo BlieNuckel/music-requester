@@ -23,6 +23,9 @@ export type TraceArtistEntry = {
   distinctTracksPlayed?: number;
   topTrackShare?: number;
   distributionFactor?: number;
+  /** Absent for artists with nothing rated. */
+  ratingBreadth?: number;
+  ratingMultiplier?: number;
 };
 
 export type TraceWeightedTag = {

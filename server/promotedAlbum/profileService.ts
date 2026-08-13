@@ -115,6 +115,8 @@ function buildProfileArtifacts(
       distinctTracksPlayed: artist.distinctTracksPlayed,
       topTrackShare: artist.topTrackShare,
       distributionFactor: artist.distributionFactor,
+      ratingBreadth: artist.ratingBreadth,
+      ratingMultiplier: artist.ratingMultiplier,
     })
   );
 

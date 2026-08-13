@@ -148,6 +148,8 @@ function buildTraceFromProfile(inputs: TraceInputs): WithinTasteTrace {
       distinctTracksPlayed: a.distinctTracksPlayed,
       topTrackShare: a.topTrackShare,
       distributionFactor: a.distributionFactor,
+      ratingBreadth: a.ratingBreadth,
+      ratingMultiplier: a.ratingMultiplier,
     };
   });
 

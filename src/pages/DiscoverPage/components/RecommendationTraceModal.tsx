@@ -85,15 +85,34 @@ function SpreadNote({ artist }: { artist: TraceArtistEntry }) {
     return null;
   }
 
+  const breadthNote =
+    artist.ratingBreadth === undefined
+      ? ""
+      : `; ${Math.round(artist.ratingBreadth * 100)}% of rating evidence sits off that track`;
+
   return (
     <span
       data-testid="artist-spread"
       className="text-[10px] opacity-70"
       title={`${artist.distinctTracksPlayed ?? 0} track(s) played; top track is ${Math.round(
         artist.topTrackShare * 100
-      )}% of plays`}
+      )}% of plays${breadthNote}`}
     >
       ×{artist.distributionFactor.toFixed(2)} spread
+    </span>
+  );
+}
+
+function RatingNote({ artist }: { artist: TraceArtistEntry }) {
+  if (artist.ratingMultiplier === undefined) return null;
+
+  return (
+    <span
+      data-testid="artist-rating"
+      className="text-[10px] opacity-70"
+      title="Play-weighted rating boost: ratings on the tracks the artist's listening actually sits on count for more"
+    >
+      ×{artist.ratingMultiplier.toFixed(2)} rating
     </span>
   );
 }
@@ -119,6 +138,7 @@ function PlexArtistsStage({
             {a.name}
             <span className="text-[10px] opacity-70">({a.viewCount})</span>
             <SpreadNote artist={a} />
+            <RatingNote artist={a} />
           </span>
         ))}
       </div>

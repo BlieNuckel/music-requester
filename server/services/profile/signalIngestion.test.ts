@@ -114,6 +114,24 @@ describe("diffRatings", () => {
     ]);
     expect(diffRatings(previous, [])).toEqual([]);
   });
+
+  it("rewrites an unchanged rating stored without the parent keys", () => {
+    const previous = new Map<string, PlexRatingPayload>([
+      ["451", { ...ratedTrack }],
+    ]);
+    const changes = diffRatings(previous, [
+      { ...ratedTrack, albumKey: "88", artistKey: "7" },
+    ]);
+    expect(changes).toEqual([
+      { ...ratedTrack, albumKey: "88", artistKey: "7" },
+    ]);
+  });
+
+  it("leaves a rating that already carries the parent keys alone", () => {
+    const stored = { ...ratedTrack, albumKey: "88", artistKey: "7" };
+    const previous = new Map<string, PlexRatingPayload>([["451", stored]]);
+    expect(diffRatings(previous, [stored])).toEqual([]);
+  });
 });
 
 function playsEvent(
@@ -281,6 +299,7 @@ describe("rollupToArtists", () => {
         playCount: 10,
         distinctTracksPlayed: 2,
         topTrackPlayCount: 6,
+        topTrackKey: "2",
       },
       {
         artistKey: "ak-B",
@@ -288,6 +307,7 @@ describe("rollupToArtists", () => {
         playCount: 2,
         distinctTracksPlayed: 1,
         topTrackPlayCount: 2,
+        topTrackKey: "3",
       },
     ]);
   });
@@ -312,6 +332,7 @@ describe("rollupToArtists", () => {
         playCount: 8,
         distinctTracksPlayed: 2,
         topTrackPlayCount: 5,
+        topTrackKey: "2",
       },
     ]);
   });
@@ -333,6 +354,7 @@ describe("rollupToArtists", () => {
         playCount: 3,
         distinctTracksPlayed: 1,
         topTrackPlayCount: 3,
+        topTrackKey: "1",
       },
     ]);
   });
@@ -379,6 +401,7 @@ describe("rollupToArtists with a baseline", () => {
         playCount: 5,
         distinctTracksPlayed: 1,
         topTrackPlayCount: 5,
+        topTrackKey: "1",
       },
     ]);
   });
@@ -396,6 +419,7 @@ describe("rollupToArtists with a baseline", () => {
         playCount: 4,
         distinctTracksPlayed: 1,
         topTrackPlayCount: 4,
+        topTrackKey: "9",
       },
     ]);
   });

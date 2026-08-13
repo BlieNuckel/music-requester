@@ -32,12 +32,14 @@ const mapRatedItem = (
   type: PlexRatingType
 ): PlexRatedItem => {
   const kind = KIND_BY_TYPE[type];
-  const artist = kind === "track" ? raw.grandparentTitle : raw.parentTitle;
+  const isTrack = kind === "track";
   return {
     ratingKey: raw.ratingKey,
     kind,
     title: raw.title,
-    artist: artist ?? "",
+    artist: (isTrack ? raw.grandparentTitle : raw.parentTitle) ?? "",
+    albumKey: isTrack ? raw.parentRatingKey : undefined,
+    artistKey: isTrack ? raw.grandparentRatingKey : raw.parentRatingKey,
     rating: raw.userRating ?? 0,
   };
 };
