@@ -118,13 +118,12 @@ export async function getPromotedArtists(
   const plexToken = user?.plexToken;
   if (!plexToken) return null;
 
-  const windowMs = config.playTrendWindowDays * 24 * 60 * 60 * 1000;
-  const weighted = await loadArtistWeights(
-    userId,
-    plexToken,
-    windowMs,
-    config.ratingWeight
-  );
+  const weighted = await loadArtistWeights(userId, plexToken, {
+    windowMs: config.playTrendWindowDays * 24 * 60 * 60 * 1000,
+    ratingWeight: config.ratingWeight,
+    distributionWeight: config.distributionWeight,
+    minPlaysForDistribution: config.minPlaysForDistribution,
+  });
   if (weighted.length === 0) return null;
 
   const topArtists = [...weighted]

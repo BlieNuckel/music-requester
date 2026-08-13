@@ -51,6 +51,8 @@ const baseConfig: PromotedAlbumConfig = {
   ratingsBackupEnabled: true,
   playTrendWindowDays: 90,
   ratingWeight: 0.5,
+  distributionWeight: 0,
+  minPlaysForDistribution: 5,
 };
 
 const plexArtists = [
@@ -123,8 +125,10 @@ describe("runProfileRegenOnce", () => {
     expect(mockLoadArtistWeights).toHaveBeenCalledWith(
       expect.any(Number),
       "stale-active",
-      90 * 24 * 60 * 60 * 1000,
-      0.5
+      expect.objectContaining({
+        windowMs: 90 * 24 * 60 * 60 * 1000,
+        ratingWeight: 0.5,
+      })
     );
   });
 

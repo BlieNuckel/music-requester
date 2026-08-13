@@ -48,4 +48,30 @@ describe("RecommendationsSection — ratings backup toggle", () => {
       ratingWeight: 1,
     });
   });
+
+  it("edits the one-hit discount and its minimum play count", () => {
+    const onChange = vi.fn();
+    render(
+      <RecommendationsSection
+        config={DEFAULT_PROMOTED_ALBUM}
+        onConfigChange={onChange}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText(/One-Hit Discount/i), {
+      target: { value: "0.25" },
+    });
+    expect(onChange).toHaveBeenCalledWith({
+      ...DEFAULT_PROMOTED_ALBUM,
+      distributionWeight: 0.25,
+    });
+
+    fireEvent.change(screen.getByLabelText(/Minimum Plays for the Discount/i), {
+      target: { value: "12" },
+    });
+    expect(onChange).toHaveBeenCalledWith({
+      ...DEFAULT_PROMOTED_ALBUM,
+      minPlaysForDistribution: 12,
+    });
+  });
 });

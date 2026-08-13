@@ -9,11 +9,14 @@ vi.mock("../api/plex/trackPlayCounts", () => ({
 
 import {
   derivePlayWeights,
+  deriveArtistDistributions,
+  applyDistributionFactor,
   reconstructArtistPlayCounts,
   aggregateArtistRatings,
   applyRatingMultiplier,
   loadArtistWeights,
   type ArtistWeight,
+  type ArtistWeightOptions,
 } from "./artistWeights";
 import { initializeDatabase, closeDatabase, getDataSource } from "../db";
 import { appendSignalEvent, getSignalEvents } from "../db/userProfile";
@@ -29,6 +32,17 @@ type TrackSpec = {
 };
 
 const DAY = 24 * 60 * 60 * 1000;
+
+function weightOptions(overrides: Partial<ArtistWeightOptions> = {}) {
+  return {
+    windowMs: 30 * DAY,
+    ratingWeight: 0.5,
+    distributionWeight: 0,
+    minPlaysForDistribution: 5,
+    now: NOW,
+    ...overrides,
+  };
+}
 const NOW = Date.parse("2026-06-28T00:00:00.000Z");
 
 function legacyEvent(
@@ -250,6 +264,160 @@ describe("derivePlayWeights", () => {
   });
 });
 
+describe("deriveArtistDistributions", () => {
+  it("reports plays, distinct tracks, and the top track per artist", () => {
+    const dists = deriveArtistDistributions(
+      [
+        trackEvent(
+          [
+            { ratingKey: "1", artistName: "A", playCount: 30 },
+            { ratingKey: "2", artistName: "A", playCount: 5 },
+            { ratingKey: "3", artistName: "A", playCount: 5 },
+          ],
+          0
+        ),
+      ],
+      NOW,
+      30 * DAY
+    );
+    expect(dists.get("A")).toMatchObject({
+      playCount: 40,
+      distinctTracksPlayed: 3,
+      topTrackPlayCount: 30,
+    });
+  });
+
+  it("measures the distribution inside the window once the series spans it", () => {
+    const dists = deriveArtistDistributions(
+      [
+        trackEvent(
+          [
+            { ratingKey: "1", artistName: "A", playCount: 100 },
+            { ratingKey: "2", artistName: "A", playCount: 100 },
+          ],
+          40
+        ),
+        trackEvent([{ ratingKey: "1", artistName: "A", playCount: 110 }], 0),
+      ],
+      NOW,
+      30 * DAY
+    );
+    expect(dists.get("A")).toMatchObject({
+      playCount: 10,
+      distinctTracksPlayed: 1,
+      topTrackPlayCount: 10,
+    });
+  });
+
+  it("keeps the busier artist when two share a name", () => {
+    const dists = deriveArtistDistributions(
+      [
+        trackEvent(
+          [
+            {
+              ratingKey: "1",
+              artistKey: "k1",
+              artistName: "Nova",
+              playCount: 3,
+            },
+            {
+              ratingKey: "2",
+              artistKey: "k2",
+              artistName: "Nova",
+              playCount: 9,
+            },
+          ],
+          0
+        ),
+      ],
+      NOW,
+      30 * DAY
+    );
+    expect(dists.get("Nova")?.playCount).toBe(9);
+  });
+});
+
+describe("applyDistributionFactor", () => {
+  const plays: ArtistWeight[] = [{ name: "A", viewCount: 200 }];
+
+  function distributions(
+    playCount: number,
+    topTrackPlayCount: number,
+    distinctTracksPlayed: number
+  ) {
+    return new Map([
+      [
+        "A",
+        {
+          artistKey: "ak-A",
+          name: "A",
+          playCount,
+          distinctTracksPlayed,
+          topTrackPlayCount,
+        },
+      ],
+    ]);
+  }
+
+  it("penalises an artist whose plays sit on one track", () => {
+    const result = applyDistributionFactor(
+      plays,
+      distributions(200, 200, 1),
+      0.5,
+      5
+    );
+    expect(result[0].viewCount).toBe(100);
+    expect(result[0].topTrackShare).toBe(1);
+    expect(result[0].distributionFactor).toBe(0.5);
+  });
+
+  it("barely touches an artist whose plays are spread wide", () => {
+    const result = applyDistributionFactor(
+      plays,
+      distributions(200, 8, 40),
+      0.5,
+      5
+    );
+    expect(result[0].viewCount).toBeCloseTo(196, 5);
+    expect(result[0].distinctTracksPlayed).toBe(40);
+  });
+
+  it("is a no-op at weight 0", () => {
+    const result = applyDistributionFactor(
+      plays,
+      distributions(200, 200, 1),
+      0,
+      5
+    );
+    expect(result).toEqual(plays);
+  });
+
+  it("leaves artists below the minimum play count alone", () => {
+    const result = applyDistributionFactor(
+      plays,
+      distributions(3, 3, 1),
+      0.5,
+      5
+    );
+    expect(result[0]).toEqual({ name: "A", viewCount: 200 });
+  });
+
+  it("leaves artists with no track-level distribution alone", () => {
+    const result = applyDistributionFactor(plays, new Map(), 0.5, 5);
+    expect(result[0]).toEqual({ name: "A", viewCount: 200 });
+  });
+
+  it("never divides by zero on a zero-play distribution", () => {
+    const result = applyDistributionFactor(
+      plays,
+      distributions(0, 0, 0),
+      0.5,
+      0
+    );
+    expect(result[0]).toEqual({ name: "A", viewCount: 200 });
+  });
+});
+
 function clearedRatingEvent(
   ratingKey: string,
   artist: string,
@@ -330,7 +498,7 @@ describe("loadArtistWeights (with DB)", () => {
       },
     ]);
 
-    const result = await loadArtistWeights(1, "tok", 30 * DAY, 0.5, NOW);
+    const result = await loadArtistWeights(1, "tok", weightOptions());
 
     expect(mockGetAllTrackPlayCounts).toHaveBeenCalledWith("tok");
     expect(await getSignalEvents(1, "plex_track_plays")).toHaveLength(1);
@@ -342,7 +510,7 @@ describe("loadArtistWeights (with DB)", () => {
       artists: [{ name: "A", playCount: 100 }],
     });
 
-    const result = await loadArtistWeights(1, "tok", 30 * DAY, 0.5, NOW);
+    const result = await loadArtistWeights(1, "tok", weightOptions());
 
     expect(mockGetAllTrackPlayCounts).not.toHaveBeenCalled();
     expect(result).toEqual([{ name: "A", viewCount: 100 }]);
@@ -372,9 +540,50 @@ describe("loadArtistWeights (with DB)", () => {
       ],
     });
 
-    const result = await loadArtistWeights(1, "tok", 30 * DAY, 0.5, NOW);
+    const result = await loadArtistWeights(1, "tok", weightOptions());
 
     expect(result).toEqual([{ name: "A", viewCount: 10 }]);
+  });
+
+  it("applies the distribution factor to a one-hit artist", async () => {
+    await appendSignalEvent(1, "plex_track_plays", {
+      tracks: [
+        {
+          ratingKey: "1",
+          title: "hit",
+          artistKey: "ak",
+          artistName: "A",
+          albumKey: "alb",
+          albumTitle: "Album",
+          playCount: 100,
+        },
+        {
+          ratingKey: "2",
+          title: "deep cut",
+          artistKey: "ak",
+          artistName: "A",
+          albumKey: "alb",
+          albumTitle: "Album",
+          playCount: 0,
+        },
+      ],
+    });
+
+    const result = await loadArtistWeights(
+      1,
+      "tok",
+      weightOptions({ ratingWeight: 0, distributionWeight: 0.5 })
+    );
+
+    expect(result).toEqual([
+      {
+        name: "A",
+        viewCount: 50,
+        distinctTracksPlayed: 1,
+        topTrackShare: 1,
+        distributionFactor: 0.5,
+      },
+    ]);
   });
 
   it("reads existing track plays + ratings without a live fetch", async () => {
@@ -399,7 +608,7 @@ describe("loadArtistWeights (with DB)", () => {
       rating: 10,
     });
 
-    const result = await loadArtistWeights(1, "tok", 30 * DAY, 0.5, NOW);
+    const result = await loadArtistWeights(1, "tok", weightOptions());
 
     expect(mockGetAllTrackPlayCounts).not.toHaveBeenCalled();
     expect(result).toEqual([{ name: "A", viewCount: 150 }]);

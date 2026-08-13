@@ -43,6 +43,8 @@ export type PromotedAlbumConfig = {
   ratingsBackupEnabled: boolean;
   playTrendWindowDays: number;
   ratingWeight: number;
+  distributionWeight: number;
+  minPlaysForDistribution: number;
 };
 
 /**
@@ -155,6 +157,8 @@ export const DEFAULT_PROMOTED_ALBUM: PromotedAlbumConfig = {
   ratingsBackupEnabled: true,
   playTrendWindowDays: 90,
   ratingWeight: 0.5,
+  distributionWeight: 0.5,
+  minPlaysForDistribution: 5,
 };
 
 const DEFAULT_CONFIG: IConfig = {
@@ -310,6 +314,17 @@ function validatePromotedAlbumConfig(config: PromotedAlbumConfig) {
     throw new Error("ratingsBackupEnabled must be a boolean");
   }
   validatePositiveInt(config.playTrendWindowDays, "playTrendWindowDays");
+  if (
+    typeof config.distributionWeight !== "number" ||
+    config.distributionWeight < 0 ||
+    config.distributionWeight > 1
+  ) {
+    throw new Error("distributionWeight must be a number between 0 and 1");
+  }
+  validatePositiveInt(
+    config.minPlaysForDistribution,
+    "minPlaysForDistribution"
+  );
   if (typeof config.ratingWeight !== "number" || config.ratingWeight < 0) {
     throw new Error("ratingWeight must be a non-negative number");
   }

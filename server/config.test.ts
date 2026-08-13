@@ -252,6 +252,21 @@ describe("promotedAlbum config", () => {
     ).toThrow("ratingWeight must be a non-negative number");
   });
 
+  it("validates distributionWeight stays within 0–1", () => {
+    expect(() =>
+      setConfig({ promotedAlbum: { distributionWeight: 1.5 } as never })
+    ).toThrow("distributionWeight must be a number between 0 and 1");
+    expect(() =>
+      setConfig({ promotedAlbum: { distributionWeight: -0.1 } as never })
+    ).toThrow("distributionWeight must be a number between 0 and 1");
+  });
+
+  it("validates minPlaysForDistribution is a positive integer", () => {
+    expect(() =>
+      setConfig({ promotedAlbum: { minPlaysForDistribution: 0 } as never })
+    ).toThrow("minPlaysForDistribution must be a positive integer");
+  });
+
   it("allows valid promotedAlbum config", () => {
     setConfig({
       promotedAlbum: {

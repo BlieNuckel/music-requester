@@ -7,12 +7,29 @@ import {
   reconstructTrackPlayCounts,
   rollupToArtists,
 } from "../services/profile/signalIngestion";
+import type { ArtistPlayRollup } from "../services/profile/signalIngestion";
 import type { UserSignalEvent } from "../db/entity/UserSignalEvent";
 
-/** An artist with the effective weight (windowed plays × rating boost) the recommender ranks by. */
+/**
+ * An artist with the effective weight (windowed plays × rating boost × distribution factor)
+ * the recommender ranks by. The distribution fields are absent for artists known only from
+ * the legacy artist-level series, which carries no per-track detail.
+ */
 export type ArtistWeight = {
   name: string;
   viewCount: number;
+  distinctTracksPlayed?: number;
+  topTrackShare?: number;
+  distributionFactor?: number;
+};
+
+/** Everything `loadArtistWeights` needs from `promotedAlbum` config, plus a clock override. */
+export type ArtistWeightOptions = {
+  windowMs: number;
+  ratingWeight: number;
+  distributionWeight: number;
+  minPlaysForDistribution: number;
+  now?: number;
 };
 
 function allTimeWeights(latest: Map<string, number>): ArtistWeight[] {
@@ -93,6 +110,76 @@ export function derivePlayWeights(
 }
 
 /**
+ * Per-artist play distribution over the same window `derivePlayWeights` measures, keyed by
+ * artist name so it joins onto the weight set. When the track series does not yet span the
+ * window the distribution is all-time, matching the weight fallback. Two artists sharing a
+ * name collapse to whichever has more plays, mirroring how the counts merge.
+ */
+export function deriveArtistDistributions(
+  trackEvents: UserSignalEvent[],
+  now: number,
+  windowMs: number
+): Map<string, ArtistPlayRollup> {
+  const latest = reconstructTrackPlayCounts(trackEvents, Infinity);
+  const windowStart = now - windowMs;
+  const first = trackEvents[0];
+  const spansWindow =
+    first !== undefined && Date.parse(first.recorded_at) <= windowStart;
+
+  const rollups = spansWindow
+    ? rollupToArtists(
+        latest,
+        reconstructTrackPlayCounts(trackEvents, windowStart)
+      )
+    : rollupToArtists(latest);
+
+  const byName = new Map<string, ArtistPlayRollup>();
+  for (const rollup of rollups) {
+    if (!rollup.name) continue;
+    const existing = byName.get(rollup.name);
+    if (!existing || rollup.playCount > existing.playCount) {
+      byName.set(rollup.name, rollup);
+    }
+  }
+  return byName;
+}
+
+/**
+ * Scale each artist's weight by how broadly their plays spread across their tracks:
+ * `factor = 1 - distributionWeight × topTrackShare`, where `topTrackShare` is the share of
+ * the artist's plays belonging to their single most-played track. One song on repeat is a
+ * song the user likes; the same play count spread over a catalogue is an artist they like,
+ * and only the second should pull that artist's whole tag set into the genre vector.
+ *
+ * `distributionWeight` of `0` is a no-op, so the correction is switchable from settings.
+ * Artists below `minPlays` are left alone — at a handful of plays `topTrackShare` is noise,
+ * not concentration — as are artists with no track-level data at all.
+ */
+export function applyDistributionFactor(
+  plays: ArtistWeight[],
+  distributions: Map<string, ArtistPlayRollup>,
+  distributionWeight: number,
+  minPlays: number
+): ArtistWeight[] {
+  if (distributionWeight === 0) return plays;
+
+  return plays.map((play) => {
+    const dist = distributions.get(play.name);
+    if (!dist || dist.playCount < minPlays || dist.playCount <= 0) return play;
+
+    const topTrackShare = dist.topTrackPlayCount / dist.playCount;
+    const distributionFactor = 1 - distributionWeight * topTrackShare;
+    return {
+      name: play.name,
+      viewCount: play.viewCount * distributionFactor,
+      distinctTracksPlayed: dist.distinctTracksPlayed,
+      topTrackShare,
+      distributionFactor,
+    };
+  });
+}
+
+/**
  * Average rating (0–10) per artist, from the latest rating known for each rated item.
  * Items whose latest rating is `0` (un-rated) are excluded so a cleared star doesn't
  * drag an artist's average down.
@@ -125,25 +212,32 @@ export function applyRatingMultiplier(
     const avg = ratings.get(play.name);
     if (avg === undefined) return play;
     return {
-      name: play.name,
+      ...play,
       viewCount: play.viewCount * (1 + ratingWeight * (avg / 10)),
     };
   });
 }
 
 /**
- * The recommender's canonical artist-weight source: windowed play trend from the user's
- * own plays series, boosted by their ratings. Reads everything from `user_signal_events`
- * — no live Plex query — except the cold-start case (zero captures in either series), where
- * one is ingested on demand so the first read still goes through our own table.
+ * The recommender's canonical artist-weight source: windowed play trend from the user's own
+ * plays series, boosted by their ratings and scaled by how broadly each artist's plays
+ * spread across their tracks. Reads everything from `user_signal_events` — no live Plex
+ * query — except the cold-start case (zero captures in either series), where one is ingested
+ * on demand so the first read still goes through our own table.
  */
 export async function loadArtistWeights(
   userId: number,
   plexToken: string,
-  windowMs: number,
-  ratingWeight: number,
-  now: number = Date.now()
+  options: ArtistWeightOptions
 ): Promise<ArtistWeight[]> {
+  const {
+    windowMs,
+    ratingWeight,
+    distributionWeight,
+    minPlaysForDistribution,
+  } = options;
+  const now = options.now ?? Date.now();
+
   let trackEvents = await getSignalEvents(userId, "plex_track_plays");
   const legacyEvents = await getSignalEvents(userId, "plex_plays");
   if (trackEvents.length === 0 && legacyEvents.length === 0) {
@@ -152,10 +246,16 @@ export async function loadArtistWeights(
   }
 
   const plays = derivePlayWeights(trackEvents, legacyEvents, now, windowMs);
+  const spread = applyDistributionFactor(
+    plays,
+    deriveArtistDistributions(trackEvents, now, windowMs),
+    distributionWeight,
+    minPlaysForDistribution
+  );
   const ratings = aggregateArtistRatings(
     await getSignalEvents(userId, "plex_rating")
   );
-  return applyRatingMultiplier(plays, ratings, ratingWeight).filter(
+  return applyRatingMultiplier(spread, ratings, ratingWeight).filter(
     (weight) => !isPlaceholderArtist(weight.name)
   );
 }

@@ -53,6 +53,8 @@ export type ArtistPlayRollup = {
   artistKey: string;
   name: string;
   playCount: number;
+  distinctTracksPlayed: number;
+  topTrackPlayCount: number;
 };
 
 export type AlbumPlayRollup = {
@@ -260,28 +262,46 @@ export function reconstructTrackPlayCounts(
 }
 
 /**
- * Per-artist cumulative plays accumulated from the track fold. Grouped by `artistKey` so a
- * Plex rename keeps one bucket and two same-named artists stay separate; artists whose rows
- * carry no key at all fall back to grouping by name.
+ * Per-artist plays accumulated from the track fold, with the distribution of those plays
+ * across the artist's tracks. Grouped by `artistKey` so a Plex rename keeps one bucket and
+ * two same-named artists stay separate; artists whose rows carry no key at all fall back to
+ * grouping by name.
+ *
+ * Passing `baseline` (an earlier fold of the same series) rolls up the *change* since then
+ * per track, so the distribution describes what was played inside a window rather than
+ * all-time. Tracks unchanged since the baseline count as unplayed for that window.
  */
 export function rollupToArtists(
-  tracks: Map<string, TrackPlayState>
+  tracks: Map<string, TrackPlayState>,
+  baseline?: Map<string, TrackPlayState>
 ): ArtistPlayRollup[] {
   const byArtist = new Map<string, ArtistPlayRollup>();
   for (const track of tracks.values()) {
     const key = track.artistKey || track.artistName;
     if (!key) continue;
+
+    const plays = baseline
+      ? Math.max(
+          0,
+          track.playCount - (baseline.get(track.ratingKey)?.playCount ?? 0)
+        )
+      : track.playCount;
+
     const existing = byArtist.get(key);
-    if (existing) {
-      existing.playCount += track.playCount;
-      if (!existing.name) existing.name = track.artistName;
-    } else {
+    if (!existing) {
       byArtist.set(key, {
         artistKey: key,
         name: track.artistName,
-        playCount: track.playCount,
+        playCount: plays,
+        distinctTracksPlayed: plays > 0 ? 1 : 0,
+        topTrackPlayCount: plays,
       });
+      continue;
     }
+    existing.playCount += plays;
+    if (plays > 0) existing.distinctTracksPlayed += 1;
+    if (plays > existing.topTrackPlayCount) existing.topTrackPlayCount = plays;
+    if (!existing.name) existing.name = track.artistName;
   }
   return Array.from(byArtist.values());
 }

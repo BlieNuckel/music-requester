@@ -257,6 +257,24 @@ export default function RecommendationsSection({
         step={0.1}
         description="How much your Plex star ratings boost an artist's weight: ×(1 + weight × stars/5). 0 ignores ratings; 0.5 gives a 5-star artist +50% weight."
       />
+      <NumberField
+        label="One-Hit Discount"
+        value={config.distributionWeight}
+        onChange={(v) => update("distributionWeight", v)}
+        min={0}
+        max={1}
+        step={0.05}
+        description="How much to discount an artist whose plays all sit on one track, so a single song on repeat doesn't count as liking the whole artist. 0 ignores how plays are spread; 0.5 halves the weight of an artist you only play one track by."
+      />
+      <NumberField
+        label="Minimum Plays for the Discount"
+        value={config.minPlaysForDistribution}
+        onChange={(v) => update("minPlaysForDistribution", v)}
+        min={1}
+        max={100}
+        step={1}
+        description="Artists below this many plays in the trend window keep their full weight — at a handful of plays, how they're spread is noise rather than a preference."
+      />
 
       <div>
         <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">

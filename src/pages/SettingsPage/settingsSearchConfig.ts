@@ -117,6 +117,8 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
       "library",
       "preference",
       "generic",
+      "plays",
+      "one-hit",
     ],
     permission: Permission.ADMIN,
   },

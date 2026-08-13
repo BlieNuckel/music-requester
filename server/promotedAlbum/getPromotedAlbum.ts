@@ -69,6 +69,9 @@ function buildTraceFromProfile(
       rawCount: t.count,
       weight: t.count * a.viewCount,
     })),
+    distinctTracksPlayed: a.distinctTracksPlayed,
+    topTrackShare: a.topTrackShare,
+    distributionFactor: a.distributionFactor,
   }));
 
   const weightedTags: TraceWeightedTag[] = profile.genreVector.map((g) => ({
