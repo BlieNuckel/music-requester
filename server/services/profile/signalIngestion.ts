@@ -1,5 +1,8 @@
 import { getRatedItems, getItemRating } from "../../api/plex/ratings";
-import { getAllArtistPlayCounts } from "../../api/plex/artistPlayCounts";
+import {
+  getAllTrackPlayCounts,
+  type TrackPlayCount,
+} from "../../api/plex/trackPlayCounts";
 import { appendSignalEvent, getSignalEvents } from "../../db/userProfile";
 import { createLogger } from "../../logger";
 import type { UserSignalEvent } from "../../db/entity/UserSignalEvent";
@@ -16,15 +19,58 @@ export type PlexRatingPayload = {
 };
 
 /**
- * Payload of a `kind = "plex_plays"` event. Each event is a delta: only the artists
- * whose cumulative play count *increased* since the previous capture. Reconstruct a
- * full state by folding the series (see {@link reconstructPlayCounts}).
+ * Payload of a `kind = "plex_plays"` event — the legacy artist-level plays series,
+ * superseded by `plex_track_plays`. Still read (it is the only record of pre-cutover
+ * history) but no longer written. Each event is a delta: only the artists whose
+ * cumulative play count *increased* since the previous capture. Reconstruct a full
+ * state by folding the series (see {@link reconstructPlayCounts}).
  */
 export type PlexPlaysPayload = {
   artists: { name: string; playCount: number }[];
 };
 
+/** One track's cumulative play count plus the album/artist it rolls up into. */
+export type TrackPlayState = {
+  ratingKey: string;
+  title: string;
+  artistKey: string;
+  artistName: string;
+  albumKey: string;
+  albumTitle: string;
+  playCount: number;
+};
+
+/**
+ * Payload of a `kind = "plex_track_plays"` event. Each event is a delta: only the tracks
+ * whose cumulative play count *increased* since the previous capture. Fold the series with
+ * {@link reconstructTrackPlayCounts}, then accumulate to artists or albums.
+ */
+export type PlexTrackPlaysPayload = {
+  tracks: TrackPlayState[];
+};
+
+export type ArtistPlayRollup = {
+  artistKey: string;
+  name: string;
+  playCount: number;
+};
+
+export type AlbumPlayRollup = {
+  albumKey: string;
+  title: string;
+  artistName: string;
+  playCount: number;
+};
+
 const log = createLogger("signal-ingestion");
+
+/**
+ * Cap on tracks per event. Steady-state captures are a handful of tracks, but the first
+ * capture is every played track in the library — one event would be a multi-megabyte
+ * `payload` cell. Chunks are appended in order and the fold is last-write-wins, so N
+ * ordered chunks reconstruct identically to one oversized event.
+ */
+const MAX_TRACKS_PER_EVENT = 2000;
 
 /**
  * Upper bound on per-sweep un-rating candidates. Beyond this, a mass disappearance is
@@ -187,29 +233,122 @@ export function reconstructPlayCounts(
 }
 
 /**
- * Append a `plex_plays` delta capturing only the artists whose cumulative play count
+ * Cumulative per-track play count reconstructed from the delta series, considering only
+ * events recorded at or before `cutoffMs`. Folds last-write-wins per `ratingKey`; unchanged
+ * tracks are absent from later deltas and carry their prior value forward. Events arrive
+ * oldest-first, so we stop as soon as one is past the cutoff.
+ */
+export function reconstructTrackPlayCounts(
+  events: UserSignalEvent[],
+  cutoffMs: number
+): Map<string, TrackPlayState> {
+  const tracks = new Map<string, TrackPlayState>();
+  for (const event of events) {
+    if (Date.parse(event.recorded_at) > cutoffMs) break;
+    try {
+      const payload = JSON.parse(event.payload) as PlexTrackPlaysPayload;
+      for (const track of payload.tracks ?? []) {
+        if (track && typeof track.ratingKey === "string") {
+          tracks.set(track.ratingKey, track);
+        }
+      }
+    } catch {
+      continue;
+    }
+  }
+  return tracks;
+}
+
+/**
+ * Per-artist cumulative plays accumulated from the track fold. Grouped by `artistKey` so a
+ * Plex rename keeps one bucket and two same-named artists stay separate; artists whose rows
+ * carry no key at all fall back to grouping by name.
+ */
+export function rollupToArtists(
+  tracks: Map<string, TrackPlayState>
+): ArtistPlayRollup[] {
+  const byArtist = new Map<string, ArtistPlayRollup>();
+  for (const track of tracks.values()) {
+    const key = track.artistKey || track.artistName;
+    if (!key) continue;
+    const existing = byArtist.get(key);
+    if (existing) {
+      existing.playCount += track.playCount;
+      if (!existing.name) existing.name = track.artistName;
+    } else {
+      byArtist.set(key, {
+        artistKey: key,
+        name: track.artistName,
+        playCount: track.playCount,
+      });
+    }
+  }
+  return Array.from(byArtist.values());
+}
+
+/** Per-album cumulative plays accumulated from the same track fold. */
+export function rollupToAlbums(
+  tracks: Map<string, TrackPlayState>
+): AlbumPlayRollup[] {
+  const byAlbum = new Map<string, AlbumPlayRollup>();
+  for (const track of tracks.values()) {
+    if (!track.albumKey && !track.albumTitle) continue;
+    const key = track.albumKey || `${track.artistName}:${track.albumTitle}`;
+    const existing = byAlbum.get(key);
+    if (existing) {
+      existing.playCount += track.playCount;
+    } else {
+      byAlbum.set(key, {
+        albumKey: key,
+        title: track.albumTitle,
+        artistName: track.artistName,
+        playCount: track.playCount,
+      });
+    }
+  }
+  return Array.from(byAlbum.values());
+}
+
+const toTrackPlayState = (track: TrackPlayCount): TrackPlayState => ({
+  ratingKey: track.ratingKey,
+  title: track.title,
+  artistKey: track.artistKey,
+  artistName: track.artistName,
+  albumKey: track.albumKey,
+  albumTitle: track.albumTitle,
+  playCount: track.viewCount,
+});
+
+/**
+ * Append `plex_track_plays` deltas capturing only the tracks whose cumulative play count
  * *increased* since the last capture — tunearr's own durable copy of the signal Plex can
  * lose, and the series the recommender diffs to derive play trends. Counts are treated as
- * monotonic: a decrease or a vanished artist (Plex history clear / re-import) is never
+ * monotonic: a decrease or a vanished track (Plex history clear / re-import) is never
  * recorded, so the stored value is the max ever seen and a transient-empty read is a no-op.
  * When nothing increased, no event is written.
  */
-export async function ingestUserPlays(
+export async function ingestUserTrackPlays(
   userId: number,
   plexToken: string
 ): Promise<void> {
-  const live = await getAllArtistPlayCounts(plexToken);
-  const stored = reconstructPlayCounts(
-    await getSignalEvents(userId, "plex_plays"),
+  const live = await getAllTrackPlayCounts(plexToken);
+  const stored = reconstructTrackPlayCounts(
+    await getSignalEvents(userId, "plex_track_plays"),
     Infinity
   );
-  const changed = live.filter((a) => a.viewCount > (stored.get(a.name) ?? 0));
+  const changed = live.filter(
+    (track) => track.viewCount > (stored.get(track.ratingKey)?.playCount ?? 0)
+  );
   if (changed.length === 0) return;
 
-  const payload: PlexPlaysPayload = {
-    artists: changed.map((a) => ({ name: a.name, playCount: a.viewCount })),
-  };
-  await appendSignalEvent(userId, "plex_plays", payload);
+  for (let i = 0; i < changed.length; i += MAX_TRACKS_PER_EVENT) {
+    const tracks = changed
+      .slice(i, i + MAX_TRACKS_PER_EVENT)
+      .map(toTrackPlayState);
+    await appendSignalEvent(userId, "plex_track_plays", {
+      tracks,
+    } satisfies PlexTrackPlaysPayload);
+  }
 }
 
 /** Whether a new plays capture is due — true when none exists or the last is older than the interval. */

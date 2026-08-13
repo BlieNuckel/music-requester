@@ -2,15 +2,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const mockGetRatedItems = vi.fn();
 const mockGetItemRating = vi.fn();
-const mockGetAllArtistPlayCounts = vi.fn();
+const mockGetAllTrackPlayCounts = vi.fn();
 
 vi.mock("../../api/plex/ratings", () => ({
   getRatedItems: (...args: unknown[]) => mockGetRatedItems(...args),
   getItemRating: (...args: unknown[]) => mockGetItemRating(...args),
 }));
-vi.mock("../../api/plex/artistPlayCounts", () => ({
-  getAllArtistPlayCounts: (...args: unknown[]) =>
-    mockGetAllArtistPlayCounts(...args),
+vi.mock("../../api/plex/trackPlayCounts", () => ({
+  getAllTrackPlayCounts: (...args: unknown[]) =>
+    mockGetAllTrackPlayCounts(...args),
 }));
 
 import {
@@ -19,10 +19,14 @@ import {
   detectUnratings,
   playsDue,
   reconstructPlayCounts,
+  reconstructTrackPlayCounts,
+  rollupToArtists,
+  rollupToAlbums,
   ingestUserRatings,
-  ingestUserPlays,
+  ingestUserTrackPlays,
   type PlexRatingPayload,
-  type PlexPlaysPayload,
+  type PlexTrackPlaysPayload,
+  type TrackPlayState,
 } from "./signalIngestion";
 import { initializeDatabase, closeDatabase, getDataSource } from "../../db";
 import { getSignalEvents } from "../../db/userProfile";
@@ -165,6 +169,199 @@ describe("reconstructPlayCounts", () => {
   });
 });
 
+function liveTrack(ratingKey: string, artistName: string, viewCount: number) {
+  return {
+    ratingKey,
+    title: `t${ratingKey}`,
+    artistKey: `ak-${artistName}`,
+    artistName,
+    albumKey: `alb-${artistName}`,
+    albumTitle: "Album",
+    viewCount,
+  };
+}
+
+function trackState(
+  ratingKey: string,
+  artistName: string,
+  playCount: number,
+  overrides: Partial<TrackPlayState> = {}
+): TrackPlayState {
+  return {
+    ratingKey,
+    title: `t${ratingKey}`,
+    artistKey: `ak-${artistName}`,
+    artistName,
+    albumKey: `alb-${artistName}`,
+    albumTitle: "Album",
+    playCount,
+    ...overrides,
+  };
+}
+
+function trackPlaysEvent(
+  tracks: TrackPlayState[],
+  recordedAt: string
+): UserSignalEvent {
+  return {
+    id: 0,
+    user_id: 1,
+    kind: "plex_track_plays",
+    payload: JSON.stringify({ tracks } satisfies PlexTrackPlaysPayload),
+    recorded_at: recordedAt,
+  } as UserSignalEvent;
+}
+
+describe("reconstructTrackPlayCounts", () => {
+  it("folds deltas last-write-wins and carries unchanged tracks forward", () => {
+    const events = [
+      trackPlaysEvent(
+        [trackState("1", "A", 10), trackState("2", "A", 5)],
+        "2026-01-01T00:00:00.000Z"
+      ),
+      trackPlaysEvent([trackState("1", "A", 30)], "2026-02-01T00:00:00.000Z"),
+    ];
+    const tracks = reconstructTrackPlayCounts(events, Infinity);
+    expect(tracks.get("1")?.playCount).toBe(30);
+    expect(tracks.get("2")?.playCount).toBe(5);
+  });
+
+  it("ignores events recorded after the cutoff", () => {
+    const events = [
+      trackPlaysEvent([trackState("1", "A", 10)], "2026-01-01T00:00:00.000Z"),
+      trackPlaysEvent([trackState("1", "A", 30)], "2026-03-01T00:00:00.000Z"),
+    ];
+    const tracks = reconstructTrackPlayCounts(
+      events,
+      Date.parse("2026-02-01T00:00:00.000Z")
+    );
+    expect(tracks.get("1")?.playCount).toBe(10);
+  });
+
+  it("skips corrupt rows and rows with no rating key", () => {
+    const events = [
+      {
+        ...trackPlaysEvent([], "2026-01-01T00:00:00.000Z"),
+        payload: "not json",
+      },
+      {
+        ...trackPlaysEvent([], "2026-01-02T00:00:00.000Z"),
+        payload: JSON.stringify({ tracks: [{ playCount: 3 }] }),
+      },
+      trackPlaysEvent([trackState("1", "A", 7)], "2026-02-01T00:00:00.000Z"),
+    ];
+    const tracks = reconstructTrackPlayCounts(
+      events as UserSignalEvent[],
+      Infinity
+    );
+    expect(tracks.size).toBe(1);
+    expect(tracks.get("1")?.playCount).toBe(7);
+  });
+});
+
+describe("rollupToArtists", () => {
+  it("sums track plays per artist", () => {
+    const tracks = reconstructTrackPlayCounts(
+      [
+        trackPlaysEvent(
+          [
+            trackState("1", "A", 4),
+            trackState("2", "A", 6),
+            trackState("3", "B", 2),
+          ],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+    expect(rollupToArtists(tracks)).toEqual([
+      { artistKey: "ak-A", name: "A", playCount: 10 },
+      { artistKey: "ak-B", name: "B", playCount: 2 },
+    ]);
+  });
+
+  it("groups by artistKey, keeping a renamed artist as one bucket", () => {
+    const tracks = reconstructTrackPlayCounts(
+      [
+        trackPlaysEvent(
+          [
+            trackState("1", "Old", 3, { artistKey: "k1" }),
+            trackState("2", "New", 5, { artistKey: "k1" }),
+          ],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+    expect(rollupToArtists(tracks)).toEqual([
+      { artistKey: "k1", name: "Old", playCount: 8 },
+    ]);
+  });
+
+  it("falls back to the name when a track carries no artist key", () => {
+    const tracks = reconstructTrackPlayCounts(
+      [
+        trackPlaysEvent(
+          [trackState("1", "A", 3, { artistKey: "" })],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+    expect(rollupToArtists(tracks)).toEqual([
+      { artistKey: "A", name: "A", playCount: 3 },
+    ]);
+  });
+
+  it("drops tracks with neither an artist key nor a name", () => {
+    const tracks = reconstructTrackPlayCounts(
+      [
+        trackPlaysEvent(
+          [trackState("1", "", 3, { artistKey: "" })],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+    expect(rollupToArtists(tracks)).toEqual([]);
+  });
+});
+
+describe("rollupToAlbums", () => {
+  it("sums track plays per album", () => {
+    const tracks = reconstructTrackPlayCounts(
+      [
+        trackPlaysEvent(
+          [
+            trackState("1", "A", 4, { albumKey: "alb1", albumTitle: "One" }),
+            trackState("2", "A", 6, { albumKey: "alb1", albumTitle: "One" }),
+            trackState("3", "A", 1, { albumKey: "alb2", albumTitle: "Two" }),
+          ],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+    expect(rollupToAlbums(tracks)).toEqual([
+      { albumKey: "alb1", title: "One", artistName: "A", playCount: 10 },
+      { albumKey: "alb2", title: "Two", artistName: "A", playCount: 1 },
+    ]);
+  });
+
+  it("drops tracks with no album attribution at all", () => {
+    const tracks = reconstructTrackPlayCounts(
+      [
+        trackPlaysEvent(
+          [trackState("1", "A", 4, { albumKey: "", albumTitle: "" })],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+    expect(rollupToAlbums(tracks)).toEqual([]);
+  });
+});
+
 describe("detectUnratings", () => {
   it("finds previously-rated keys absent from the current set", () => {
     const previous = new Map<string, PlexRatingPayload>([
@@ -240,81 +437,127 @@ describe("ingestion (with DB)", () => {
     expect(JSON.parse(events[1].payload).rating).toBe(4);
   });
 
-  it("writes a plays capture of per-artist play counts for all played artists", async () => {
-    mockGetAllArtistPlayCounts.mockResolvedValue([
-      { name: "Andromedik", viewCount: 120 },
-      { name: "Durry", viewCount: 30 },
+  it("writes a track-plays capture covering every played track", async () => {
+    mockGetAllTrackPlayCounts.mockResolvedValue([
+      liveTrack("1", "Andromedik", 120),
+      liveTrack("2", "Durry", 30),
     ]);
 
-    await ingestUserPlays(1, "tok");
+    await ingestUserTrackPlays(1, "tok");
 
-    const events = await getSignalEvents(1, "plex_plays");
+    const events = await getSignalEvents(1, "plex_track_plays");
     expect(events).toHaveLength(1);
-    const payload = JSON.parse(events[0].payload) as PlexPlaysPayload;
-    expect(payload.artists).toEqual([
-      { name: "Andromedik", playCount: 120 },
-      { name: "Durry", playCount: 30 },
+    const payload = JSON.parse(events[0].payload) as PlexTrackPlaysPayload;
+    expect(payload.tracks).toEqual([
+      {
+        ratingKey: "1",
+        title: "t1",
+        artistKey: "ak-Andromedik",
+        artistName: "Andromedik",
+        albumKey: "alb-Andromedik",
+        albumTitle: "Album",
+        playCount: 120,
+      },
+      {
+        ratingKey: "2",
+        title: "t2",
+        artistKey: "ak-Durry",
+        artistName: "Durry",
+        albumKey: "alb-Durry",
+        albumTitle: "Album",
+        playCount: 30,
+      },
     ]);
-    expect(mockGetAllArtistPlayCounts).toHaveBeenCalledWith("tok");
+    expect(mockGetAllTrackPlayCounts).toHaveBeenCalledWith("tok");
   });
 
-  it("writes a delta of only the artists whose count increased", async () => {
-    mockGetAllArtistPlayCounts.mockReset();
-    mockGetAllArtistPlayCounts.mockResolvedValueOnce([
-      { name: "A", viewCount: 10 },
-      { name: "B", viewCount: 5 },
+  it("writes a delta of only the tracks whose count increased", async () => {
+    mockGetAllTrackPlayCounts.mockReset();
+    mockGetAllTrackPlayCounts.mockResolvedValueOnce([
+      liveTrack("1", "A", 10),
+      liveTrack("2", "B", 5),
     ]);
-    await ingestUserPlays(1, "tok");
-    mockGetAllArtistPlayCounts.mockResolvedValueOnce([
-      { name: "A", viewCount: 30 },
-      { name: "B", viewCount: 5 },
+    await ingestUserTrackPlays(1, "tok");
+    mockGetAllTrackPlayCounts.mockResolvedValueOnce([
+      liveTrack("1", "A", 30),
+      liveTrack("2", "B", 5),
     ]);
-    await ingestUserPlays(1, "tok");
+    await ingestUserTrackPlays(1, "tok");
 
-    const events = await getSignalEvents(1, "plex_plays");
+    const events = await getSignalEvents(1, "plex_track_plays");
     expect(events).toHaveLength(2);
-    expect((JSON.parse(events[1].payload) as PlexPlaysPayload).artists).toEqual(
-      [{ name: "A", playCount: 30 }]
-    );
+    const delta = JSON.parse(events[1].payload) as PlexTrackPlaysPayload;
+    expect(delta.tracks.map((t) => [t.ratingKey, t.playCount])).toEqual([
+      ["1", 30],
+    ]);
   });
 
   it("writes nothing when no count increased", async () => {
-    mockGetAllArtistPlayCounts.mockReset();
-    mockGetAllArtistPlayCounts.mockResolvedValue([
-      { name: "A", viewCount: 10 },
-    ]);
+    mockGetAllTrackPlayCounts.mockReset();
+    mockGetAllTrackPlayCounts.mockResolvedValue([liveTrack("1", "A", 10)]);
 
-    await ingestUserPlays(1, "tok");
-    await ingestUserPlays(1, "tok");
+    await ingestUserTrackPlays(1, "tok");
+    await ingestUserTrackPlays(1, "tok");
 
-    expect(await getSignalEvents(1, "plex_plays")).toHaveLength(1);
+    expect(await getSignalEvents(1, "plex_track_plays")).toHaveLength(1);
   });
 
-  it("never records a decrease or a vanished artist (monotonic)", async () => {
-    mockGetAllArtistPlayCounts.mockReset();
-    mockGetAllArtistPlayCounts.mockResolvedValueOnce([
-      { name: "A", viewCount: 10 },
-      { name: "B", viewCount: 5 },
+  it("never records a decrease or a vanished track (monotonic)", async () => {
+    mockGetAllTrackPlayCounts.mockReset();
+    mockGetAllTrackPlayCounts.mockResolvedValueOnce([
+      liveTrack("1", "A", 10),
+      liveTrack("2", "B", 5),
     ]);
-    await ingestUserPlays(1, "tok");
-    mockGetAllArtistPlayCounts.mockResolvedValueOnce([
-      { name: "A", viewCount: 8 },
-    ]);
-    await ingestUserPlays(1, "tok");
+    await ingestUserTrackPlays(1, "tok");
+    mockGetAllTrackPlayCounts.mockResolvedValueOnce([liveTrack("1", "A", 8)]);
+    await ingestUserTrackPlays(1, "tok");
 
-    expect(await getSignalEvents(1, "plex_plays")).toHaveLength(1);
+    expect(await getSignalEvents(1, "plex_track_plays")).toHaveLength(1);
   });
 
   it("treats a transient-empty read as a no-op", async () => {
-    mockGetAllArtistPlayCounts.mockReset();
-    mockGetAllArtistPlayCounts.mockResolvedValueOnce([
-      { name: "A", viewCount: 10 },
-    ]);
-    await ingestUserPlays(1, "tok");
-    mockGetAllArtistPlayCounts.mockResolvedValueOnce([]);
-    await ingestUserPlays(1, "tok");
+    mockGetAllTrackPlayCounts.mockReset();
+    mockGetAllTrackPlayCounts.mockResolvedValueOnce([liveTrack("1", "A", 10)]);
+    await ingestUserTrackPlays(1, "tok");
+    mockGetAllTrackPlayCounts.mockResolvedValueOnce([]);
+    await ingestUserTrackPlays(1, "tok");
 
-    expect(await getSignalEvents(1, "plex_plays")).toHaveLength(1);
+    expect(await getSignalEvents(1, "plex_track_plays")).toHaveLength(1);
+  });
+
+  it("chunks a large first capture and folds it back identically", async () => {
+    mockGetAllTrackPlayCounts.mockReset();
+    const live = Array.from({ length: 4500 }, (_, i) =>
+      liveTrack(String(i), `A${i % 3}`, i + 1)
+    );
+    mockGetAllTrackPlayCounts.mockResolvedValueOnce(live);
+
+    await ingestUserTrackPlays(1, "tok");
+
+    const events = await getSignalEvents(1, "plex_track_plays");
+    expect(events).toHaveLength(3);
+    expect(
+      events.map(
+        (e) => (JSON.parse(e.payload) as PlexTrackPlaysPayload).tracks.length
+      )
+    ).toEqual([2000, 2000, 500]);
+
+    const folded = reconstructTrackPlayCounts(events, Infinity);
+    expect(folded.size).toBe(4500);
+    expect(folded.get("4499")?.playCount).toBe(4500);
+  });
+
+  it("re-reads its own chunked capture as unchanged", async () => {
+    mockGetAllTrackPlayCounts.mockReset();
+    const live = Array.from({ length: 2500 }, (_, i) =>
+      liveTrack(String(i), "A", i + 1)
+    );
+    mockGetAllTrackPlayCounts.mockResolvedValue(live);
+
+    await ingestUserTrackPlays(1, "tok");
+    await ingestUserTrackPlays(1, "tok");
+
+    expect(await getSignalEvents(1, "plex_track_plays")).toHaveLength(2);
   });
 
   it("records a confirmed un-rating as a rating-0 event", async () => {
