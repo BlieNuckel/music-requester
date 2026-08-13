@@ -70,4 +70,32 @@ describe("downloadTracker", () => {
 
     expect(getAllDownloads()).toHaveLength(0);
   });
+
+  describe("stale pruning", () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    it("stops reporting a download Lidarr never cleaned up", () => {
+      const base = 1_700_000_000_000;
+      addDownload(createDownload({ nzoId: "abandoned", addedAt: base }));
+
+      expect(getAllDownloads(base + DAY_MS + 1)).toHaveLength(0);
+    });
+
+    it("keeps a download that is still within the retention window", () => {
+      const base = 1_700_000_000_000;
+      addDownload(createDownload({ nzoId: "recent", addedAt: base }));
+
+      expect(getAllDownloads(base + DAY_MS - 1)).toHaveLength(1);
+    });
+
+    it("evicts stale entries when a new download arrives, not only on read", () => {
+      const base = 1_700_000_000_000;
+      addDownload(createDownload({ nzoId: "old", addedAt: base }));
+
+      addDownload(createDownload({ nzoId: "new", addedAt: base + DAY_MS + 1 }));
+
+      expect(getDownload("old")).toBeUndefined();
+      expect(getDownload("new")).toBeDefined();
+    });
+  });
 });
