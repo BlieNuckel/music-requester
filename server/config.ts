@@ -4,48 +4,32 @@ import { fileURLToPath } from "url";
 import { getDataSource } from "./db/index";
 import { createLogger } from "./logger";
 import type { TopArtistsRange } from "./api/plex/types";
+import {
+  DEFAULT_PROMOTED_ALBUM,
+  DEFAULT_PURCHASE_DECISION,
+  DEFAULT_SPENDING,
+  type LibraryPreference,
+  type PromotedAlbumSettings,
+  type PurchaseDecisionSettings,
+  type SpendingSettings,
+} from "../shared/settingsDefaults";
+
+export {
+  DEFAULT_PROMOTED_ALBUM,
+  DEFAULT_PURCHASE_DECISION,
+  DEFAULT_SPENDING,
+} from "../shared/settingsDefaults";
+export type { LibraryPreference } from "../shared/settingsDefaults";
+
+/** Server-side aliases for the shared settings shapes. */
+export type PromotedAlbumConfig = PromotedAlbumSettings;
+export type PurchaseDecisionConfig = PurchaseDecisionSettings;
+export type SpendingConfig = SpendingSettings;
 
 const log = createLogger("Config");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-export type LibraryPreference =
-  "prefer_new" | "prefer_library" | "no_preference";
-
-export type PurchaseDecisionConfig = {
-  labelBlocklist: string[];
-  oldReleaseThresholdYears: number;
-};
-
-export type SpendingConfig = {
-  currency: string;
-  monthlyLimit: number | null;
-};
-
-export type PromotedAlbumConfig = {
-  cacheDurationMinutes: number;
-  profileTtlMinutes: number;
-  topArtistsRange: TopArtistsRange;
-  topArtistsCount: number;
-  pickedArtistsCount: number;
-  tagsPerArtist: number;
-  deepPageMin: number;
-  deepPageMax: number;
-  genericTags: string[];
-  libraryPreference: LibraryPreference;
-  explorationRate: number;
-  exploreCandidateCount: number;
-  genreOverlapThreshold: number;
-  backgroundRegenEnabled: boolean;
-  backgroundRegenIntervalMinutes: number;
-  backgroundRegenActiveWithinMinutes: number;
-  ratingsBackupEnabled: boolean;
-  playTrendWindowDays: number;
-  ratingWeight: number;
-  distributionWeight: number;
-  minPlaysForDistribution: number;
-};
 
 /**
  * VAPID identifies this server to the browser push services. The keypair is
@@ -100,16 +84,6 @@ export type IConfigInput = Omit<
   };
 };
 
-export const DEFAULT_PURCHASE_DECISION: PurchaseDecisionConfig = {
-  labelBlocklist: [],
-  oldReleaseThresholdYears: 50,
-};
-
-export const DEFAULT_SPENDING: SpendingConfig = {
-  currency: "USD",
-  monthlyLimit: null,
-};
-
 export const DEFAULT_WEB_PUSH: WebPushConfig = {
   publicKey: "",
   privateKey: "",
@@ -123,43 +97,6 @@ export const DEFAULT_NOTIFICATIONS: NotificationsConfig = {
 
 export const DEFAULT_FOLLOWED_POLL_INTERVAL_MS = 6 * 60 * 60 * 1000;
 export const DEFAULT_REQUEST_STATUS_POLL_INTERVAL_MS = 2 * 60 * 1000;
-
-export const DEFAULT_PROMOTED_ALBUM: PromotedAlbumConfig = {
-  cacheDurationMinutes: 30,
-  profileTtlMinutes: 1440,
-  topArtistsRange: "6months",
-  topArtistsCount: 10,
-  pickedArtistsCount: 3,
-  tagsPerArtist: 5,
-  deepPageMin: 2,
-  deepPageMax: 10,
-  genericTags: [
-    "seen live",
-    "favorites",
-    "favourite",
-    "my favorite",
-    "love",
-    "awesome",
-    "beautiful",
-    "cool",
-    "check out",
-    "spotify",
-    "under 2000 listeners",
-    "all",
-  ],
-  libraryPreference: "prefer_new",
-  explorationRate: 0.5,
-  exploreCandidateCount: 12,
-  genreOverlapThreshold: 0.15,
-  backgroundRegenEnabled: true,
-  backgroundRegenIntervalMinutes: 60,
-  backgroundRegenActiveWithinMinutes: 10080,
-  ratingsBackupEnabled: true,
-  playTrendWindowDays: 90,
-  ratingWeight: 0.5,
-  distributionWeight: 0.5,
-  minPlaysForDistribution: 5,
-};
 
 const DEFAULT_CONFIG: IConfig = {
   lidarrUrl: "",

@@ -1,43 +1,17 @@
 import { createContext } from "react";
+import type {
+  PromotedAlbumSettings,
+  PurchaseDecisionSettings,
+  SpendingSettings,
+} from "@shared/settingsDefaults";
 
-export type LibraryPreference =
-  "prefer_new" | "prefer_library" | "no_preference";
-
-export type TopArtistsRange = "all" | "4weeks" | "6months" | "12months";
-
-export interface PromotedAlbumSettings {
-  cacheDurationMinutes: number;
-  profileTtlMinutes: number;
-  topArtistsRange: TopArtistsRange;
-  topArtistsCount: number;
-  pickedArtistsCount: number;
-  tagsPerArtist: number;
-  deepPageMin: number;
-  deepPageMax: number;
-  genericTags: string[];
-  libraryPreference: LibraryPreference;
-  explorationRate: number;
-  exploreCandidateCount: number;
-  genreOverlapThreshold: number;
-  backgroundRegenEnabled: boolean;
-  backgroundRegenIntervalMinutes: number;
-  backgroundRegenActiveWithinMinutes: number;
-  ratingsBackupEnabled: boolean;
-  playTrendWindowDays: number;
-  ratingWeight: number;
-  distributionWeight: number;
-  minPlaysForDistribution: number;
-}
-
-export interface PurchaseDecisionSettings {
-  labelBlocklist: string[];
-  oldReleaseThresholdYears: number;
-}
-
-export interface SpendingSettings {
-  currency: string;
-  monthlyLimit: number | null;
-}
+export type {
+  LibraryPreference,
+  TopArtistsRange,
+  PromotedAlbumSettings,
+  PurchaseDecisionSettings,
+  SpendingSettings,
+} from "@shared/settingsDefaults";
 
 export interface AppSettings {
   lidarrUrl: string;

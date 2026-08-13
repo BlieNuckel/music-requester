@@ -4,6 +4,11 @@ import path from "path";
 import os from "os";
 import { initializeDatabase, closeDatabase } from "./db/index";
 import {
+  DEFAULT_PROMOTED_ALBUM as SHARED_PROMOTED_ALBUM,
+  DEFAULT_PURCHASE_DECISION as SHARED_PURCHASE_DECISION,
+  DEFAULT_SPENDING as SHARED_SPENDING,
+} from "../shared/settingsDefaults";
+import {
   getConfig,
   setConfig,
   getConfigValue,
@@ -349,5 +354,40 @@ describe("web push config", () => {
     expect(getConfig().notifications.webPush.subject).toBe(
       "mailto:admin@example.com"
     );
+  });
+});
+
+describe("shared settings defaults", () => {
+  beforeEach(() => {
+    initializeConfig();
+  });
+
+  it("seeds every shared default section verbatim", () => {
+    const config = getConfig();
+
+    expect(config.promotedAlbum).toEqual(SHARED_PROMOTED_ALBUM);
+    expect(config.purchaseDecision).toEqual(SHARED_PURCHASE_DECISION);
+    expect(config.spending).toEqual(SHARED_SPENDING);
+  });
+
+  it("treats a null nested section as 'no change' rather than wiping it", () => {
+    setConfig({ promotedAlbum: { topArtistsCount: 25 } as never });
+    setConfig({ promotedAlbum: null as never });
+
+    expect(getConfig().promotedAlbum.topArtistsCount).toBe(25);
+  });
+
+  it("still validates a nested section supplied as null-valued keys", () => {
+    expect(() =>
+      setConfig({ promotedAlbum: { topArtistsCount: null } as never })
+    ).toThrow("topArtistsCount must be a positive integer");
+  });
+
+  it("does not let a partial nested write drop the other keys", () => {
+    setConfig({ spending: { monthlyLimit: 25 } as never });
+
+    const { spending } = getConfig();
+    expect(spending.monthlyLimit).toBe(25);
+    expect(spending.currency).toBe(SHARED_SPENDING.currency);
   });
 });
