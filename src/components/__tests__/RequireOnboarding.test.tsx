@@ -47,6 +47,7 @@ const emptySettings = {
   slskdUrl: "",
   slskdApiKey: "",
   slskdDownloadPath: "",
+  torznabApiKey: "",
 };
 
 function renderWithContext(

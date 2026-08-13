@@ -2,6 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockLidarrGet = vi.fn();
 const mockLidarrPost = vi.fn();
+const mockGetConfigValue = vi.fn();
+
+vi.mock("../../config", () => ({
+  getConfigValue: (...args: unknown[]) => mockGetConfigValue(...args),
+}));
 
 vi.mock("../../api/lidarr/get.js", () => ({
   lidarrGet: (...args: unknown[]) => mockLidarrGet(...args),
@@ -31,6 +36,7 @@ app.use(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockGetConfigValue.mockReturnValue("");
 });
 
 const newznabSchema = {
@@ -196,6 +202,30 @@ describe("POST /auto-setup", () => {
           { name: "apiPath", value: "" },
           { name: "apiKey", value: "a" },
         ]),
+      })
+    );
+  });
+
+  it("registers the configured indexer key with both Lidarr entries", async () => {
+    mockGetConfigValue.mockReturnValue("s3cret");
+    mockSchemasAndClients(42);
+    mockLidarrPost.mockResolvedValue({ ok: true, data: {} });
+
+    await request(app)
+      .post("/auto-setup")
+      .send({ host: "tunearr", port: 3001 });
+
+    expect(mockGetConfigValue).toHaveBeenCalledWith("torznabApiKey");
+    expect(mockLidarrPost).toHaveBeenCalledWith(
+      "/downloadclient",
+      expect.objectContaining({
+        fields: expect.arrayContaining([{ name: "apiKey", value: "s3cret" }]),
+      })
+    );
+    expect(mockLidarrPost).toHaveBeenCalledWith(
+      "/indexer",
+      expect.objectContaining({
+        fields: expect.arrayContaining([{ name: "apiKey", value: "s3cret" }]),
       })
     );
   });

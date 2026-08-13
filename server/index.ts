@@ -6,6 +6,9 @@ import { initializeDatabase } from "./db/index";
 import { createLogger } from "./logger";
 import { errorHandler } from "./middleware/errorHandler";
 import { requireAuth } from "./middleware/requireAuth";
+import { requireIndexerKey } from "./middleware/requireIndexerKey";
+import { requirePermission } from "./middleware/requirePermission";
+import { Permission } from "../shared/permissions";
 import authRoutes from "./routes/auth";
 import lastfmRoutes from "./routes/lastfm";
 import lidarrRoutes from "./routes/lidarr";
@@ -47,9 +50,15 @@ app.use(express.json());
 
 app.use("/api/auth", authRoutes);
 
-app.use("/api/torznab", torznabRoutes);
-app.use("/api/sabnzbd", sabnzbdRoutes);
-app.use("/api/logs", logsRoutes);
+// Lidarr talks to these two without a session, so they authenticate by apikey instead.
+app.use("/api/torznab", requireIndexerKey, torznabRoutes);
+app.use("/api/sabnzbd", requireIndexerKey, sabnzbdRoutes);
+app.use(
+  "/api/logs",
+  requireAuth,
+  requirePermission(Permission.ADMIN),
+  logsRoutes
+);
 
 app.use("/api/settings", settingsRoutes);
 app.use("/api/users", usersRoutes);

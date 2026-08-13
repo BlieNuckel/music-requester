@@ -14,6 +14,7 @@ const defaultSettings: AppSettings = {
   slskdUrl: "",
   slskdApiKey: "",
   slskdDownloadPath: "",
+  torznabApiKey: "",
 };
 
 beforeEach(() => {

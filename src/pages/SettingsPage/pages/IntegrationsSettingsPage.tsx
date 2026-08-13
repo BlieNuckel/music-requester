@@ -202,10 +202,12 @@ export default function IntegrationsSettingsPage() {
         url={fields.slskdUrl}
         apiKey={fields.slskdApiKey}
         downloadPath={fields.slskdDownloadPath}
+        indexerApiKey={fields.torznabApiKey}
         testing={slskdTesting}
         onUrlChange={(v) => updateField("slskdUrl", v)}
         onApiKeyChange={(v) => updateField("slskdApiKey", v)}
         onDownloadPathChange={(v) => updateField("slskdDownloadPath", v)}
+        onIndexerApiKeyChange={(v) => updateField("torznabApiKey", v)}
         onTest={handleTestSlskd}
         isConnected={isConnected}
         autoSetupStatus={autoSetupStatus}

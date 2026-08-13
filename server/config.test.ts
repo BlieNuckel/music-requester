@@ -117,6 +117,7 @@ describe("getConfig", () => {
     expect(config.slskdUrl).toBe("");
     expect(config.slskdApiKey).toBe("");
     expect(config.slskdDownloadPath).toBe("");
+    expect(config.torznabApiKey).toBe("");
   });
 
   it("reads saved config and merges with defaults", () => {
@@ -166,6 +167,17 @@ describe("setConfig", () => {
         lidarrQualityProfileId: "bad" as unknown as number,
       })
     ).toThrow("lidarrQualityProfileId must be a number");
+
+    expect(() =>
+      setConfig({ torznabApiKey: 123 as unknown as string })
+    ).toThrow("torznabApiKey must be a string");
+  });
+
+  it("round-trips torznabApiKey", () => {
+    initializeConfig();
+    setConfig({ torznabApiKey: "s3cret" });
+
+    expect(getConfigValue("torznabApiKey")).toBe("s3cret");
   });
 });
 

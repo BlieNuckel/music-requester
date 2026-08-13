@@ -63,6 +63,8 @@ export type IConfig = {
   slskdUrl: string;
   slskdApiKey: string;
   slskdDownloadPath: string;
+  /** Shared secret Lidarr sends to `/api/torznab` and `/api/sabnzbd`. Empty disables the check. */
+  torznabApiKey: string;
   promotedAlbum: PromotedAlbumConfig;
   purchaseDecision: PurchaseDecisionConfig;
   spending: SpendingConfig;
@@ -110,6 +112,7 @@ const DEFAULT_CONFIG: IConfig = {
   slskdUrl: "",
   slskdApiKey: "",
   slskdDownloadPath: "",
+  torznabApiKey: "",
   promotedAlbum: DEFAULT_PROMOTED_ALBUM,
   purchaseDecision: DEFAULT_PURCHASE_DECISION,
   spending: DEFAULT_SPENDING,
@@ -363,6 +366,9 @@ function validateConfig(mergedConfig: IConfig) {
   }
   if (typeof mergedConfig.slskdDownloadPath !== "string") {
     throw new Error("slskdDownloadPath must be a string");
+  }
+  if (typeof mergedConfig.torznabApiKey !== "string") {
+    throw new Error("torznabApiKey must be a string");
   }
   if (
     typeof mergedConfig.followedArtistPollIntervalMs !== "number" ||

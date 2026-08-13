@@ -40,6 +40,7 @@ const EMPTY_SETTINGS: AppSettings = {
   slskdUrl: "",
   slskdApiKey: "",
   slskdDownloadPath: "",
+  torznabApiKey: "",
   promotedAlbum: DEFAULT_PROMOTED_ALBUM,
   purchaseDecision: DEFAULT_PURCHASE_DECISION,
   spending: DEFAULT_SPENDING,
@@ -68,6 +69,7 @@ function normalizeSettings(data: Record<string, unknown>): AppSettings {
     slskdUrl: (data.slskdUrl as string) ?? "",
     slskdApiKey: (data.slskdApiKey as string) ?? "",
     slskdDownloadPath: (data.slskdDownloadPath as string) ?? "",
+    torznabApiKey: (data.torznabApiKey as string) ?? "",
     promotedAlbum: {
       ...DEFAULT_PROMOTED_ALBUM,
       ...((data.promotedAlbum as object) ?? {}),

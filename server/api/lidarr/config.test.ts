@@ -30,6 +30,7 @@ const baseConfig = {
   slskdUrl: "",
   slskdApiKey: "",
   slskdDownloadPath: "",
+  torznabApiKey: "",
   theme: "system" as const,
   promotedAlbum: DEFAULT_PROMOTED_ALBUM,
   purchaseDecision: DEFAULT_PURCHASE_DECISION,
