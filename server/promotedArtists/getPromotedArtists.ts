@@ -117,6 +117,7 @@ export async function getPromotedArtists(
     ratingWeight: config.ratingWeight,
     distributionWeight: config.distributionWeight,
     minPlaysForDistribution: config.minPlaysForDistribution,
+    minAvailableTracksForDistribution: config.minAvailableTracksForDistribution,
   });
   if (weighted.length === 0) return null;
 

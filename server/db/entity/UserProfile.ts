@@ -45,6 +45,7 @@ export type DerivedProfile = {
     distributionFactor?: number;
     ratingBreadth?: number;
     ratingMultiplier?: number;
+    availableTracks?: number;
   }[];
   similarGraph: SimilarGraphSeed[];
   explorationHistory: { albums: string[]; artists: string[] };

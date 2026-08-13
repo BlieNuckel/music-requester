@@ -15,6 +15,7 @@ export type ProfileConfigInputs = {
   ratingWeight: number;
   distributionWeight: number;
   minPlaysForDistribution: number;
+  minAvailableTracksForDistribution: number;
   topArtistsCount: number;
   exploreCandidateCount: number;
 };
@@ -69,6 +70,7 @@ export function computeConfigHash(inputs: ProfileConfigInputs): string {
     ratingWeight: inputs.ratingWeight,
     distributionWeight: inputs.distributionWeight,
     minPlaysForDistribution: inputs.minPlaysForDistribution,
+    minAvailableTracksForDistribution: inputs.minAvailableTracksForDistribution,
     topArtistsCount: inputs.topArtistsCount,
     exploreCandidateCount: inputs.exploreCandidateCount,
   });

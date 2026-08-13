@@ -150,6 +150,7 @@ function buildTraceFromProfile(inputs: TraceInputs): WithinTasteTrace {
       distributionFactor: a.distributionFactor,
       ratingBreadth: a.ratingBreadth,
       ratingMultiplier: a.ratingMultiplier,
+      availableTracks: a.availableTracks,
     };
   });
 

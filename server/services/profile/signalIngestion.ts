@@ -1,5 +1,9 @@
 import { getRatedItems, getItemRating } from "../../api/plex/ratings";
 import {
+  getAllAlbumTrackCounts,
+  type AlbumTrackCount,
+} from "../../api/plex/albumTrackCounts";
+import {
   getAllTrackPlayCounts,
   type TrackPlayCount,
 } from "../../api/plex/trackPlayCounts";
@@ -71,6 +75,24 @@ export type AlbumPlayRollup = {
   title: string;
   artistName: string;
   playCount: number;
+};
+
+/** One album's track count — how much of it exists, regardless of what was played. */
+export type AlbumTrackState = {
+  ratingKey: string;
+  title: string;
+  artistKey: string;
+  artistName: string;
+  trackCount: number;
+};
+
+/**
+ * Payload of a `kind = "plex_album_tracks"` event. Each event is a delta: only the albums
+ * whose track count differs from the last capture. Fold the series with
+ * {@link reconstructAlbumTrackCounts}, then accumulate with {@link rollupToArtistCatalogue}.
+ */
+export type PlexAlbumTracksPayload = {
+  albums: AlbumTrackState[];
 };
 
 const log = createLogger("signal-ingestion");
@@ -414,6 +436,60 @@ export function rollupToAlbums(
   return Array.from(byAlbum.values());
 }
 
+/**
+ * Cumulative per-album track count reconstructed from the delta series, considering only
+ * events recorded at or before `cutoffMs`. Folds last-write-wins per `ratingKey`; unchanged
+ * albums are absent from later deltas and carry their prior value forward.
+ */
+export function reconstructAlbumTrackCounts(
+  events: UserSignalEvent[],
+  cutoffMs: number
+): Map<string, AlbumTrackState> {
+  return foldEvents<PlexAlbumTracksPayload, AlbumTrackState>(
+    events,
+    cutoffMs,
+    (payload) =>
+      (payload.albums ?? [])
+        .filter((album) => album && typeof album.ratingKey === "string")
+        .map((album) => [album.ratingKey, album] as [string, AlbumTrackState]),
+    "plex_album_tracks"
+  );
+}
+
+/**
+ * How many tracks the library holds per artist, summed over their albums. Grouped by
+ * `artistKey` so a rename keeps one bucket, then keyed by name — the key everything joining
+ * onto the weight set uses — with two same-named artists collapsing to the larger catalogue.
+ *
+ * An album deleted from Plex keeps its last known count (the fold has no delete event), so
+ * this over-counts rather than under-counts. That is the safe direction: availability only
+ * ever *exempts* an artist from the one-hit discount, and an inflated count exempts nobody.
+ */
+export function rollupToArtistCatalogue(
+  albums: Map<string, AlbumTrackState>
+): Map<string, number> {
+  const byKey = new Map<string, { name: string; trackCount: number }>();
+  for (const album of albums.values()) {
+    const key = album.artistKey || album.artistName;
+    if (!key) continue;
+
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.trackCount += album.trackCount;
+      if (!existing.name) existing.name = album.artistName;
+    } else {
+      byKey.set(key, { name: album.artistName, trackCount: album.trackCount });
+    }
+  }
+
+  const byName = new Map<string, number>();
+  for (const { name, trackCount } of byKey.values()) {
+    if (!name) continue;
+    byName.set(name, Math.max(byName.get(name) ?? 0, trackCount));
+  }
+  return byName;
+}
+
 const toTrackPlayState = (track: TrackPlayCount): TrackPlayState => ({
   ratingKey: track.ratingKey,
   title: track.title,
@@ -455,8 +531,46 @@ export async function ingestUserTrackPlays(
   await appendSignalEvents(userId, "plex_track_plays", chunks);
 }
 
-/** Whether a new plays capture is due — true when none exists or the last is older than the interval. */
-export function playsDue(
+const toAlbumTrackState = (album: AlbumTrackCount): AlbumTrackState => ({
+  ratingKey: album.ratingKey,
+  title: album.title,
+  artistKey: album.artistKey,
+  artistName: album.artistName,
+  trackCount: album.trackCount,
+});
+
+/**
+ * Append `plex_album_tracks` deltas capturing only the albums whose track count changed
+ * since the last capture — how much music the library actually holds per artist, which the
+ * played-track sweep can't see (it never fetches an unplayed track). Unlike plays, a track
+ * count is not monotonic: an album can legitimately shrink, so any difference is recorded.
+ * When nothing changed, no event is written.
+ */
+export async function ingestUserAlbumTracks(
+  userId: number,
+  plexToken: string
+): Promise<void> {
+  const live = await getAllAlbumTrackCounts(plexToken);
+  const stored = reconstructAlbumTrackCounts(
+    await getSignalEvents(userId, "plex_album_tracks"),
+    Infinity
+  );
+  const changed = live.filter(
+    (album) => album.trackCount !== stored.get(album.ratingKey)?.trackCount
+  );
+  if (changed.length === 0) return;
+
+  const chunks: PlexAlbumTracksPayload[] = [];
+  for (let i = 0; i < changed.length; i += MAX_TRACKS_PER_EVENT) {
+    chunks.push({
+      albums: changed.slice(i, i + MAX_TRACKS_PER_EVENT).map(toAlbumTrackState),
+    });
+  }
+  await appendSignalEvents(userId, "plex_album_tracks", chunks);
+}
+
+/** Whether a new capture of a series is due — true when none exists or the last is older than the interval. */
+export function captureDue(
   events: UserSignalEvent[],
   now: number,
   intervalMs: number

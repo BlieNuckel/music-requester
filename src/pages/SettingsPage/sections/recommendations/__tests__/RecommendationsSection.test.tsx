@@ -74,4 +74,22 @@ describe("RecommendationsSection — ratings backup toggle", () => {
       minPlaysForDistribution: 12,
     });
   });
+
+  it("edits the small-catalogue exemption", () => {
+    const onChange = vi.fn();
+    render(
+      <RecommendationsSection
+        config={DEFAULT_PROMOTED_ALBUM}
+        onConfigChange={onChange}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText(/Small Catalogue Exemption/i), {
+      target: { value: "5" },
+    });
+    expect(onChange).toHaveBeenCalledWith({
+      ...DEFAULT_PROMOTED_ALBUM,
+      minAvailableTracksForDistribution: 5,
+    });
+  });
 });

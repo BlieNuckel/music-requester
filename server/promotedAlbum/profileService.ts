@@ -117,6 +117,7 @@ function buildProfileArtifacts(
       distributionFactor: artist.distributionFactor,
       ratingBreadth: artist.ratingBreadth,
       ratingMultiplier: artist.ratingMultiplier,
+      availableTracks: artist.availableTracks,
     })
   );
 
@@ -159,6 +160,7 @@ export async function regenerateProfile(
     ratingWeight: config.ratingWeight,
     distributionWeight: config.distributionWeight,
     minPlaysForDistribution: config.minPlaysForDistribution,
+    minAvailableTracksForDistribution: config.minAvailableTracksForDistribution,
   });
   if (weighted.length === 0) return null;
 
