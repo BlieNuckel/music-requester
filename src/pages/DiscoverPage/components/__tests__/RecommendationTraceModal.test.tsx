@@ -102,6 +102,7 @@ const personalTrace: PersonalTrace = {
   chosenGenres: ["shoegaze", "noise pop"],
   sharedGenres: ["shoegaze"],
   widened: false,
+  relaxedPreference: false,
   selectionReason: "preferred_non_library",
 };
 
@@ -373,6 +374,16 @@ describe("RecommendationTraceModal", () => {
     it("stays quiet about widening on a normal pick", () => {
       renderPersonalModal();
       expect(screen.queryByTestId("personal-widened")).not.toBeInTheDocument();
+    });
+
+    it("says so when every neighbour was on the wrong side of the library preference", () => {
+      renderPersonalModal({ relaxedPreference: true });
+      expect(screen.getByTestId("personal-relaxed")).toBeInTheDocument();
+    });
+
+    it("stays quiet about the preference on a normal pick", () => {
+      renderPersonalModal();
+      expect(screen.queryByTestId("personal-relaxed")).not.toBeInTheDocument();
     });
   });
 });
