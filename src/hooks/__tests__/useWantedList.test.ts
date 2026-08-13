@@ -42,7 +42,9 @@ describe("useWantedList", () => {
 
     expect(result.current.items).toEqual(mockItems);
     expect(result.current.error).toBeNull();
-    expect(fetch).toHaveBeenCalledWith("/api/wanted");
+    expect(fetch).toHaveBeenCalledWith("/api/wanted", {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("sets error on fetch failure", async () => {

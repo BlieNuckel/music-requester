@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import useAsyncData from "./useAsyncData";
+import type { FetchContext } from "./useAsyncData";
 
 type ManagedUser = {
   id: number;
@@ -24,8 +25,8 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   return data;
 }
 
-function fetchUsers(): Promise<ManagedUser[]> {
-  return fetchJson<ManagedUser[]>("/api/users");
+function fetchUsers({ signal }: FetchContext): Promise<ManagedUser[]> {
+  return fetchJson<ManagedUser[]>("/api/users", { signal });
 }
 
 export type { ManagedUser, CreateUserPayload };

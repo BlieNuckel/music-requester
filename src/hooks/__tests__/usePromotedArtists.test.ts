@@ -48,7 +48,9 @@ describe("usePromotedArtists", () => {
 
     expect(result.current.promotedArtists).toEqual(artistsData);
     expect(result.current.error).toBeNull();
-    expect(fetch).toHaveBeenCalledWith("/api/promoted-artists");
+    expect(fetch).toHaveBeenCalledWith("/api/promoted-artists", {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("handles null response", async () => {
@@ -119,6 +121,8 @@ describe("usePromotedArtists", () => {
       await refreshPromise;
     });
 
-    expect(fetch).toHaveBeenCalledWith("/api/promoted-artists?refresh=true");
+    expect(fetch).toHaveBeenCalledWith("/api/promoted-artists?refresh=true", {
+      signal: expect.any(AbortSignal),
+    });
   });
 });

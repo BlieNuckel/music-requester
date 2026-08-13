@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import useAsyncData from "./useAsyncData";
+import type { FetchContext } from "./useAsyncData";
 import type { PurchaseItem, SpendingSummary } from "@/types";
 
 type PurchaseListData = {
@@ -7,10 +8,12 @@ type PurchaseListData = {
   summary: SpendingSummary | null;
 };
 
-async function fetchPurchaseList(): Promise<PurchaseListData> {
+async function fetchPurchaseList({
+  signal,
+}: FetchContext): Promise<PurchaseListData> {
   const [itemsRes, summaryRes] = await Promise.all([
-    fetch("/api/purchases"),
-    fetch("/api/purchases/summary"),
+    fetch("/api/purchases", { signal }),
+    fetch("/api/purchases/summary", { signal }),
   ]);
 
   if (!itemsRes.ok) throw new Error("Failed to load purchases");

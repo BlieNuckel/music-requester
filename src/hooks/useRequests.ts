@@ -31,8 +31,11 @@ function buildUrl(options: UseRequestsOptions): string {
   return qs ? `/api/requests?${qs}` : "/api/requests";
 }
 
-async function fetchRequestList({ key }: FetchContext): Promise<RequestItem[]> {
-  const res = await fetch(key);
+async function fetchRequestList({
+  key,
+  signal,
+}: FetchContext): Promise<RequestItem[]> {
+  const res = await fetch(key, { signal });
   if (!res.ok) throw new Error("Failed to fetch requests");
   return res.json();
 }

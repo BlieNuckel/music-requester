@@ -29,7 +29,9 @@ describe("useNewReleases", () => {
 
     expect(result.current.newReleases).toEqual(payload);
     expect(result.current.error).toBeNull();
-    expect(mockFetch).toHaveBeenCalledWith("/api/discover/new-releases");
+    expect(mockFetch).toHaveBeenCalledWith("/api/discover/new-releases", {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("exposes an error on failure", async () => {

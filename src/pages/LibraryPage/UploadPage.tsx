@@ -25,8 +25,11 @@ function formatFileSize(bytes: number): string {
 
 async function fetchReleaseGroupInfo({
   key,
+  signal,
 }: FetchContext): Promise<ReleaseGroupInfo | null> {
-  const res = await fetch(`/api/musicbrainz/release-group/${key}`);
+  const res = await fetch(`/api/musicbrainz/release-group/${key}`, {
+    signal,
+  });
   return res.ok ? res.json() : null;
 }
 

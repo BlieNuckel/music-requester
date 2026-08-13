@@ -8,8 +8,11 @@ interface ReleaseGroupLabelResponse {
 
 async function fetchReleaseGroupLabel({
   key,
+  signal,
 }: FetchContext): Promise<ReleaseGroupLabelResponse> {
-  const res = await fetch(`/api/musicbrainz/release-group/${key}/label`);
+  const res = await fetch(`/api/musicbrainz/release-group/${key}/label`, {
+    signal,
+  });
   if (!res.ok) {
     throw new Error("Failed to load label");
   }

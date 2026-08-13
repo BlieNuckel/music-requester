@@ -41,7 +41,9 @@ describe("useAsyncData", () => {
 
     expect(result.current.data).toBe("value");
     expect(result.current.error).toBeNull();
-    expect(fetcher).toHaveBeenCalledWith({ key: "k1", refresh: false });
+    expect(fetcher).toHaveBeenCalledWith(
+      expect.objectContaining({ key: "k1", refresh: false })
+    );
   });
 
   it("exposes error message on failure and keeps previous data", async () => {
@@ -178,7 +180,9 @@ describe("useAsyncData", () => {
 
     expect(result.current.data).toBe("refreshed");
     expect(result.current.loading).toBe(false);
-    expect(fetcher).toHaveBeenLastCalledWith({ key: "k1", refresh: true });
+    expect(fetcher).toHaveBeenLastCalledWith(
+      expect.objectContaining({ key: "k1", refresh: true })
+    );
   });
 
   it("sets loading while refreshing and keeps existing data", async () => {
@@ -272,6 +276,76 @@ describe("useAsyncData", () => {
     await waitFor(() => {
       expect(result.current.data).toBe("B:k2");
     });
-    expect(fetcherB).toHaveBeenCalledWith({ key: "k2", refresh: false });
+    expect(fetcherB).toHaveBeenCalledWith(
+      expect.objectContaining({ key: "k2", refresh: false })
+    );
+  });
+
+  it("aborts the in-flight request when the key changes", async () => {
+    const signals: AbortSignal[] = [];
+    const fetcher = vi.fn((ctx: FetchContext) => {
+      signals.push(ctx.signal);
+      return ctx.key === "k1"
+        ? new Promise<string>(() => {})
+        : Promise.resolve(ctx.key);
+    });
+
+    const { result, rerender } = renderHook(
+      ({ key }: { key: string }) => useAsyncData(key, fetcher),
+      { initialProps: { key: "k1" } }
+    );
+
+    expect(signals[0].aborted).toBe(false);
+
+    rerender({ key: "k2" });
+
+    await waitFor(() => {
+      expect(result.current.data).toBe("k2");
+    });
+    expect(signals[0].aborted).toBe(true);
+    expect(signals[1].aborted).toBe(false);
+  });
+
+  it("aborts the in-flight request on unmount", async () => {
+    const signals: AbortSignal[] = [];
+    const fetcher = vi.fn((ctx: FetchContext) => {
+      signals.push(ctx.signal);
+      return new Promise<string>(() => {});
+    });
+
+    const { unmount } = renderHook(() => useAsyncData("k1", fetcher));
+    expect(signals[0].aborted).toBe(false);
+
+    unmount();
+
+    expect(signals[0].aborted).toBe(true);
+  });
+
+  it("does not surface an aborted request as an error", async () => {
+    const first = deferred<string>();
+    const fetcher = vi.fn((ctx: FetchContext) =>
+      ctx.key === "k1" ? first.promise : Promise.resolve(ctx.key)
+    );
+
+    const { result, rerender } = renderHook(
+      ({ key }: { key: string }) => useAsyncData(key, fetcher),
+      { initialProps: { key: "k1" } }
+    );
+
+    rerender({ key: "k2" });
+    await waitFor(() => {
+      expect(result.current.data).toBe("k2");
+    });
+
+    // The abandoned request rejects the way an aborted fetch does.
+    await act(async () => {
+      first.reject(
+        new DOMException("The operation was aborted.", "AbortError")
+      );
+      await Promise.resolve();
+    });
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.data).toBe("k2");
   });
 });

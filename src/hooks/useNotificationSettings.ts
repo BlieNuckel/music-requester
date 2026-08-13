@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import useAsyncData from "./useAsyncData";
+import type { FetchContext } from "./useAsyncData";
 import type {
   NotificationEventDefinition,
   NotificationEventId,
@@ -24,10 +25,12 @@ export type NotificationSettings = {
   preferences: NotificationPreferenceEntry[];
 };
 
-async function fetchNotificationSettings(): Promise<NotificationSettings> {
+async function fetchNotificationSettings({
+  signal,
+}: FetchContext): Promise<NotificationSettings> {
   const [catalogRes, prefsRes] = await Promise.all([
-    fetch("/api/notifications/catalog"),
-    fetch("/api/notifications/preferences"),
+    fetch("/api/notifications/catalog", { signal }),
+    fetch("/api/notifications/preferences", { signal }),
   ]);
 
   if (!catalogRes.ok || !prefsRes.ok) {

@@ -36,7 +36,9 @@ describe("useSimilarArtists", () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(fetch).toHaveBeenCalledWith("/api/lastfm/similar?artist=Radiohead");
+    expect(fetch).toHaveBeenCalledWith("/api/lastfm/similar?artist=Radiohead", {
+      signal: expect.any(AbortSignal),
+    });
     expect(result.current.artists).toHaveLength(2);
     expect(result.current.error).toBeNull();
   });

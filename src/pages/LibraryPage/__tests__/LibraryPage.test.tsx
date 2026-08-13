@@ -204,7 +204,9 @@ describe("LibraryPage", () => {
     renderWithAuth(Permission.ADMIN);
 
     await waitFor(() => {
-      expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/requests");
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/requests", {
+        signal: expect.any(AbortSignal),
+      });
     });
   });
 
@@ -212,7 +214,9 @@ describe("LibraryPage", () => {
     renderWithAuth(Permission.REQUEST);
 
     await waitFor(() => {
-      expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/requests?userId=1");
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/requests?userId=1", {
+        signal: expect.any(AbortSignal),
+      });
     });
   });
 
@@ -223,7 +227,9 @@ describe("LibraryPage", () => {
     await toggleFilterChip(user, "Requester", "Me");
 
     await waitFor(() => {
-      expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/requests?userId=1");
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/requests?userId=1", {
+        signal: expect.any(AbortSignal),
+      });
     });
   });
 
@@ -233,12 +239,16 @@ describe("LibraryPage", () => {
 
     await toggleFilterChip(user, "Requester", "Me");
     await waitFor(() => {
-      expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/requests?userId=1");
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/requests?userId=1", {
+        signal: expect.any(AbortSignal),
+      });
     });
 
     await toggleFilterChip(user, "Requester", "Me");
     await waitFor(() => {
-      expect(vi.mocked(fetch)).toHaveBeenLastCalledWith("/api/requests");
+      expect(vi.mocked(fetch)).toHaveBeenLastCalledWith("/api/requests", {
+        signal: expect.any(AbortSignal),
+      });
     });
   });
 
@@ -250,7 +260,8 @@ describe("LibraryPage", () => {
 
     await waitFor(() => {
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-        "/api/requests?status=pending"
+        "/api/requests?status=pending",
+        { signal: expect.any(AbortSignal) }
       );
     });
   });
@@ -263,7 +274,8 @@ describe("LibraryPage", () => {
 
     await waitFor(() => {
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-        "/api/requests?status=downloading"
+        "/api/requests?status=downloading",
+        { signal: expect.any(AbortSignal) }
       );
     });
   });
@@ -277,7 +289,8 @@ describe("LibraryPage", () => {
 
     await waitFor(() => {
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-        "/api/requests?userId=1&status=approved"
+        "/api/requests?userId=1&status=approved",
+        { signal: expect.any(AbortSignal) }
       );
     });
   });
@@ -291,7 +304,8 @@ describe("LibraryPage", () => {
 
     await waitFor(() => {
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-        "/api/requests?status=pending&status=approved"
+        "/api/requests?status=pending&status=approved",
+        { signal: expect.any(AbortSignal) }
       );
     });
   });
@@ -328,7 +342,9 @@ describe("LibraryPage", () => {
 
     expect(screen.queryByText("Reset filters")).not.toBeInTheDocument();
     await waitFor(() => {
-      expect(vi.mocked(fetch)).toHaveBeenLastCalledWith("/api/requests");
+      expect(vi.mocked(fetch)).toHaveBeenLastCalledWith("/api/requests", {
+        signal: expect.any(AbortSignal),
+      });
     });
   });
 

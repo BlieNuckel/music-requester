@@ -105,7 +105,8 @@ describe("UploadPage", () => {
   it("fetches release group info from correct endpoint", () => {
     render(<UploadPage />);
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      "/api/musicbrainz/release-group/test-mbid-123"
+      "/api/musicbrainz/release-group/test-mbid-123",
+      { signal: expect.any(AbortSignal) }
     );
   });
 

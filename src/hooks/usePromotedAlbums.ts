@@ -95,11 +95,12 @@ export type PromotedAlbumData = {
 
 async function fetchPromotedAlbums({
   refresh,
+  signal,
 }: FetchContext): Promise<PromotedAlbumData[]> {
   const url = refresh
     ? "/api/promoted-album?refresh=true"
     : "/api/promoted-album";
-  const res = await fetch(url);
+  const res = await fetch(url, { signal });
 
   if (!res.ok) {
     throw new Error("Failed to fetch promoted albums");

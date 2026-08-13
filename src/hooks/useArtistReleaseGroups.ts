@@ -8,8 +8,11 @@ interface ArtistReleaseGroupsResponse {
 
 async function fetchArtistReleaseGroups({
   key,
+  signal,
 }: FetchContext): Promise<ArtistReleaseGroupsResponse> {
-  const res = await fetch(`/api/musicbrainz/artist/${key}/release-groups`);
+  const res = await fetch(`/api/musicbrainz/artist/${key}/release-groups`, {
+    signal,
+  });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || "Failed to load discography");

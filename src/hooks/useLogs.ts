@@ -50,8 +50,8 @@ function buildLogsUrl({
   return `/api/logs?${params.toString()}`;
 }
 
-async function fetchLogs({ key }: FetchContext): Promise<LogsResponse> {
-  const res = await fetch(key);
+async function fetchLogs({ key, signal }: FetchContext): Promise<LogsResponse> {
+  const res = await fetch(key, { signal });
 
   if (!res.ok) {
     throw new Error("Failed to fetch logs");
