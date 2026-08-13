@@ -223,6 +223,14 @@ describe("PromotedAlbumCarousel", () => {
     expect(screen.getByLabelText("Shuffle recommendations")).toBeDisabled();
   });
 
+  it("explains that the profile is being built instead of showing an empty frame", () => {
+    renderCarousel({ albums: [], building: true });
+
+    expect(screen.getByText("Building your taste profile")).toBeInTheDocument();
+    expect(screen.queryByTestId("promoted-album-card")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Shuffle recommendations")).toBeDisabled();
+  });
+
   it("clamps the active slide when the album list shrinks", () => {
     const { rerender } = renderCarousel();
     fireEvent.click(screen.getByLabelText("Show recommendation 5"));

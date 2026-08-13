@@ -257,4 +257,38 @@ describe("buildExploreResult", () => {
       "mbid-rock"
     );
   });
+
+  it("stops walking candidates once the shared resolution budget is spent", async () => {
+    mockFetchReleaseGroupsForArtist.mockResolvedValue([]);
+
+    const result = await buildExploreResult({
+      similarGraph: [seed],
+      config,
+      recentlyShown: new Set(),
+      artistInLibrary: notInLibrary,
+      albumLibrary: noLibraryAlbum,
+      budget: { remaining: 0 },
+    });
+
+    expect(result).toBeNull();
+    expect(mockFetchReleaseGroupsForArtist).not.toHaveBeenCalled();
+  });
+
+  it("spends one unit of the budget per candidate it tries", async () => {
+    mockFetchReleaseGroupsForArtist.mockResolvedValue([]);
+    const budget = { remaining: 5 };
+
+    await buildExploreResult({
+      similarGraph: [seed],
+      config,
+      recentlyShown: new Set(),
+      artistInLibrary: notInLibrary,
+      albumLibrary: noLibraryAlbum,
+      budget,
+    });
+
+    expect(budget.remaining).toBe(
+      5 - mockFetchReleaseGroupsForArtist.mock.calls.length
+    );
+  });
 });

@@ -5,6 +5,7 @@ import { getConfigValue } from "../config";
 import type { PromotedAlbumConfig } from "../config";
 import { weightedRandomPick } from "../utils/random";
 import { AsyncLock } from "../api/asyncLock";
+import { createLogger } from "../logger";
 import {
   getUserProfile,
   upsertUserProfile,
@@ -20,6 +21,14 @@ type TagResultEntry = {
   tags: { name: string; count: number }[];
 };
 
+/**
+ * What a live request should render right now. `building` means the user has no usable
+ * profile yet and one is being built off-request — distinct from a ready profile that
+ * simply produced nothing, which is what the caller would otherwise have to guess.
+ */
+export type ProfileLoad =
+  { status: "ready"; profile: DerivedProfile } | { status: "building" };
+
 type TagAccumulator = {
   displayName: string;
   weight: number;
@@ -31,6 +40,11 @@ type TagAccumulator = {
  * the same profile and race the upsert. Keyed by user id.
  */
 const profileLock = new AsyncLock();
+
+/** Users whose off-request build is already scheduled, so repeat loads don't pile up. */
+const buildsInFlight = new Set<number>();
+
+const log = createLogger("profile-service");
 
 /**
  * An artist's tag weights, normalized so the artist contributes exactly its play weight to
@@ -188,10 +202,21 @@ export function isProfileFresh(
   return age < config.profileTtlMinutes * 60 * 1000;
 }
 
+/** A stored profile is worth serving as long as it has a vector to pick a tag from. */
+function usableProfile(row: UserProfile | null): DerivedProfile | null {
+  if (!row) return null;
+  const profile = parseDerivedProfile(row.profile_json);
+  return profile.genreVector.length > 0 ? profile : null;
+}
+
 /**
  * Read-first profile load: returns the persisted profile when fresh (bumping
  * `last_used_at`), otherwise regenerates and upserts. Guarded per-user so concurrent
  * callers share one regeneration instead of racing.
+ *
+ * A regeneration returns null when the sampled artists happen to produce only generic
+ * tags. That is a bad roll, not a verdict on the user, so the stored profile is served
+ * instead of nothing — it was good enough a moment ago, and the next roll re-samples.
  */
 export async function loadFreshProfile(
   userId: number,
@@ -204,6 +229,64 @@ export async function loadFreshProfile(
       await touchProfileUsed(userId);
       return parseDerivedProfile(existing.profile_json);
     }
-    return regenerateProfile(userId, plexToken);
+
+    const regenerated = await regenerateProfile(userId, plexToken);
+    if (regenerated) return regenerated;
+
+    const stale = usableProfile(existing);
+    log.warn(
+      stale
+        ? `Regeneration for user ${userId} produced no genres; serving the stored profile`
+        : `Regeneration for user ${userId} produced no genres and there is nothing stored`
+    );
+    return stale;
   });
+}
+
+/**
+ * Schedule a rebuild off the request path. The build fans out to Plex, MusicBrainz,
+ * ListenBrainz and Last.fm and can run for minutes on a cold start, which is far too long
+ * to hold an HTTP request open — so callers start it and render a "building" state instead
+ * of awaiting it. Repeat calls while one is running are dropped rather than queued.
+ */
+export function startProfileBuild(userId: number, plexToken: string): void {
+  if (buildsInFlight.has(userId)) return;
+  buildsInFlight.add(userId);
+
+  void loadFreshProfile(userId, plexToken, getConfigValue("promotedAlbum"))
+    .catch((error) =>
+      log.error(`Profile build failed for user ${userId}`, error)
+    )
+    .finally(() => buildsInFlight.delete(userId));
+}
+
+/**
+ * What a live request should render right now, without ever blocking on a build. A fresh
+ * profile is served as is; a stale one is served while a rebuild runs behind it, since it
+ * describes the same taste it did an hour ago. Only a user with nothing usable stored gets
+ * `building`, and their build starts here — waiting for the next poller tick would leave a
+ * first-time user staring at an empty Discover page for up to an hour.
+ */
+export async function loadProfileForRequest(
+  userId: number,
+  plexToken: string,
+  config: PromotedAlbumConfig
+): Promise<ProfileLoad> {
+  const existing = await getUserProfile(userId);
+  if (existing && isProfileFresh(existing, config, Date.now())) {
+    await touchProfileUsed(userId);
+    return {
+      status: "ready",
+      profile: parseDerivedProfile(existing.profile_json),
+    };
+  }
+
+  startProfileBuild(userId, plexToken);
+
+  const stale = usableProfile(existing);
+  if (!stale) return { status: "building" };
+
+  // Keeps the row inside the regen sweep's activity window while its rebuild runs.
+  await touchProfileUsed(userId);
+  return { status: "ready", profile: stale };
 }

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import useAsyncData from "./useAsyncData";
 import type { FetchContext } from "./useAsyncData";
 import type { AlbumLibraryInfo } from "@shared/albumLibrary";
@@ -93,10 +94,23 @@ export type PromotedAlbumData = {
     }
 );
 
+/**
+ * `building` means the server has no taste profile for this user yet and is constructing
+ * one off-request — an empty carousel that will fill in, as opposed to one that has
+ * nothing to show.
+ */
+export type PromotedAlbumsResponse = {
+  status: "ready" | "building";
+  albums: PromotedAlbumData[];
+};
+
+/** How often to re-check while the profile is still being built. */
+const BUILDING_POLL_MS = 15_000;
+
 async function fetchPromotedAlbums({
   refresh,
   signal,
-}: FetchContext): Promise<PromotedAlbumData[]> {
+}: FetchContext): Promise<PromotedAlbumsResponse> {
   const url = refresh
     ? "/api/promoted-album?refresh=true"
     : "/api/promoted-album";
@@ -107,7 +121,10 @@ async function fetchPromotedAlbums({
   }
 
   const data = await res.json();
-  return Array.isArray(data) ? data : [];
+  return {
+    status: data?.status === "building" ? "building" : "ready",
+    albums: Array.isArray(data?.albums) ? data.albums : [],
+  };
 }
 
 export default function usePromotedAlbums() {
@@ -116,5 +133,19 @@ export default function usePromotedAlbums() {
     fetchPromotedAlbums
   );
 
-  return { promotedAlbums: data ?? [], loading, error, refresh };
+  const building = data?.status === "building";
+
+  useEffect(() => {
+    if (!building) return;
+    const timer = setInterval(() => void refresh(), BUILDING_POLL_MS);
+    return () => clearInterval(timer);
+  }, [building, refresh]);
+
+  return {
+    promotedAlbums: data?.albums ?? [],
+    building,
+    loading,
+    error,
+    refresh,
+  };
 }

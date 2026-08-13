@@ -10,6 +10,8 @@ import ShuffleButton from "./ShuffleButton";
 interface PromotedAlbumCarouselProps {
   albums: PromotedAlbumData[];
   loading: boolean;
+  /** The server is still building this user's taste profile; there is nothing to show yet. */
+  building?: boolean;
   onRefresh: () => void;
 }
 
@@ -51,6 +53,22 @@ function CarouselDots({ count, activeIndex, onSelect }: CarouselDotsProps) {
   );
 }
 
+function BuildingNotice() {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6 text-center">
+      <Skeleton className="h-5 w-40" />
+      <p className="text-sm font-bold text-gray-700 dark:text-gray-300">
+        Building your taste profile
+      </p>
+      <p className="text-xs text-gray-500 dark:text-gray-400 max-w-xs">
+        Reading your Plex listening history and looking up the artists. This can
+        take a few minutes the first time, and recommendations appear here as
+        soon as it finishes.
+      </p>
+    </div>
+  );
+}
+
 function CarouselSkeleton() {
   return (
     <div className="flex-1 flex flex-col sm:flex-row">
@@ -67,6 +85,7 @@ function CarouselSkeleton() {
 export default function PromotedAlbumCarousel({
   albums,
   loading,
+  building = false,
   onRefresh,
 }: PromotedAlbumCarouselProps) {
   const [index, setIndex] = useState(0);
@@ -75,7 +94,7 @@ export default function PromotedAlbumCarousel({
   const haptics = useHaptics();
 
   const activeIndex = Math.min(index, Math.max(albums.length - 1, 0));
-  const showControls = !loading && albums.length > 1;
+  const showControls = !loading && !building && albums.length > 1;
 
   const goTo = (next: number) => {
     if (next < 0 || next >= albums.length || next === activeIndex) return;
@@ -84,7 +103,7 @@ export default function PromotedAlbumCarousel({
   };
 
   const handleRefresh = () => {
-    if (loading || isAnimating) return;
+    if (loading || building || isAnimating) return;
     setIsAnimating(true);
     setTimeout(() => {
       setIndex(0);
@@ -122,7 +141,7 @@ export default function PromotedAlbumCarousel({
             )}
             <ShuffleButton
               onClick={handleRefresh}
-              disabled={isAnimating || loading}
+              disabled={isAnimating || loading || building}
               spinning={isAnimating || loading}
               ariaLabel="Shuffle recommendations"
             />
@@ -142,7 +161,9 @@ export default function PromotedAlbumCarousel({
         aria-roledescription="carousel"
         aria-label="Recommended albums"
       >
-        {loading ? (
+        {building ? (
+          <BuildingNotice />
+        ) : loading ? (
           <CarouselSkeleton />
         ) : (
           <div

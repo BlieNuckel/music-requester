@@ -1,5 +1,13 @@
 import type { AlbumLibraryInfo } from "../../shared/albumLibrary";
 
+/**
+ * Paced MusicBrainz lookups one carousel build may spend, shared by every pick and both
+ * modes. MusicBrainz allows ~1 req/sec and the interactive lane preempts background work,
+ * so an unbounded build can hold the queue — and the pollers behind it — for minutes.
+ * Mutable on purpose: the budget is spent across several layers of the build.
+ */
+export type ResolutionBudget = { remaining: number };
+
 export type TraceArtistTagContribution = {
   tagName: string;
   rawCount: number;

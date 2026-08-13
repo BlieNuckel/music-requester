@@ -13,6 +13,7 @@ import { weightedRandomPick, shuffle, type Rng } from "../utils/random";
 import { isPlaceholderArtist } from "../utils/artistFilter";
 import type {
   BuiltAlbum,
+  ResolutionBudget,
   ExploreResult,
   ExploreTrace,
   TraceSelectionReason,
@@ -27,6 +28,8 @@ type ExploreContext = {
   recentlyShown: Set<string>;
   artistInLibrary: (artistMbid: string) => boolean;
   albumLibrary: (rgMbid: string) => AlbumLibraryInfo | null;
+  /** Shared with within-taste, so one carousel build has a single MusicBrainz allowance. */
+  budget?: ResolutionBudget;
   rng?: Rng;
 };
 
@@ -278,6 +281,11 @@ export async function buildExploreResult(
     .sort((a, b) => b.candidate.score - a.candidate.score);
 
   for (const chosen of ranked) {
+    // Each candidate costs one paced discography lookup, so the walk spends the shared
+    // budget rather than trying every genre-distant artist the seed offers.
+    if (ctx.budget && ctx.budget.remaining <= 0) break;
+    if (ctx.budget) ctx.budget.remaining -= 1;
+
     const album = await pickAlbumFromArtist(
       chosen.candidate.artistMbid,
       recentlyShown,

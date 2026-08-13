@@ -54,7 +54,9 @@ describe("usePromotedAlbums", () => {
   });
 
   it("fetches promoted albums on mount", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(albums));
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({ status: "ready", albums })
+    );
 
     const { result } = renderHook(() => usePromotedAlbums());
 
@@ -70,7 +72,9 @@ describe("usePromotedAlbums", () => {
   });
 
   it("handles an empty list", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse([]));
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({ status: "ready", albums: [] })
+    );
 
     const { result } = renderHook(() => usePromotedAlbums());
 
@@ -82,7 +86,22 @@ describe("usePromotedAlbums", () => {
     expect(result.current.error).toBeNull();
   });
 
-  it("normalizes a non-array response to an empty list", async () => {
+  it("reports building until the server has a profile", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ status: "building", albums: [] })
+    );
+
+    const { result } = renderHook(() => usePromotedAlbums());
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(result.current.building).toBe(true);
+    expect(result.current.promotedAlbums).toEqual([]);
+  });
+
+  it("normalizes a malformed response to an empty ready list", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(null));
 
     const { result } = renderHook(() => usePromotedAlbums());
@@ -123,7 +142,9 @@ describe("usePromotedAlbums", () => {
   });
 
   it("refresh calls with refresh param", async () => {
-    vi.mocked(fetch).mockResolvedValue(jsonResponse(albums));
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ status: "ready", albums })
+    );
 
     const { result } = renderHook(() => usePromotedAlbums());
 
