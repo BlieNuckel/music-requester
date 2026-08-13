@@ -258,4 +258,42 @@ describe("SettingsContextProvider", () => {
 
     expect(screen.getByTestId("url")).toHaveTextContent("http://lidarr:8686");
   });
+
+  it("keeps loadLidarrOptionValues stable across renders", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ lidarrUrl: "http://lidarr:8686" }), {
+        status: 200,
+      })
+    );
+
+    const seen: Array<() => Promise<void>> = [];
+    function IdentityProbe() {
+      seen.push(useSettings().loadLidarrOptionValues);
+      return null;
+    }
+
+    const { rerender } = render(
+      <AuthContext.Provider value={makeAuthValue()}>
+        <SettingsContextProvider>
+          <IdentityProbe />
+        </SettingsContextProvider>
+      </AuthContext.Provider>
+    );
+
+    // Let the settings load land, which re-renders the provider.
+    await waitFor(() => {
+      expect(seen.length).toBeGreaterThan(1);
+    });
+
+    rerender(
+      <AuthContext.Provider value={makeAuthValue()}>
+        <SettingsContextProvider>
+          <IdentityProbe />
+        </SettingsContextProvider>
+      </AuthContext.Provider>
+    );
+
+    // Consumers put this in effect deps; a new identity per render refetches in a loop.
+    expect(new Set(seen).size).toBe(1);
+  });
 });
