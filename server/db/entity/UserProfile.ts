@@ -45,7 +45,7 @@ export type DerivedProfile = {
   explorationHistory: { albums: string[]; artists: string[] };
 };
 
-export const DERIVED_PROFILE_SCHEMA_VERSION = 2;
+export const DERIVED_PROFILE_SCHEMA_VERSION = 3;
 
 /** Derived, regenerable cache — one row per user, the whole profile as one document. */
 @Entity("user_profiles")

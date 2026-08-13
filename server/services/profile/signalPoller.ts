@@ -2,7 +2,7 @@ import { getConfigValue } from "../../config";
 import { getSignalEvents, getSignalIngestionUsers } from "../../db/userProfile";
 import {
   ingestUserRatings,
-  ingestUserPlays,
+  ingestUserTrackPlays,
   playsDue,
 } from "./signalIngestion";
 import { createLogger } from "../../logger";
@@ -42,9 +42,12 @@ export async function runSignalIngestionOnce(now = Date.now()): Promise<void> {
     for (const user of users) {
       try {
         ratingsWritten += await ingestUserRatings(user.userId, user.plexToken);
-        const playEvents = await getSignalEvents(user.userId, "plex_plays");
+        const playEvents = await getSignalEvents(
+          user.userId,
+          "plex_track_plays"
+        );
         if (playsDue(playEvents, now, PLAYS_INTERVAL_MS)) {
-          await ingestUserPlays(user.userId, user.plexToken);
+          await ingestUserTrackPlays(user.userId, user.plexToken);
           playsWritten += 1;
         }
       } catch (error) {

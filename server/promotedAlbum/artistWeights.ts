@@ -1,9 +1,11 @@
 import { getSignalEvents } from "../db/userProfile";
 import { isPlaceholderArtist } from "../utils/artistFilter";
 import {
-  ingestUserPlays,
+  ingestUserTrackPlays,
   latestRatings,
   reconstructPlayCounts,
+  reconstructTrackPlayCounts,
+  rollupToArtists,
 } from "../services/profile/signalIngestion";
 import type { UserSignalEvent } from "../db/entity/UserSignalEvent";
 
@@ -17,6 +19,38 @@ function allTimeWeights(latest: Map<string, number>): ArtistWeight[] {
   return Array.from(latest, ([name, viewCount]) => ({ name, viewCount }));
 }
 
+/** Oldest `recorded_at` across both plays series, or null when neither has any events. */
+function earliestRecordedAt(...series: UserSignalEvent[][]): number | null {
+  const starts = series
+    .map((events) => events[0])
+    .filter((event): event is UserSignalEvent => event !== undefined)
+    .map((event) => Date.parse(event.recorded_at));
+  return starts.length === 0 ? null : Math.min(...starts);
+}
+
+/**
+ * Cumulative all-time plays per artist at `cutoffMs`, merged across the track series and
+ * the legacy artist series. Both are monotonic cumulative counts of the same quantity, so
+ * the higher of the two is the safe estimate: it never under-counts a baseline (which would
+ * inflate a windowed delta), and it lets the track series take over on its own as the
+ * legacy series stops being written. Keyed by artist name, which is what the ratings series
+ * joins on and the only key the legacy series has.
+ */
+export function reconstructArtistPlayCounts(
+  trackEvents: UserSignalEvent[],
+  legacyEvents: UserSignalEvent[],
+  cutoffMs: number
+): Map<string, number> {
+  const merged = reconstructPlayCounts(legacyEvents, cutoffMs);
+  const tracks = reconstructTrackPlayCounts(trackEvents, cutoffMs);
+  for (const artist of rollupToArtists(tracks)) {
+    if (!artist.name) continue;
+    const known = merged.get(artist.name) ?? 0;
+    merged.set(artist.name, Math.max(known, artist.playCount));
+  }
+  return merged;
+}
+
 /**
  * Per-artist play weight derived from the plays delta series. When the series spans the
  * full window, weight = plays within the window (cumulative count now minus the count
@@ -25,19 +59,29 @@ function allTimeWeights(latest: Map<string, number>): ArtistWeight[] {
  * set is never empty and a thin history still produces sensible weights.
  */
 export function derivePlayWeights(
-  playEvents: UserSignalEvent[],
+  trackEvents: UserSignalEvent[],
+  legacyEvents: UserSignalEvent[],
   now: number,
   windowMs: number
 ): ArtistWeight[] {
-  if (playEvents.length === 0) return [];
-  const latest = reconstructPlayCounts(playEvents, Infinity);
+  const earliest = earliestRecordedAt(trackEvents, legacyEvents);
+  if (earliest === null) return [];
+  const latest = reconstructArtistPlayCounts(
+    trackEvents,
+    legacyEvents,
+    Infinity
+  );
 
   const windowStart = now - windowMs;
-  if (Date.parse(playEvents[0].recorded_at) > windowStart) {
+  if (earliest > windowStart) {
     return allTimeWeights(latest);
   }
 
-  const baseline = reconstructPlayCounts(playEvents, windowStart);
+  const baseline = reconstructArtistPlayCounts(
+    trackEvents,
+    legacyEvents,
+    windowStart
+  );
   const windowed: ArtistWeight[] = [];
   let total = 0;
   for (const [name, count] of latest) {
@@ -90,8 +134,8 @@ export function applyRatingMultiplier(
 /**
  * The recommender's canonical artist-weight source: windowed play trend from the user's
  * own plays series, boosted by their ratings. Reads everything from `user_signal_events`
- * — no live Plex query — except the cold-start case (zero captures), where one is ingested
- * on demand so the first read still goes through our own table.
+ * — no live Plex query — except the cold-start case (zero captures in either series), where
+ * one is ingested on demand so the first read still goes through our own table.
  */
 export async function loadArtistWeights(
   userId: number,
@@ -100,13 +144,14 @@ export async function loadArtistWeights(
   ratingWeight: number,
   now: number = Date.now()
 ): Promise<ArtistWeight[]> {
-  let playEvents = await getSignalEvents(userId, "plex_plays");
-  if (playEvents.length === 0) {
-    await ingestUserPlays(userId, plexToken);
-    playEvents = await getSignalEvents(userId, "plex_plays");
+  let trackEvents = await getSignalEvents(userId, "plex_track_plays");
+  const legacyEvents = await getSignalEvents(userId, "plex_plays");
+  if (trackEvents.length === 0 && legacyEvents.length === 0) {
+    await ingestUserTrackPlays(userId, plexToken);
+    trackEvents = await getSignalEvents(userId, "plex_track_plays");
   }
 
-  const plays = derivePlayWeights(playEvents, now, windowMs);
+  const plays = derivePlayWeights(trackEvents, legacyEvents, now, windowMs);
   const ratings = aggregateArtistRatings(
     await getSignalEvents(userId, "plex_rating")
   );

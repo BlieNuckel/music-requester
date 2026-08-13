@@ -19,6 +19,23 @@ export type PlexArtistsResponse = {
   MediaContainer: { Metadata: PlexArtistMetadata[] };
 };
 
+export type PlexTrackMetadata = {
+  ratingKey: string;
+  title: string;
+  viewCount?: number;
+  parentRatingKey?: string;
+  parentTitle?: string;
+  grandparentRatingKey?: string;
+  grandparentTitle?: string;
+};
+
+export type PlexTracksResponse = {
+  MediaContainer: {
+    totalSize?: number;
+    Metadata?: PlexTrackMetadata[];
+  };
+};
+
 export type PlexHistoryMetadata = {
   grandparentTitle?: string;
   grandparentThumb?: string;
