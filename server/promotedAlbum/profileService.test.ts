@@ -141,6 +141,41 @@ describe("regenerateProfile", () => {
     expect(parseDerivedProfile(row!.profile_json).genreVector).toHaveLength(1);
   });
 
+  it("fetches tags for every top artist rather than a random few", async () => {
+    const many = Array.from({ length: 8 }, (_, i) => ({
+      name: `Artist ${i}`,
+      viewCount: 100 - i,
+    }));
+    mockLoadArtistWeights.mockResolvedValue(many);
+    mockGetArtistTopTags.mockImplementation((name: string) =>
+      Promise.resolve([{ name: `tag-${name}`, count: 100 }])
+    );
+
+    const profile = await regenerateProfile(userId, "token");
+
+    expect(mockGetArtistTopTags).toHaveBeenCalledTimes(8);
+    expect(profile!.artistTags).toHaveLength(8);
+    expect(profile!.genreVector).toHaveLength(8);
+  });
+
+  it("still caps the artists it covers at topArtistsCount", async () => {
+    mockGetConfigValue.mockReturnValue({ ...baseConfig, topArtistsCount: 3 });
+    mockLoadArtistWeights.mockResolvedValue(
+      Array.from({ length: 8 }, (_, i) => ({
+        name: `Artist ${i}`,
+        viewCount: 100 - i,
+      }))
+    );
+
+    const profile = await regenerateProfile(userId, "token");
+
+    expect(profile!.artistTags.map((a) => a.name)).toEqual([
+      "Artist 0",
+      "Artist 1",
+      "Artist 2",
+    ]);
+  });
+
   it("gives artists of equal play weight equal influence however Last.fm tagged them", async () => {
     mockLoadArtistWeights.mockResolvedValue([
       { name: "Broadly Tagged", viewCount: 100 },

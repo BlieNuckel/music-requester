@@ -271,16 +271,16 @@ export default function RecommendationsSection({
         onChange={(v) => update("topArtistsCount", v)}
         min={1}
         max={50}
-        description="Number of top artists to fetch from Plex for tag analysis."
+        description="How many of your most-played artists the profile covers. Tags are fetched for all of them, and every recommendation draws from the whole set."
       />
 
       <NumberField
-        label="Picked Artists Count"
+        label="Artists per Recommendation"
         value={config.pickedArtistsCount}
         onChange={(v) => update("pickedArtistsCount", v)}
         min={1}
         max={config.topArtistsCount}
-        description="Number of artists randomly selected (weighted by play count) for tag extraction."
+        description="How many artists shape a single recommendation, drawn fresh each time and weighted by play count. Lower is more focused per recommendation; higher blends more of your taste into each one."
       />
 
       <NumberField

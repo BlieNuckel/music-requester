@@ -50,7 +50,6 @@ const SAMPLE_PROFILE: DerivedProfile = {
 const CONFIG_INPUTS = {
   genericTags: ["seen live", "favorites"],
   tagsPerArtist: 5,
-  pickedArtistsCount: 3,
   playTrendWindowDays: 90,
   ratingWeight: 0.5,
   distributionWeight: 0.5,
@@ -132,6 +131,15 @@ describe("computeConfigHash", () => {
     expect(
       computeConfigHash({ ...CONFIG_INPUTS, minPlaysForDistribution: 10 })
     ).not.toBe(computeConfigHash(CONFIG_INPUTS));
+  });
+
+  it("ignores fields that are applied at selection time, not to the profile", () => {
+    expect(
+      computeConfigHash({
+        ...CONFIG_INPUTS,
+        pickedArtistsCount: 9,
+      } as typeof CONFIG_INPUTS)
+    ).toBe(computeConfigHash(CONFIG_INPUTS));
   });
 
   it("changes when a graph-shaping field changes", () => {

@@ -11,7 +11,6 @@ import { UserSignalEvent } from "./entity/UserSignalEvent";
 export type ProfileConfigInputs = {
   genericTags: string[];
   tagsPerArtist: number;
-  pickedArtistsCount: number;
   playTrendWindowDays: number;
   ratingWeight: number;
   distributionWeight: number;
@@ -66,7 +65,6 @@ export function computeConfigHash(inputs: ProfileConfigInputs): string {
   const stable = JSON.stringify({
     genericTags: [...inputs.genericTags].map((t) => t.toLowerCase()).sort(),
     tagsPerArtist: inputs.tagsPerArtist,
-    pickedArtistsCount: inputs.pickedArtistsCount,
     playTrendWindowDays: inputs.playTrendWindowDays,
     ratingWeight: inputs.ratingWeight,
     distributionWeight: inputs.distributionWeight,

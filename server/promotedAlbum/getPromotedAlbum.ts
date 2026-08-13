@@ -19,7 +19,11 @@ import { getMonitoredAlbums } from "../services/lidarr/albums";
 import { isAllowedReleaseType } from "../services/discover/typeFilter";
 import { createLogger } from "../logger";
 import { buildExploreResult } from "./explore";
-import { loadProfileForRequest, normalizedTagWeights } from "./profileService";
+import {
+  loadProfileForRequest,
+  normalizedTagWeights,
+  buildGenreVector,
+} from "./profileService";
 import type {
   BuiltAlbum,
   ResolutionBudget,
@@ -45,6 +49,16 @@ type WeightedTag = { name: string; weight: number };
 type LibraryLookups = {
   artistInLibrary: (mbid: string) => boolean;
   albumLibrary: (mbid: string) => AlbumLibraryInfo | null;
+};
+
+/** What the within-taste trace explains: the sample drawn, the vector it produced, the pick. */
+type TraceInputs = {
+  profile: DerivedProfile;
+  sampledNames: Set<string>;
+  vector: DerivedProfile["genreVector"];
+  chosenTag: WeightedTag;
+  albumPool: TraceAlbumPoolInfo;
+  selectionReason: TraceSelectionReason;
 };
 
 /** Everything one carousel build shares across its picks, including the spend budget. */
@@ -117,18 +131,15 @@ export function clearPromotedAlbumCache() {
   resultCache.clear();
 }
 
-function buildTraceFromProfile(
-  profile: DerivedProfile,
-  chosenTag: WeightedTag,
-  albumPool: TraceAlbumPoolInfo,
-  selectionReason: TraceSelectionReason
-): WithinTasteTrace {
+function buildTraceFromProfile(inputs: TraceInputs): WithinTasteTrace {
+  const { profile, sampledNames, vector, chosenTag } = inputs;
+
   const plexArtists: TraceArtistEntry[] = profile.artistTags.map((a) => {
     const weights = normalizedTagWeights(a.tags, a.viewCount);
     return {
       name: a.name,
       viewCount: a.viewCount,
-      picked: true,
+      picked: sampledNames.has(a.name),
       tagContributions: a.tags.map((t, index) => ({
         tagName: t.name,
         rawCount: t.count,
@@ -140,7 +151,7 @@ function buildTraceFromProfile(
     };
   });
 
-  const weightedTags: TraceWeightedTag[] = profile.genreVector.map((g) => ({
+  const weightedTags: TraceWeightedTag[] = vector.map((g) => ({
     name: g.tag,
     weight: g.weight,
     fromArtists: g.fromArtists,
@@ -151,9 +162,24 @@ function buildTraceFromProfile(
     plexArtists,
     weightedTags,
     chosenTag: { name: chosenTag.name, weight: chosenTag.weight },
-    albumPool,
-    selectionReason,
+    albumPool: inputs.albumPool,
+    selectionReason: inputs.selectionReason,
   };
+}
+
+/**
+ * The artists one recommendation is drawn from, re-sampled per pick and weighted by play
+ * weight. The sample used to happen at regeneration time, which froze one draw of three
+ * artists into the profile and let it shape every recommendation for the whole 24h TTL.
+ * Drawing here instead means a day's carousel spans the user's whole top-artist set, and
+ * two picks in the same batch can come from different corners of it.
+ */
+function sampleArtists(
+  artistTags: DerivedProfile["artistTags"],
+  count: number,
+  rng: Rng
+): DerivedProfile["artistTags"] {
+  return weightedRandomPick(artistTags, (a) => a.viewCount, count, rng);
 }
 
 /**
@@ -265,16 +291,30 @@ async function selectAlbum(
 }
 
 /**
- * Per-request within-taste selection off the persisted profile: pick a tag from the
- * stored genre vector, fetch a fresh album pool for it, and select an album. The
- * expensive Plex + Last.fm fan-out is NOT re-run here — that lives in the profile.
+ * Per-request within-taste selection off the persisted profile: sample a few of the user's
+ * top artists, build this pick's genre vector from their tags, draw a tag from it, fetch a
+ * fresh album pool and select an album. The expensive Plex + Last.fm fan-out is NOT re-run
+ * here — that lives in the profile, which now stores every top artist's tags so the sample
+ * can be drawn per pick.
+ *
+ * A profile written before the artists were stored in full falls back to its stored vector,
+ * which is the same thing built from whatever sample that profile froze.
  */
 async function buildWithinTasteFromProfile(
   ctx: PickContext,
   recentlyShown: Set<string>
 ): Promise<BuiltAlbum | null> {
   const { profile, config, rng } = ctx;
-  const weightedTags: WeightedTag[] = profile.genreVector.map((g) => ({
+
+  const sampled = sampleArtists(
+    profile.artistTags,
+    config.pickedArtistsCount,
+    rng
+  );
+  const vector =
+    sampled.length > 0 ? buildGenreVector(sampled) : profile.genreVector;
+
+  const weightedTags: WeightedTag[] = vector.map((g) => ({
     name: g.tag,
     weight: g.weight,
   }));
@@ -317,12 +357,14 @@ async function buildWithinTasteFromProfile(
     totalAfterDedup: allAlbums.length,
   };
 
-  const trace = buildTraceFromProfile(
+  const trace = buildTraceFromProfile({
     profile,
+    sampledNames: new Set(sampled.map((a) => a.name)),
+    vector,
     chosenTag,
-    albumPoolInfo,
-    picked.reason
-  );
+    albumPool: albumPoolInfo,
+    selectionReason: picked.reason,
+  });
 
   const library = ctx.library.albumLibrary(picked.rgMbid);
 
