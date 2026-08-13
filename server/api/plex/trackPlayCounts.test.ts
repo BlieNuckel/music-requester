@@ -179,4 +179,37 @@ describe("getAllTrackPlayCounts", () => {
       "Plex returned 401"
     );
   });
+
+  it("walks every music section, not only the first", async () => {
+    mockFetch
+      .mockResolvedValueOnce(
+        okResponse({
+          MediaContainer: {
+            Directory: [
+              { key: "3", type: "artist", title: "Music" },
+              { key: "8", type: "artist", title: "Soundtracks" },
+            ],
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        okResponse({
+          MediaContainer: { totalSize: 1, Metadata: [rawTrack(1, 12)] },
+        })
+      )
+      .mockResolvedValueOnce(
+        okResponse({
+          MediaContainer: { totalSize: 1, Metadata: [rawTrack(2, 4)] },
+        })
+      );
+
+    const result = await getAllTrackPlayCounts("tok");
+
+    expect(result.map((t) => t.ratingKey)).toEqual(["1", "2"]);
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining("/library/sections/8/all"),
+      expect.anything()
+    );
+  });
 });

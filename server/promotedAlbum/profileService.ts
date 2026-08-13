@@ -32,6 +32,25 @@ type TagAccumulator = {
  */
 const profileLock = new AsyncLock();
 
+/**
+ * An artist's tag weights, normalized so the artist contributes exactly its play weight to
+ * the genre vector. Last.fm scales `artist.getTopTags` counts 0–100 *within* an artist, so
+ * without this an artist tagged 100/90/80 carries several times the tag mass of one tagged
+ * 100/20/10 at an identical play weight — influence tracking how Last.fm happened to tag
+ * them rather than how much the user plays them. An all-zero tag mass splits the weight
+ * evenly instead of dropping the artist out of the vector.
+ */
+export function normalizedTagWeights(
+  tags: { count: number }[],
+  viewCount: number
+): number[] {
+  if (tags.length === 0) return [];
+  const counts = tags.map((t) => Math.max(0, t.count));
+  const mass = counts.reduce((sum, count) => sum + count, 0);
+  if (mass <= 0) return counts.map(() => viewCount / tags.length);
+  return counts.map((count) => (count / mass) * viewCount);
+}
+
 function buildProfileArtifacts(
   tagResults: TagResultEntry[],
   genericTags: Set<string>,
@@ -52,9 +71,10 @@ function buildProfileArtifacts(
 
   const tagMap = new Map<string, TagAccumulator>();
   for (const { name, viewCount, tags } of artistTags) {
-    for (const tag of tags) {
+    const weights = normalizedTagWeights(tags, viewCount);
+    for (const [index, tag] of tags.entries()) {
       const key = tag.name.toLowerCase();
-      const weight = tag.count * viewCount;
+      const weight = weights[index];
       const existing = tagMap.get(key);
       if (existing) {
         existing.weight += weight;

@@ -3,7 +3,6 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { getDataSource } from "./db/index";
 import { createLogger } from "./logger";
-import type { TopArtistsRange } from "./api/plex/types";
 import {
   DEFAULT_PROMOTED_ALBUM,
   DEFAULT_PURCHASE_DECISION,
@@ -188,13 +187,6 @@ const VALID_LIBRARY_PREFERENCES: LibraryPreference[] = [
   "no_preference",
 ];
 
-const VALID_TOP_ARTISTS_RANGES: TopArtistsRange[] = [
-  "all",
-  "4weeks",
-  "6months",
-  "12months",
-];
-
 function validatePositiveInt(value: unknown, name: string) {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
     throw new Error(`${name} must be a positive integer`);
@@ -219,11 +211,6 @@ function validatePromotedAlbumConfig(config: PromotedAlbumConfig) {
     config.profileTtlMinutes < 0
   ) {
     throw new Error("profileTtlMinutes must be a non-negative number");
-  }
-  if (!VALID_TOP_ARTISTS_RANGES.includes(config.topArtistsRange)) {
-    throw new Error(
-      `topArtistsRange must be one of: ${VALID_TOP_ARTISTS_RANGES.join(", ")}`
-    );
   }
   validatePositiveInt(config.topArtistsCount, "topArtistsCount");
   validatePositiveInt(config.pickedArtistsCount, "pickedArtistsCount");

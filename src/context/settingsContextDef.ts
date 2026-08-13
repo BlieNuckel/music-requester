@@ -7,7 +7,6 @@ import type {
 
 export type {
   LibraryPreference,
-  TopArtistsRange,
   PromotedAlbumSettings,
   PurchaseDecisionSettings,
   SpendingSettings,

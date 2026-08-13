@@ -1,5 +1,6 @@
 import { MB_BASE, mbJson } from "./config";
 import { mbCached, MB_TTL } from "./cache";
+import { createLogger } from "../../logger";
 import type { MbPriority } from "./queue";
 import type {
   MusicBrainzReleaseGroup,
@@ -21,6 +22,8 @@ export type AlbumDetails = {
 };
 
 type LabelResult = { name: string; mbid: string } | null;
+
+const log = createLogger("musicbrainz");
 
 async function loadReleaseGroupSearch(
   query: string,
@@ -117,7 +120,28 @@ async function loadReleaseGroupIdFromRelease(
   const rg = data?.["release-group"];
   if (!rg?.id) return null;
 
-  return { id: rg.id, firstReleaseDate: rg["first-release-date"] ?? "" };
+  return {
+    id: rg.id,
+    firstReleaseDate: rg["first-release-date"] ?? "",
+    primaryType: rg["primary-type"] ?? null,
+    secondaryTypes: rg["secondary-types"] ?? [],
+  };
+}
+
+async function loadReleaseGroupInfo(
+  releaseGroupMbid: string,
+  priority: MbPriority
+): Promise<ReleaseGroupInfo | null> {
+  const url = `${MB_BASE}/release-group/${releaseGroupMbid}?fmt=json`;
+  const data = await mbJson<MusicBrainzReleaseGroup>(url, priority);
+  if (!data?.id) return null;
+
+  return {
+    id: data.id,
+    firstReleaseDate: data["first-release-date"] ?? "",
+    primaryType: data["primary-type"] ?? null,
+    secondaryTypes: data["secondary-types"] ?? [],
+  };
 }
 
 /** Search for release groups (albums/EPs) by text query */
@@ -212,7 +236,7 @@ export function getReleaseGroupDate(
   );
 }
 
-/** Convert a release MBID to its release-group ID and first release date */
+/** Convert a release MBID to its release-group ID, first release date and types */
 export function getReleaseGroupIdFromRelease(
   releaseMbid: string,
   priority: MbPriority = "interactive"
@@ -225,4 +249,41 @@ export function getReleaseGroupIdFromRelease(
     },
     (p) => loadReleaseGroupIdFromRelease(releaseMbid, p)
   );
+}
+
+/** Read a release group directly by its own MBID */
+export function getReleaseGroupInfo(
+  releaseGroupMbid: string,
+  priority: MbPriority = "interactive"
+): Promise<ReleaseGroupInfo | null> {
+  return mbCached(
+    {
+      key: `rg-info:${releaseGroupMbid}`,
+      ttlSeconds: MB_TTL.immutable,
+      priority,
+    },
+    (p) => loadReleaseGroupInfo(releaseGroupMbid, p)
+  );
+}
+
+/**
+ * Resolve an MBID of unknown kind to its release group. Last.fm is inconsistent about
+ * whether `tag.getTopAlbums` hands back a release MBID or a release-group one, and the
+ * release lookup 404s on the latter — a miss `mbCached` then stores for the whole TTL,
+ * silently dropping that album from every candidate pool. So a miss retries the MBID as a
+ * release group before giving up. Both legs are cached, so a repeat costs no MusicBrainz
+ * slots; only a first-time already-a-release-group MBID spends the extra one.
+ */
+export async function resolveReleaseGroupInfo(
+  mbid: string,
+  priority: MbPriority = "interactive"
+): Promise<ReleaseGroupInfo | null> {
+  const fromRelease = await getReleaseGroupIdFromRelease(mbid, priority);
+  if (fromRelease) return fromRelease;
+
+  const asReleaseGroup = await getReleaseGroupInfo(mbid, priority);
+  if (asReleaseGroup) {
+    log.debug(`MBID ${mbid} was already a release group, not a release`);
+  }
+  return asReleaseGroup;
 }

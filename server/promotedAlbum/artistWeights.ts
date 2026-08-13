@@ -23,6 +23,16 @@ export type ArtistWeight = {
   distributionFactor?: number;
 };
 
+/**
+ * Play weights plus the window they were actually measured over: `windowStart` is null when
+ * the series was too shallow (or the window empty) and the weights fell back to all-time.
+ * Everything else derived per artist has to be measured over the same span to agree with them.
+ */
+export type PlayWeightResult = {
+  weights: ArtistWeight[];
+  windowStart: number | null;
+};
+
 /** Everything `loadArtistWeights` needs from `promotedAlbum` config, plus a clock override. */
 export type ArtistWeightOptions = {
   windowMs: number;
@@ -80,9 +90,9 @@ export function derivePlayWeights(
   legacyEvents: UserSignalEvent[],
   now: number,
   windowMs: number
-): ArtistWeight[] {
+): PlayWeightResult {
   const earliest = earliestRecordedAt(trackEvents, legacyEvents);
-  if (earliest === null) return [];
+  if (earliest === null) return { weights: [], windowStart: null };
   const latest = reconstructArtistPlayCounts(
     trackEvents,
     legacyEvents,
@@ -91,7 +101,7 @@ export function derivePlayWeights(
 
   const windowStart = now - windowMs;
   if (earliest > windowStart) {
-    return allTimeWeights(latest);
+    return { weights: allTimeWeights(latest), windowStart: null };
   }
 
   const baseline = reconstructArtistPlayCounts(
@@ -106,32 +116,32 @@ export function derivePlayWeights(
     total += delta;
     if (delta > 0) windowed.push({ name, viewCount: delta });
   }
-  return total > 0 ? windowed : allTimeWeights(latest);
+  return total > 0
+    ? { weights: windowed, windowStart }
+    : { weights: allTimeWeights(latest), windowStart: null };
 }
 
 /**
- * Per-artist play distribution over the same window `derivePlayWeights` measures, keyed by
- * artist name so it joins onto the weight set. When the track series does not yet span the
- * window the distribution is all-time, matching the weight fallback. Two artists sharing a
- * name collapse to whichever has more plays, mirroring how the counts merge.
+ * Per-artist play distribution over the window the weights were measured over, keyed by
+ * artist name so it joins onto the weight set. `windowStart` comes straight from
+ * {@link derivePlayWeights} rather than being re-derived here: deciding the span twice let
+ * the weights be windowed while the distribution was all-time, so the discount was measured
+ * over a different span than the weight it scales. Two artists sharing a name collapse to
+ * whichever has more plays, mirroring how the counts merge.
  */
 export function deriveArtistDistributions(
   trackEvents: UserSignalEvent[],
-  now: number,
-  windowMs: number
+  windowStart: number | null
 ): Map<string, ArtistPlayRollup> {
   const latest = reconstructTrackPlayCounts(trackEvents, Infinity);
-  const windowStart = now - windowMs;
-  const first = trackEvents[0];
-  const spansWindow =
-    first !== undefined && Date.parse(first.recorded_at) <= windowStart;
 
-  const rollups = spansWindow
-    ? rollupToArtists(
-        latest,
-        reconstructTrackPlayCounts(trackEvents, windowStart)
-      )
-    : rollupToArtists(latest);
+  const rollups =
+    windowStart === null
+      ? rollupToArtists(latest)
+      : rollupToArtists(
+          latest,
+          reconstructTrackPlayCounts(trackEvents, windowStart)
+        );
 
   const byName = new Map<string, ArtistPlayRollup>();
   for (const rollup of rollups) {
@@ -247,8 +257,8 @@ export async function loadArtistWeights(
 
   const plays = derivePlayWeights(trackEvents, legacyEvents, now, windowMs);
   const spread = applyDistributionFactor(
-    plays,
-    deriveArtistDistributions(trackEvents, now, windowMs),
+    plays.weights,
+    deriveArtistDistributions(trackEvents, plays.windowStart),
     distributionWeight,
     minPlaysForDistribution
   );

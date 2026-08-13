@@ -1,6 +1,6 @@
 import { resilientFetch } from "../resilientFetch";
 import { getPlexConfig } from "./config";
-import { getMusicSectionKey } from "./sections";
+import { getMusicSectionKeys } from "./sections";
 import type { PlexTrackMetadata, PlexTracksResponse } from "./types";
 
 /** One track's cumulative play count plus the album/artist it rolls up into. */
@@ -71,21 +71,19 @@ async function fetchPage(
 }
 
 /**
- * Every played track in the library, paginated to completion. Sorted by `viewCount:desc`,
+ * One music section's played tracks, paginated to completion. Sorted by `viewCount:desc`,
  * so the walk stops at the first page containing an unplayed track — the whole remainder
  * is unplayed. That is what keeps this affordable: it costs one request per ~500 *played*
- * tracks, not per 500 library tracks. Intended for the background plays-capture job
- * against a local PMS, where walking the library carries no rate limit.
+ * tracks, not per 500 library tracks.
  *
  * Termination is keyed on the raw page count rather than the mapped one, so a played track
  * dropped for having no artist attribution can't be mistaken for the unplayed tail.
  */
-export async function getAllTrackPlayCounts(
-  plexToken: string
+async function walkSection(
+  baseUrl: string,
+  headers: Record<string, string>,
+  sectionKey: string
 ): Promise<TrackPlayCount[]> {
-  const { baseUrl, headers } = getPlexConfig(plexToken);
-  const sectionKey = await getMusicSectionKey(baseUrl, headers);
-
   const all: TrackPlayCount[] = [];
   let start = 0;
   for (;;) {
@@ -94,6 +92,25 @@ export async function getAllTrackPlayCounts(
     start += PAGE_SIZE;
     if (page.playedCount < page.pageCount) break;
     if (page.pageCount < PAGE_SIZE || start >= page.totalSize) break;
+  }
+  return all;
+}
+
+/**
+ * Every played track across every music section. Intended for the background plays-capture
+ * job against a local PMS, where walking the library carries no rate limit. Sections are
+ * walked sequentially so a server with several music libraries doesn't get several
+ * concurrent full sweeps.
+ */
+export async function getAllTrackPlayCounts(
+  plexToken: string
+): Promise<TrackPlayCount[]> {
+  const { baseUrl, headers } = getPlexConfig(plexToken);
+  const sectionKeys = await getMusicSectionKeys(baseUrl, headers);
+
+  const all: TrackPlayCount[] = [];
+  for (const sectionKey of sectionKeys) {
+    all.push(...(await walkSection(baseUrl, headers, sectionKey)));
   }
   return all;
 }

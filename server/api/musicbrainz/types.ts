@@ -80,12 +80,16 @@ export type MusicBrainzRelease = {
     id: string;
     title: string;
     "first-release-date"?: string;
+    "primary-type"?: string | null;
+    "secondary-types"?: string[];
   };
 };
 
 export type ReleaseGroupInfo = {
   id: string;
   firstReleaseDate: string;
+  primaryType: string | null;
+  secondaryTypes: string[];
 };
 
 export type MusicBrainzLabelRelation = {

@@ -3,6 +3,7 @@ import {
   searchReleaseGroups,
   getReleaseGroupById,
   getReleaseGroupIdFromRelease,
+  resolveReleaseGroupInfo,
   getReleaseGroupLabel,
   getReleaseGroupDate,
   getAlbumDetails,
@@ -183,12 +184,19 @@ describe("getReleaseGroupIdFromRelease", () => {
           id: "rg-456",
           title: "OK Computer",
           "first-release-date": "1997-06-16",
+          "primary-type": "Album",
+          "secondary-types": ["Live"],
         },
       })
     );
 
     const result = await getReleaseGroupIdFromRelease("release-123");
-    expect(result).toEqual({ id: "rg-456", firstReleaseDate: "1997-06-16" });
+    expect(result).toEqual({
+      id: "rg-456",
+      firstReleaseDate: "1997-06-16",
+      primaryType: "Album",
+      secondaryTypes: ["Live"],
+    });
     expect(mockFetch).toHaveBeenCalledWith(
       `${MB_BASE}/release/release-123?inc=release-groups&fmt=json`,
       { headers: MB_HEADERS },
@@ -209,7 +217,12 @@ describe("getReleaseGroupIdFromRelease", () => {
     );
 
     const result = await getReleaseGroupIdFromRelease("release-123");
-    expect(result).toEqual({ id: "rg-456", firstReleaseDate: "" });
+    expect(result).toEqual({
+      id: "rg-456",
+      firstReleaseDate: "",
+      primaryType: null,
+      secondaryTypes: [],
+    });
   });
 
   it("returns null when release not found", async () => {
@@ -229,6 +242,80 @@ describe("getReleaseGroupIdFromRelease", () => {
 
     const result = await getReleaseGroupIdFromRelease("release-123");
     expect(result).toBeNull();
+  });
+});
+
+describe("resolveReleaseGroupInfo", () => {
+  it("returns the release group when the MBID is a release", async () => {
+    mockFetch.mockResolvedValue(
+      okResponse({
+        id: "release-123",
+        title: "Kid A",
+        "release-group": {
+          id: "rg-456",
+          title: "Kid A",
+          "first-release-date": "2000-10-02",
+          "primary-type": "Album",
+        },
+      })
+    );
+
+    const result = await resolveReleaseGroupInfo("release-123");
+
+    expect(result).toEqual({
+      id: "rg-456",
+      firstReleaseDate: "2000-10-02",
+      primaryType: "Album",
+      secondaryTypes: [],
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries the MBID as a release group when the release lookup misses", async () => {
+    mockFetch.mockResolvedValueOnce(errorResponse(404)).mockResolvedValueOnce(
+      okResponse({
+        id: "rg-456",
+        title: "Kid A",
+        "first-release-date": "2000-10-02",
+        "primary-type": "Album",
+        "secondary-types": ["Live"],
+      })
+    );
+
+    const result = await resolveReleaseGroupInfo("rg-456");
+
+    expect(result).toEqual({
+      id: "rg-456",
+      firstReleaseDate: "2000-10-02",
+      primaryType: "Album",
+      secondaryTypes: ["Live"],
+    });
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      `${MB_BASE}/release-group/rg-456?fmt=json`,
+      { headers: MB_HEADERS },
+      { retry: false }
+    );
+  });
+
+  it("returns null when the MBID is neither", async () => {
+    mockFetch.mockResolvedValue(errorResponse(404));
+
+    expect(await resolveReleaseGroupInfo("nonexistent")).toBeNull();
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("spends no further slots on a repeat lookup", async () => {
+    mockFetch
+      .mockResolvedValueOnce(errorResponse(404))
+      .mockResolvedValueOnce(
+        okResponse({ id: "rg-456", "first-release-date": "2000-10-02" })
+      );
+
+    await resolveReleaseGroupInfo("rg-456");
+    await resolveReleaseGroupInfo("rg-456");
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 });
 

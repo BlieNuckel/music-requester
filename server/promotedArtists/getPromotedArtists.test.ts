@@ -57,7 +57,6 @@ async function createUserWithToken(token: string): Promise<number> {
 const baseConfig: PromotedAlbumConfig = {
   cacheDurationMinutes: 30,
   profileTtlMinutes: 1440,
-  topArtistsRange: "6months",
   topArtistsCount: 10,
   pickedArtistsCount: 2,
   tagsPerArtist: 3,

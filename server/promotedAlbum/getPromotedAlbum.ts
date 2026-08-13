@@ -1,7 +1,7 @@
 import { getTopAlbumsByTag } from "../api/lastfm/albums";
 import { lidarrGet } from "../api/lidarr/get";
 import type { LidarrAlbum, LidarrArtist } from "../api/lidarr/types";
-import { getReleaseGroupIdFromRelease } from "../api/musicbrainz/releaseGroups";
+import { resolveReleaseGroupInfo } from "../api/musicbrainz/releaseGroups";
 import type { ReleaseGroupInfo } from "../api/musicbrainz/types";
 import { getConfigValue } from "../config";
 import {
@@ -16,8 +16,9 @@ import { findUserById } from "../auth/users";
 import { updateExplorationHistory } from "../db/userProfile";
 import type { DerivedProfile } from "../db/entity/UserProfile";
 import { getMonitoredAlbums } from "../services/lidarr/albums";
+import { isAllowedReleaseType } from "../services/discover/typeFilter";
 import { buildExploreResult } from "./explore";
-import { loadFreshProfile } from "./profileService";
+import { loadFreshProfile, normalizedTagWeights } from "./profileService";
 import type {
   BuiltAlbum,
   PromotedAlbumEntry,
@@ -55,6 +56,19 @@ type AlbumSelection = {
 
 type GetRgInfo = (mbid: string) => Promise<ReleaseGroupInfo | null>;
 
+/** Which candidates a `libraryPreference` favours, and how each outcome is traced. */
+type PreferenceRule = {
+  isPreferred: (album: CandidateAlbum) => boolean;
+  preferredReason: TraceSelectionReason;
+  fallbackReason: TraceSelectionReason;
+};
+
+type SelectionWalk = PreferenceRule & {
+  candidates: CandidateAlbum[];
+  getRgInfo: GetRgInfo;
+  recentlyShown: Set<string>;
+};
+
 /**
  * Injected clock and randomness. Both default to the globals; tests pass their own so
  * the selection rules (how often we explore, how deep we page) can be asserted directly
@@ -86,19 +100,22 @@ function buildTraceFromProfile(
   albumPool: TraceAlbumPoolInfo,
   selectionReason: TraceSelectionReason
 ): WithinTasteTrace {
-  const plexArtists: TraceArtistEntry[] = profile.artistTags.map((a) => ({
-    name: a.name,
-    viewCount: a.viewCount,
-    picked: true,
-    tagContributions: a.tags.map((t) => ({
-      tagName: t.name,
-      rawCount: t.count,
-      weight: t.count * a.viewCount,
-    })),
-    distinctTracksPlayed: a.distinctTracksPlayed,
-    topTrackShare: a.topTrackShare,
-    distributionFactor: a.distributionFactor,
-  }));
+  const plexArtists: TraceArtistEntry[] = profile.artistTags.map((a) => {
+    const weights = normalizedTagWeights(a.tags, a.viewCount);
+    return {
+      name: a.name,
+      viewCount: a.viewCount,
+      picked: true,
+      tagContributions: a.tags.map((t, index) => ({
+        tagName: t.name,
+        rawCount: t.count,
+        weight: weights[index],
+      })),
+      distinctTracksPlayed: a.distinctTracksPlayed,
+      topTrackShare: a.topTrackShare,
+      distributionFactor: a.distributionFactor,
+    };
+  });
 
   const weightedTags: TraceWeightedTag[] = profile.genreVector.map((g) => ({
     name: g.tag,
@@ -117,67 +134,87 @@ function buildTraceFromProfile(
 }
 
 /**
- * Walk the shuffled pool and take the first album that resolves to a release group AND
- * satisfies `isPreferred`, falling back to the first that merely resolves. Albums that
- * don't resolve are skipped entirely.
+ * Walk the pool and take the first album that resolves to a release group, is a release
+ * type worth recommending, hasn't been shown recently, AND satisfies `isPreferred` —
+ * falling back to the first that merely qualifies. Candidates that fail any of the earlier
+ * checks are skipped entirely; a greatest-hits package or a live album is not an album
+ * recommendation, and the type only becomes known once the candidate has been resolved.
  */
-async function selectAlbumWithPreference(
-  shuffled: CandidateAlbum[],
-  isPreferred: (album: CandidateAlbum) => boolean,
-  getRgInfo: GetRgInfo,
-  preferredReason: TraceSelectionReason,
-  fallbackReason: TraceSelectionReason
+async function walkCandidates(
+  walk: SelectionWalk
 ): Promise<AlbumSelection | null> {
   let fallback: Omit<AlbumSelection, "reason"> | undefined;
 
-  for (const album of shuffled) {
-    const rgInfo = await getRgInfo(album.mbid);
+  for (const album of walk.candidates) {
+    const rgInfo = await walk.getRgInfo(album.mbid);
     if (!rgInfo) continue;
+    if (!isAllowedReleaseType(rgInfo.primaryType, rgInfo.secondaryTypes)) {
+      continue;
+    }
+    if (walk.recentlyShown.has(rgInfo.id)) continue;
 
     const year = rgInfo.firstReleaseDate.slice(0, 4);
-    if (isPreferred(album)) {
-      return { album, rgMbid: rgInfo.id, year, reason: preferredReason };
+    if (walk.isPreferred(album)) {
+      return { album, rgMbid: rgInfo.id, year, reason: walk.preferredReason };
     }
     if (!fallback) {
       fallback = { album, rgMbid: rgInfo.id, year };
     }
   }
 
-  return fallback ? { ...fallback, reason: fallbackReason } : null;
+  return fallback ? { ...fallback, reason: walk.fallbackReason } : null;
 }
 
-function selectAlbum(
+function preferenceRule(
+  libraryPreference: LibraryPreference,
+  artistInLibrary: (mbid: string) => boolean
+): PreferenceRule {
+  switch (libraryPreference) {
+    case "prefer_new":
+      return {
+        isPreferred: (a) => !artistInLibrary(a.artistMbid),
+        preferredReason: "preferred_non_library",
+        fallbackReason: "fallback_in_library",
+      };
+    case "prefer_library":
+      return {
+        isPreferred: (a) => artistInLibrary(a.artistMbid),
+        preferredReason: "preferred_library",
+        fallbackReason: "fallback_non_library",
+      };
+    case "no_preference":
+      return {
+        isPreferred: () => true,
+        preferredReason: "no_preference",
+        fallbackReason: "no_preference",
+      };
+  }
+}
+
+/**
+ * Anti-repeat runs inside the walk rather than over the raw pool because the memory is keyed
+ * on release-group MBIDs, and a Last.fm chart entry only has one after it is resolved. When
+ * every qualifying candidate turns out to be recently shown, the walk repeats without the
+ * memory — a repeat beats an empty slot, and the second pass is served entirely from the
+ * MusicBrainz cache the first one filled.
+ */
+async function selectAlbum(
   shuffled: CandidateAlbum[],
   artistInLibrary: (mbid: string) => boolean,
   libraryPreference: LibraryPreference,
-  getRgInfo: GetRgInfo
+  getRgInfo: GetRgInfo,
+  recentlyShown: Set<string>
 ): Promise<AlbumSelection | null> {
-  switch (libraryPreference) {
-    case "prefer_new":
-      return selectAlbumWithPreference(
-        shuffled,
-        (a) => !artistInLibrary(a.artistMbid),
-        getRgInfo,
-        "preferred_non_library",
-        "fallback_in_library"
-      );
-    case "prefer_library":
-      return selectAlbumWithPreference(
-        shuffled,
-        (a) => artistInLibrary(a.artistMbid),
-        getRgInfo,
-        "preferred_library",
-        "fallback_non_library"
-      );
-    case "no_preference":
-      return selectAlbumWithPreference(
-        shuffled,
-        () => true,
-        getRgInfo,
-        "no_preference",
-        "no_preference"
-      );
-  }
+  const walk: SelectionWalk = {
+    candidates: shuffled,
+    getRgInfo,
+    recentlyShown,
+    ...preferenceRule(libraryPreference, artistInLibrary),
+  };
+
+  const picked = await walkCandidates(walk);
+  if (picked || recentlyShown.size === 0) return picked;
+  return walkCandidates({ ...walk, recentlyShown: new Set() });
 }
 
 /**
@@ -219,15 +256,12 @@ async function buildWithinTasteFromProfile(
   });
   if (allAlbums.length === 0) return null;
 
-  const freshAlbums = allAlbums.filter((a) => !recentlyShown.has(a.mbid));
-  const candidatePool = freshAlbums.length > 0 ? freshAlbums : allAlbums;
-  const shuffled = shuffle(candidatePool, rng);
-
   const picked = await selectAlbum(
-    shuffled,
+    shuffle(allAlbums, rng),
     artistInLibrary,
     config.libraryPreference,
-    getReleaseGroupIdFromRelease
+    resolveReleaseGroupInfo,
+    recentlyShown
   );
   if (!picked) return null;
 
@@ -263,7 +297,7 @@ async function buildWithinTasteFromProfile(
     trace,
   };
 
-  return { result, rememberKey: picked.album.mbid };
+  return { result, rememberKey: picked.rgMbid };
 }
 
 async function loadLibraryMbids(): Promise<LibraryLookups> {
@@ -372,9 +406,6 @@ async function buildPicks(
     const built = await buildOnePick(profile, config, excluded, library, rng);
     if (!built) continue;
 
-    // Two different ID spaces on purpose: `rememberKey` is the release MBID the source
-    // chart returned, which is what exclusion history is keyed on, while the carousel
-    // dedups on the release-GROUP MBID the user actually sees.
     excluded.add(built.rememberKey);
     if (pickedAlbums.has(built.result.album.mbid)) continue;
 
