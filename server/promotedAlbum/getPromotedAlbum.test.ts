@@ -83,6 +83,19 @@ async function getAlbums(
   return albums;
 }
 
+/**
+ * Deterministic but varying randomness, for cases that need successive draws to differ.
+ * The suite otherwise pins `Math.random` to one value, which would make every pick's
+ * artist sample identical.
+ */
+function lcg(seed: number) {
+  let state = seed;
+  return () => {
+    state = (state * 1103515245 + 12345) % 2147483648;
+    return state / 2147483648;
+  };
+}
+
 /** Single-pick view of the carousel batch, so per-selection cases stay readable. */
 async function getOne(userId: number, forceRefresh = false) {
   const [first] = await getAlbums(userId, forceRefresh, 1);
@@ -948,6 +961,30 @@ describe("getPromotedAlbums", () => {
         expect(firstMbids.has(result.album.mbid)).toBe(false);
       }
     });
+
+    it("re-samples the artists per pick so one batch spans the profile", async () => {
+      const wide = Array.from({ length: 8 }, (_, i) => ({
+        name: `Artist ${i}`,
+        viewCount: 100,
+      }));
+      mockLoadArtistWeights.mockResolvedValue(wide);
+      mockGetArtistTopTags.mockImplementation((name: string) =>
+        Promise.resolve([{ name: `tag-${name}`, count: 100 }])
+      );
+      mockGetTopAlbumsByTag.mockResolvedValue(bigAlbumsPage);
+      mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
+
+      const results = await getAlbums(userId, false, 5, { rng: lcg(42) });
+
+      const sampledPerPick = results.map((r) =>
+        wt(r)
+          .trace.plexArtists.filter((a) => a.picked)
+          .map((a) => a.name)
+          .sort()
+          .join(",")
+      );
+      expect(new Set(sampledPerPick).size).toBeGreaterThan(1);
+    });
   });
 
   describe("trace", () => {
@@ -974,6 +1011,57 @@ describe("getPromotedAlbums", () => {
       const result = await getOne(userId);
       const picked = wt(result).trace.plexArtists.filter((a) => a.picked);
       expect(picked).toHaveLength(2);
+    });
+
+    it("marks only the artists this pick sampled, and lists the rest", async () => {
+      mockLoadArtistWeights.mockResolvedValue(
+        Array.from({ length: 6 }, (_, i) => ({
+          name: `Artist ${i}`,
+          viewCount: 100,
+        }))
+      );
+      mockGetArtistTopTags.mockImplementation((name: string) =>
+        Promise.resolve([{ name: `tag-${name}`, count: 100 }])
+      );
+      mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
+      mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
+
+      const result = await getOne(userId);
+      const trace = wt(result).trace;
+
+      expect(trace.plexArtists).toHaveLength(6);
+      expect(trace.plexArtists.filter((a) => a.picked)).toHaveLength(3);
+      // The vector shown is the one this pick drew from, not the whole profile's.
+      expect(trace.weightedTags).toHaveLength(3);
+      expect(trace.weightedTags.map((t) => t.name)).toContain(
+        trace.chosenTag.name
+      );
+    });
+
+    it("falls back to the stored vector for a profile with no artist tags", async () => {
+      mockLoadArtistWeights.mockResolvedValue(plexArtists);
+      mockGetArtistTopTags.mockResolvedValue(tags);
+      mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
+      mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
+
+      await seedProfile(userId);
+      const row = await getDataSource().query(
+        "SELECT profile_json FROM user_profiles WHERE user_id = ?",
+        [userId]
+      );
+      const stored = JSON.parse(
+        (row as { profile_json: string }[])[0].profile_json
+      );
+      await getDataSource().query(
+        "UPDATE user_profiles SET profile_json = ? WHERE user_id = ?",
+        [JSON.stringify({ ...stored, artistTags: [] }), userId]
+      );
+      clearPromotedAlbumCache();
+
+      const { albums } = await getPromotedAlbums(userId, true, 1);
+
+      expect(albums).toHaveLength(1);
+      expect(wt(albums[0]).tag).toBe("alternative");
     });
 
     it("chosenTag name matches result tag", async () => {
@@ -1382,9 +1470,10 @@ describe("injected randomness and clock", () => {
   it("derives the deep page from the configured range", async () => {
     setupBothPaths();
 
+    // Draws in order: explore coin, one per sampled artist, tag, deep page.
     // range = deepPageMax - deepPageMin + 1 = 9; floor(0.5 * 9) + 2 = 6
     await getAlbums(userId, false, 1, {
-      rng: seqRng([0.9, 0, 0.5, 0]),
+      rng: seqRng([0.9, 0, 0, 0, 0.5, 0]),
     });
 
     expect(mockGetTopAlbumsByTag).toHaveBeenCalledWith(expect.any(String), "6");

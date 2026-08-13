@@ -3,7 +3,6 @@ import { buildSimilarGraph } from "./explore";
 import { getArtistTopTags } from "../api/lastfm/artists";
 import { getConfigValue } from "../config";
 import type { PromotedAlbumConfig } from "../config";
-import { weightedRandomPick } from "../utils/random";
 import { AsyncLock } from "../api/asyncLock";
 import { createLogger } from "../logger";
 import {
@@ -65,6 +64,42 @@ export function normalizedTagWeights(
   return counts.map((count) => (count / mass) * viewCount);
 }
 
+/**
+ * Merge a set of artists' tags into one weighted vector, each artist contributing exactly
+ * its play weight. Exported because selection builds the same vector from a per-pick sample
+ * of the stored artists — one definition keeps the vector a recommendation is drawn from
+ * identical in shape to the one stored on the profile.
+ */
+export function buildGenreVector(
+  artistTags: DerivedProfile["artistTags"]
+): DerivedProfile["genreVector"] {
+  const tagMap = new Map<string, TagAccumulator>();
+
+  for (const { name, viewCount, tags } of artistTags) {
+    const weights = normalizedTagWeights(tags, viewCount);
+    for (const [index, tag] of tags.entries()) {
+      const key = tag.name.toLowerCase();
+      const existing = tagMap.get(key);
+      if (existing) {
+        existing.weight += weights[index];
+        existing.fromArtists.add(name);
+      } else {
+        tagMap.set(key, {
+          displayName: tag.name,
+          weight: weights[index],
+          fromArtists: new Set([name]),
+        });
+      }
+    }
+  }
+
+  return Array.from(tagMap.values()).map((v) => ({
+    tag: v.displayName,
+    weight: v.weight,
+    fromArtists: Array.from(v.fromArtists),
+  }));
+}
+
 function buildProfileArtifacts(
   tagResults: TagResultEntry[],
   genericTags: Set<string>,
@@ -83,42 +118,14 @@ function buildProfileArtifacts(
     })
   );
 
-  const tagMap = new Map<string, TagAccumulator>();
-  for (const { name, viewCount, tags } of artistTags) {
-    const weights = normalizedTagWeights(tags, viewCount);
-    for (const [index, tag] of tags.entries()) {
-      const key = tag.name.toLowerCase();
-      const weight = weights[index];
-      const existing = tagMap.get(key);
-      if (existing) {
-        existing.weight += weight;
-        existing.fromArtists.add(name);
-      } else {
-        tagMap.set(key, {
-          displayName: tag.name,
-          weight,
-          fromArtists: new Set([name]),
-        });
-      }
-    }
-  }
-
-  const genreVector: DerivedProfile["genreVector"] = Array.from(
-    tagMap.values()
-  ).map((v) => ({
-    tag: v.displayName,
-    weight: v.weight,
-    fromArtists: Array.from(v.fromArtists),
-  }));
-
-  return { genreVector, artistTags };
+  return { genreVector: buildGenreVector(artistTags), artistTags };
 }
 
 async function fetchTagResults(
-  pickedArtists: ArtistWeight[]
+  artists: ArtistWeight[]
 ): Promise<TagResultEntry[]> {
   return Promise.all(
-    pickedArtists.map(async (artist) => {
+    artists.map(async (artist) => {
       try {
         return { artist, tags: await getArtistTopTags(artist.name) };
       } catch {
@@ -134,6 +141,10 @@ async function fetchTagResults(
  * Returns null when the user has no top artists or every tag is generic; the existing
  * row (if any) is left untouched in that case. Existing exploration memory is carried
  * forward across the regenerate.
+ *
+ * Tags are fetched for *every* top artist rather than a random few. Sampling here froze one
+ * draw into a profile that then drove every recommendation for the whole TTL; the sample
+ * belongs at selection time, where it can be re-rolled per recommendation.
  */
 export async function regenerateProfile(
   userId: number,
@@ -153,14 +164,7 @@ export async function regenerateProfile(
     .sort((a, b) => b.viewCount - a.viewCount)
     .slice(0, config.topArtistsCount);
 
-  const pickedArtists = weightedRandomPick(
-    topArtists,
-    (a) => a.viewCount,
-    config.pickedArtistsCount
-  );
-  if (pickedArtists.length === 0) return null;
-
-  const tagResults = await fetchTagResults(pickedArtists);
+  const tagResults = await fetchTagResults(topArtists);
   const genericTags = new Set(config.genericTags.map((t) => t.toLowerCase()));
   const { genreVector, artistTags } = buildProfileArtifacts(
     tagResults,
