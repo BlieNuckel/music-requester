@@ -177,6 +177,57 @@ const bigAlbumsPage = {
   pagination: { page: 1, totalPages: 5 },
 };
 
+const exploreConfig = { ...defaultPromotedAlbumConfig, explorationRate: 1 };
+
+const similarArtists = [
+  {
+    artist_mbid: "mbid-rock",
+    name: "Rock Clone",
+    comment: "",
+    type: "Group",
+    gender: null,
+    score: 9000,
+    reference_mbid: "mbid-seed",
+  },
+  {
+    artist_mbid: "mbid-jazz",
+    name: "Jazz Cat",
+    comment: "",
+    type: "Group",
+    gender: null,
+    score: 5000,
+    reference_mbid: "mbid-seed",
+  },
+];
+
+const genreByArtist: Record<string, { name: string; count: number }[]> = {
+  Radiohead: [
+    { name: "alternative", count: 100 },
+    { name: "rock", count: 80 },
+  ],
+  "Rock Clone": [
+    { name: "alternative", count: 100 },
+    { name: "rock", count: 80 },
+  ],
+  "Jazz Cat": [
+    { name: "jazz", count: 100 },
+    { name: "bebop", count: 50 },
+  ],
+};
+
+const jazzReleaseGroups = [
+  {
+    id: "rg-jazz-1",
+    score: 1,
+    title: "Blue Album",
+    "primary-type": "Album",
+    "first-release-date": "1965-03-01",
+    "artist-credit": [
+      { name: "Jazz Cat", artist: { id: "mbid-jazz", name: "Jazz Cat" } },
+    ],
+  },
+];
+
 describe("getPromotedAlbums", () => {
   it("returns a promoted album on happy path with correct shape", async () => {
     mockLoadArtistWeights.mockResolvedValue(plexArtists);
@@ -986,57 +1037,6 @@ describe("getPromotedAlbums", () => {
   });
 
   describe("explore mode", () => {
-    const exploreConfig = { ...defaultPromotedAlbumConfig, explorationRate: 1 };
-
-    const similarArtists = [
-      {
-        artist_mbid: "mbid-rock",
-        name: "Rock Clone",
-        comment: "",
-        type: "Group",
-        gender: null,
-        score: 9000,
-        reference_mbid: "mbid-seed",
-      },
-      {
-        artist_mbid: "mbid-jazz",
-        name: "Jazz Cat",
-        comment: "",
-        type: "Group",
-        gender: null,
-        score: 5000,
-        reference_mbid: "mbid-seed",
-      },
-    ];
-
-    const genreByArtist: Record<string, { name: string; count: number }[]> = {
-      Radiohead: [
-        { name: "alternative", count: 100 },
-        { name: "rock", count: 80 },
-      ],
-      "Rock Clone": [
-        { name: "alternative", count: 100 },
-        { name: "rock", count: 80 },
-      ],
-      "Jazz Cat": [
-        { name: "jazz", count: 100 },
-        { name: "bebop", count: 50 },
-      ],
-    };
-
-    const jazzReleaseGroups = [
-      {
-        id: "rg-jazz-1",
-        score: 1,
-        title: "Blue Album",
-        "primary-type": "Album",
-        "first-release-date": "1965-03-01",
-        "artist-credit": [
-          { name: "Jazz Cat", artist: { id: "mbid-jazz", name: "Jazz Cat" } },
-        ],
-      },
-    ];
-
     function setupExplore() {
       mockGetConfigValue.mockReturnValue(exploreConfig);
       mockLoadArtistWeights.mockResolvedValue(plexArtists);
@@ -1143,5 +1143,89 @@ describe("getPromotedAlbums", () => {
       const second = await getOne(userId, true);
       expect(ex(first).album.mbid).not.toBe(ex(second).album.mbid);
     });
+  });
+});
+
+describe("injected randomness and clock", () => {
+  /**
+   * Feeds rng one value per call so an individual decision can be pinned. Call order
+   * within a pick is: explore/within-taste coin, tag pick, deep page, then shuffling.
+   */
+  function seqRng(values: number[]) {
+    let i = 0;
+    return () => values[Math.min(i++, values.length - 1)];
+  }
+
+  const exploreCapable = {
+    ...defaultPromotedAlbumConfig,
+    explorationRate: 0.5,
+  };
+
+  function setupBothPaths() {
+    mockGetConfigValue.mockReturnValue(exploreCapable);
+    mockLoadArtistWeights.mockResolvedValue(plexArtists);
+    mockGetArtistTopTags.mockImplementation((name: string) =>
+      Promise.resolve(genreByArtist[name] ?? tags)
+    );
+    mockGetArtistMbidByName.mockResolvedValue("mbid-seed");
+    mockGetSimilarArtists.mockResolvedValue(similarArtists);
+    mockFetchReleaseGroupsForArtist.mockImplementation((mbid: string) =>
+      Promise.resolve(mbid === "mbid-jazz" ? jazzReleaseGroups : [])
+    );
+    mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
+    mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
+  }
+
+  it("explores when the coin lands under the exploration rate", async () => {
+    setupBothPaths();
+
+    const [result] = await getPromotedAlbums(userId, false, 1, {
+      rng: seqRng([0.1]),
+    });
+
+    expect(result.mode).toBe("explore");
+  });
+
+  it("stays within taste when the coin lands above the exploration rate", async () => {
+    setupBothPaths();
+
+    const [result] = await getPromotedAlbums(userId, false, 1, {
+      rng: seqRng([0.9, 0, 0]),
+    });
+
+    expect(result.mode).toBe("within_taste");
+  });
+
+  it("derives the deep page from the configured range", async () => {
+    setupBothPaths();
+
+    // range = deepPageMax - deepPageMin + 1 = 9; floor(0.5 * 9) + 2 = 6
+    await getPromotedAlbums(userId, false, 1, {
+      rng: seqRng([0.9, 0, 0.5, 0]),
+    });
+
+    expect(mockGetTopAlbumsByTag).toHaveBeenCalledWith(expect.any(String), "6");
+  });
+
+  it("serves the cache until the injected clock passes the TTL", async () => {
+    setupBothPaths();
+    const rng = () => 0.9;
+    const base = 1_700_000_000_000;
+    const ttlMs = exploreCapable.cacheDurationMinutes * 60 * 1000;
+
+    await getPromotedAlbums(userId, false, 1, { rng, now: () => base });
+    mockGetTopAlbumsByTag.mockClear();
+
+    await getPromotedAlbums(userId, false, 1, {
+      rng,
+      now: () => base + ttlMs - 1,
+    });
+    expect(mockGetTopAlbumsByTag).not.toHaveBeenCalled();
+
+    await getPromotedAlbums(userId, false, 1, {
+      rng,
+      now: () => base + ttlMs,
+    });
+    expect(mockGetTopAlbumsByTag).toHaveBeenCalled();
   });
 });
