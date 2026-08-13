@@ -15,6 +15,8 @@ export type ProfileConfigInputs = {
   pickedArtistsCount: number;
   playTrendWindowDays: number;
   ratingWeight: number;
+  distributionWeight: number;
+  minPlaysForDistribution: number;
   topArtistsCount: number;
   exploreCandidateCount: number;
 };
@@ -69,6 +71,8 @@ export function computeConfigHash(inputs: ProfileConfigInputs): string {
     pickedArtistsCount: inputs.pickedArtistsCount,
     playTrendWindowDays: inputs.playTrendWindowDays,
     ratingWeight: inputs.ratingWeight,
+    distributionWeight: inputs.distributionWeight,
+    minPlaysForDistribution: inputs.minPlaysForDistribution,
     topArtistsCount: inputs.topArtistsCount,
     exploreCandidateCount: inputs.exploreCandidateCount,
   });

@@ -54,6 +54,8 @@ const CONFIG_INPUTS = {
   pickedArtistsCount: 3,
   playTrendWindowDays: 90,
   ratingWeight: 0.5,
+  distributionWeight: 0.5,
+  minPlaysForDistribution: 5,
   topArtistsCount: 10,
   exploreCandidateCount: 12,
 };
@@ -124,6 +126,12 @@ describe("computeConfigHash", () => {
     );
     expect(
       computeConfigHash({ ...CONFIG_INPUTS, topArtistsRange: "all" })
+    ).not.toBe(computeConfigHash(CONFIG_INPUTS));
+    expect(
+      computeConfigHash({ ...CONFIG_INPUTS, distributionWeight: 0 })
+    ).not.toBe(computeConfigHash(CONFIG_INPUTS));
+    expect(
+      computeConfigHash({ ...CONFIG_INPUTS, minPlaysForDistribution: 10 })
     ).not.toBe(computeConfigHash(CONFIG_INPUTS));
   });
 
