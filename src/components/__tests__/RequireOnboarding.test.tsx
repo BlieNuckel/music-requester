@@ -58,6 +58,7 @@ function renderWithContext(
     settings: emptySettings,
     isConnected: false,
     isLoading: false,
+    loadError: null,
     saveSettings: vi.fn(),
     savePartialSettings: vi.fn(),
     testConnection: vi.fn(),
