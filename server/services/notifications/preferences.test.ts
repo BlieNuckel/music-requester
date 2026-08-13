@@ -191,3 +191,51 @@ describe("isEventEnabled", () => {
     );
   });
 });
+
+describe("setPreferences batching", () => {
+  // Validation runs over the whole batch before any write, so an invalid entry is
+  // rejected without touching the DB. The transaction underneath covers the other
+  // case: a write failing partway through a valid batch.
+  it("rejects an invalid batch without applying its valid entries", async () => {
+    const userId = await createUser("carol");
+    await setPreferences(userId, [
+      { eventId: "request.imported", transportId: "webpush", enabled: false },
+    ]);
+
+    await expect(
+      setPreferences(userId, [
+        { eventId: "request.imported", transportId: "webpush", enabled: true },
+        {
+          eventId: "not.a.real.event",
+          transportId: "webpush",
+          enabled: true,
+        } as never,
+      ])
+    ).rejects.toThrow("Unknown notification event");
+
+    // The valid entry in the rejected batch must not have landed.
+    expect(await isEventEnabled(userId, "request.imported", "webpush")).toBe(
+      false
+    );
+  });
+
+  it("writes a whole valid batch", async () => {
+    const userId = await createUser("dave");
+
+    await setPreferences(userId, [
+      { eventId: "request.imported", transportId: "webpush", enabled: false },
+      {
+        eventId: "request.downloading",
+        transportId: "webpush",
+        enabled: true,
+      },
+    ]);
+
+    expect(await isEventEnabled(userId, "request.imported", "webpush")).toBe(
+      false
+    );
+    expect(await isEventEnabled(userId, "request.downloading", "webpush")).toBe(
+      true
+    );
+  });
+});

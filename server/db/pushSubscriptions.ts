@@ -1,4 +1,4 @@
-import { getDataSource, PushSubscription } from "../../db/index";
+import { getDataSource, PushSubscription } from "./index";
 
 export type PushSubscriptionInput = {
   endpoint: string;

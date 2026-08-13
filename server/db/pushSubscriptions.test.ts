@@ -1,9 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import {
-  initializeDatabase,
-  getDataSource,
-  closeDatabase,
-} from "../../db/index";
+import { initializeDatabase, getDataSource, closeDatabase } from "./index";
 import {
   deleteSubscriptionByEndpoint,
   deleteSubscriptionForUser,

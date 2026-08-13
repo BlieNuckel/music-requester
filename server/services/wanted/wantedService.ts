@@ -1,4 +1,10 @@
-import { getDataSource, WantedItem } from "../../db/index";
+import type { WantedItem } from "../../db/index";
+import {
+  deleteWantedItem,
+  findWantedItem,
+  insertWantedItem,
+  listWantedItems,
+} from "../../db/wantedItems";
 import { getReleaseGroupById } from "../../api/musicbrainz/releaseGroups";
 import { createLogger } from "../../logger";
 
@@ -8,10 +14,6 @@ type AddWantedResult =
 type RemoveWantedResult = { status: "removed" } | { status: "not_found" };
 
 const log = createLogger("wanted");
-
-function getWantedRepo() {
-  return getDataSource().getRepository(WantedItem);
-}
 
 async function resolveAlbumInfo(
   albumMbid: string
@@ -29,26 +31,18 @@ export async function addWantedItem(
   userId: number,
   albumMbid: string
 ): Promise<AddWantedResult> {
-  const repo = getWantedRepo();
-
-  const existing = await repo.findOne({
-    where: { user_id: userId, album_mbid: albumMbid },
-  });
-
+  const existing = await findWantedItem(userId, albumMbid);
   if (existing) {
     return { status: "already_wanted", id: existing.id };
   }
 
   const { artistName, albumTitle } = await resolveAlbumInfo(albumMbid);
-
-  const item = repo.create({
-    user_id: userId,
-    album_mbid: albumMbid,
-    artist_name: artistName,
-    album_title: albumTitle,
+  const saved = await insertWantedItem({
+    userId,
+    albumMbid,
+    artistName,
+    albumTitle,
   });
-
-  const saved = await repo.save(item);
   log.info(`User ${userId} added "${albumTitle}" to wanted list`);
 
   return { status: "added", id: saved.id };
@@ -58,27 +52,17 @@ export async function removeWantedItem(
   userId: number,
   albumMbid: string
 ): Promise<RemoveWantedResult> {
-  const repo = getWantedRepo();
-
-  const item = await repo.findOne({
-    where: { user_id: userId, album_mbid: albumMbid },
-  });
-
+  const item = await findWantedItem(userId, albumMbid);
   if (!item) {
     return { status: "not_found" };
   }
 
-  await repo.remove(item);
+  await deleteWantedItem(item);
   log.info(`User ${userId} removed "${item.album_title}" from wanted list`);
 
   return { status: "removed" };
 }
 
 export async function getWantedItems(userId: number): Promise<WantedItem[]> {
-  const repo = getWantedRepo();
-
-  return repo.find({
-    where: { user_id: userId },
-    order: { created_at: "DESC" },
-  });
+  return listWantedItems(userId);
 }

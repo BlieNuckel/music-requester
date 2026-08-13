@@ -1,4 +1,8 @@
-import { getDataSource, NotificationPreference } from "../../db/index";
+import {
+  findPreference,
+  listPreferences,
+  upsertPreferences,
+} from "../../db/notificationPreferences";
 import {
   NOTIFICATION_EVENTS,
   getNotificationEvent,
@@ -14,14 +18,10 @@ function overrideKey(eventId: string, transportId: string): OverrideKey {
   return `${eventId}::${transportId}`;
 }
 
-function getRepo() {
-  return getDataSource().getRepository(NotificationPreference);
-}
-
 async function loadOverrides(
   userId: number
 ): Promise<Map<OverrideKey, boolean>> {
-  const rows = await getRepo().find({ where: { user_id: userId } });
+  const rows = await listPreferences(userId);
   return new Map(
     rows.map((row) => [
       overrideKey(row.event_id, row.transport_id),
@@ -58,9 +58,7 @@ export async function isEventEnabled(
   eventId: NotificationEventId,
   transportId: string
 ): Promise<boolean> {
-  const row = await getRepo().findOne({
-    where: { user_id: userId, event_id: eventId, transport_id: transportId },
-  });
+  const row = await findPreference(userId, eventId, transportId);
   return row ? row.enabled : getNotificationEvent(eventId).defaultEnabled;
 }
 
@@ -76,44 +74,11 @@ function assertValidEntry(entry: PreferenceEntry): void {
   }
 }
 
-async function upsertPreference(
-  userId: number,
-  entry: PreferenceEntry
-): Promise<void> {
-  const repo = getRepo();
-  const existing = await repo.findOne({
-    where: {
-      user_id: userId,
-      event_id: entry.eventId,
-      transport_id: entry.transportId,
-    },
-  });
-
-  if (existing) {
-    existing.enabled = entry.enabled;
-    existing.updated_at = new Date().toISOString();
-    await repo.save(existing);
-    return;
-  }
-
-  await repo.save(
-    repo.create({
-      user_id: userId,
-      event_id: entry.eventId,
-      transport_id: entry.transportId,
-      enabled: entry.enabled,
-      updated_at: new Date().toISOString(),
-    })
-  );
-}
-
 export async function setPreferences(
   userId: number,
   entries: PreferenceEntry[]
 ): Promise<PreferenceEntry[]> {
   entries.forEach(assertValidEntry);
-  for (const entry of entries) {
-    await upsertPreference(userId, entry);
-  }
+  await upsertPreferences(userId, entries);
   return getEffectivePreferences(userId);
 }

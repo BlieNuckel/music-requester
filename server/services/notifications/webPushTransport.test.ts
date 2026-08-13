@@ -12,7 +12,7 @@ vi.mock("web-push", () => ({
   },
 }));
 
-vi.mock("./pushSubscriptions", () => ({
+vi.mock("../../db/pushSubscriptions", () => ({
   listSubscriptions: (...args: unknown[]) => mockListSubscriptions(...args),
   deleteSubscriptionByEndpoint: (...args: unknown[]) =>
     mockDeleteByEndpoint(...args),
