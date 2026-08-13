@@ -39,7 +39,9 @@ describe("useAutoSetupStatus", () => {
       indexerExists: true,
       downloadClientExists: false,
     });
-    expect(fetch).toHaveBeenCalledWith("/api/lidarr/auto-setup/status");
+    expect(fetch).toHaveBeenCalledWith("/api/lidarr/auto-setup/status", {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("does not fetch when disconnected", async () => {

@@ -8,8 +8,9 @@ interface ArtistDetailsResponse {
 
 async function fetchArtistDetails({
   key,
+  signal,
 }: FetchContext): Promise<ArtistDetailsResponse> {
-  const res = await fetch(`/api/musicbrainz/artist/${key}`);
+  const res = await fetch(`/api/musicbrainz/artist/${key}`, { signal });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || "Failed to load artist");

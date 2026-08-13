@@ -53,8 +53,12 @@ describe("usePurchaseList", () => {
     expect(result.current.items).toEqual(mockItems);
     expect(result.current.summary).toEqual(mockSummary);
     expect(result.current.error).toBeNull();
-    expect(fetch).toHaveBeenCalledWith("/api/purchases");
-    expect(fetch).toHaveBeenCalledWith("/api/purchases/summary");
+    expect(fetch).toHaveBeenCalledWith("/api/purchases", {
+      signal: expect.any(AbortSignal),
+    });
+    expect(fetch).toHaveBeenCalledWith("/api/purchases/summary", {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("sets error on items fetch failure", async () => {

@@ -1,4 +1,5 @@
 import useAsyncData from "./useAsyncData";
+import type { FetchContext } from "./useAsyncData";
 import { useSettings } from "@/context/useSettings";
 
 type AutoSetupStatus = {
@@ -6,9 +7,11 @@ type AutoSetupStatus = {
   downloadClientExists: boolean;
 };
 
-async function fetchAutoSetupStatus(): Promise<AutoSetupStatus | null> {
+async function fetchAutoSetupStatus({
+  signal,
+}: FetchContext): Promise<AutoSetupStatus | null> {
   try {
-    const res = await fetch("/api/lidarr/auto-setup/status");
+    const res = await fetch("/api/lidarr/auto-setup/status", { signal });
     if (!res.ok) return null;
     return res.json();
   } catch {

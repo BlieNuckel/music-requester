@@ -62,7 +62,9 @@ describe("loading", () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(mockFetch).toHaveBeenCalledWith("/api/notifications/devices");
+    expect(mockFetch).toHaveBeenCalledWith("/api/notifications/devices", {
+      signal: expect.any(AbortSignal),
+    });
     expect(result.current.devices).toEqual([DEVICE]);
   });
 

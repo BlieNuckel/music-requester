@@ -11,8 +11,9 @@ export type SimilarArtist = {
 
 async function fetchSimilarArtists({
   key,
+  signal,
 }: FetchContext): Promise<SimilarArtist[]> {
-  const res = await fetch(key);
+  const res = await fetch(key, { signal });
   if (!res.ok) {
     throw new Error("Failed to fetch similar artists");
   }

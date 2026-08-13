@@ -46,7 +46,9 @@ describe("useRequests", () => {
     renderHook(() => useRequests({ userId: 42 }));
 
     await waitFor(() => {
-      expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/requests?userId=42");
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/requests?userId=42", {
+        signal: expect.any(AbortSignal),
+      });
     });
   });
 

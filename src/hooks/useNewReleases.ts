@@ -1,8 +1,11 @@
 import useAsyncData from "./useAsyncData";
+import type { FetchContext } from "./useAsyncData";
 import type { NewReleasesData } from "@/types";
 
-async function fetchNewReleases(): Promise<NewReleasesData> {
-  const res = await fetch("/api/discover/new-releases");
+async function fetchNewReleases({
+  signal,
+}: FetchContext): Promise<NewReleasesData> {
+  const res = await fetch("/api/discover/new-releases", { signal });
   if (!res.ok) throw new Error("Failed to fetch new releases");
   return res.json();
 }

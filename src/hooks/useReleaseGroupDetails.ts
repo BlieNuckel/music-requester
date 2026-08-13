@@ -8,8 +8,9 @@ interface AlbumDetailsResponse {
 
 async function fetchAlbumDetails({
   key,
+  signal,
 }: FetchContext): Promise<AlbumDetailsResponse> {
-  const res = await fetch(`/api/musicbrainz/album/${key}`);
+  const res = await fetch(`/api/musicbrainz/album/${key}`, { signal });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || "Failed to load album");

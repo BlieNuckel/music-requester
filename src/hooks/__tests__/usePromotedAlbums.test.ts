@@ -64,7 +64,9 @@ describe("usePromotedAlbums", () => {
 
     expect(result.current.promotedAlbums).toEqual(albums);
     expect(result.current.error).toBeNull();
-    expect(fetch).toHaveBeenCalledWith("/api/promoted-album");
+    expect(fetch).toHaveBeenCalledWith("/api/promoted-album", {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("handles an empty list", async () => {
@@ -137,6 +139,8 @@ describe("usePromotedAlbums", () => {
       await refreshPromise;
     });
 
-    expect(fetch).toHaveBeenCalledWith("/api/promoted-album?refresh=true");
+    expect(fetch).toHaveBeenCalledWith("/api/promoted-album?refresh=true", {
+      signal: expect.any(AbortSignal),
+    });
   });
 });

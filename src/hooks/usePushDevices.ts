@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import useAsyncData from "./useAsyncData";
+import type { FetchContext } from "./useAsyncData";
 import {
   getCurrentEndpoint,
   getPushPermission,
@@ -24,8 +25,8 @@ export type PushDevicesState = {
   sendTest: () => Promise<void>;
 };
 
-async function fetchDevices(): Promise<PushDevice[]> {
-  const res = await fetch("/api/notifications/devices");
+async function fetchDevices({ signal }: FetchContext): Promise<PushDevice[]> {
+  const res = await fetch("/api/notifications/devices", { signal });
   if (!res.ok) throw new Error("Failed to load your devices");
 
   const data = (await res.json()) as { devices: PushDevice[] };

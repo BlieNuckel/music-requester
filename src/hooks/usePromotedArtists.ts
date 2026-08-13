@@ -16,11 +16,12 @@ export type PromotedArtistsData = {
 
 async function fetchPromotedArtists({
   refresh,
+  signal,
 }: FetchContext): Promise<PromotedArtistsData | null> {
   const url = refresh
     ? "/api/promoted-artists?refresh=true"
     : "/api/promoted-artists";
-  const res = await fetch(url);
+  const res = await fetch(url, { signal });
 
   if (!res.ok) {
     throw new Error("Failed to fetch promoted artists");

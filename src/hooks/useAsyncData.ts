@@ -3,6 +3,12 @@ import { useState, useEffect, useRef, useCallback } from "react";
 export type FetchContext = {
   key: string;
   refresh: boolean;
+  /**
+   * Aborted when the key changes, a refresh supersedes this run, or the component
+   * unmounts. Pass it to `fetch` so the request actually stops instead of merely
+   * having its result discarded.
+   */
+  signal: AbortSignal;
 };
 
 export type UseAsyncDataReturn<T> = {
@@ -27,7 +33,8 @@ type AsyncResult<T> = {
  *   `null` to disable fetching (data/error are exposed as null).
  * - `loading` is derived from key/nonce mismatch, so no state is set
  *   synchronously in effects (react-hooks/set-state-in-effect compliant).
- * - Stale responses from superseded fetches are discarded.
+ * - Stale responses from superseded fetches are discarded, and the request behind
+ *   them is aborted via the `signal` on the fetch context.
  * - On error the previous data is kept; `error` is masked while a newer
  *   fetch is in flight.
  * - `refresh()` refetches the current key and resolves when it settles;
@@ -60,12 +67,17 @@ export default function useAsyncData<T>(
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     const isRefresh = refreshRequestedRef.current;
     refreshRequestedRef.current = false;
 
     const run = async () => {
       try {
-        const data = await fetcherRef.current({ key, refresh: isRefresh });
+        const data = await fetcherRef.current({
+          key,
+          refresh: isRefresh,
+          signal: controller.signal,
+        });
         if (!cancelled) {
           setResult({ key, nonce, data, error: null });
         }
@@ -88,6 +100,7 @@ export default function useAsyncData<T>(
     void run();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [key, nonce]);
 

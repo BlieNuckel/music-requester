@@ -1,9 +1,12 @@
 import { useCallback } from "react";
 import useAsyncData from "./useAsyncData";
+import type { FetchContext } from "./useAsyncData";
 import type { WantedItem } from "@/types";
 
-async function fetchWantedItems(): Promise<WantedItem[]> {
-  const res = await fetch("/api/wanted");
+async function fetchWantedItems({
+  signal,
+}: FetchContext): Promise<WantedItem[]> {
+  const res = await fetch("/api/wanted", { signal });
   if (!res.ok) throw new Error("Failed to load wanted list");
   return res.json();
 }
