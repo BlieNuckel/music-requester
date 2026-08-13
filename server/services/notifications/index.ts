@@ -30,8 +30,11 @@ export {
   listSubscriptions,
   saveSubscription,
   toPushDevice,
-} from "./pushSubscriptions";
-export type { PushDevice, PushSubscriptionInput } from "./pushSubscriptions";
+} from "../../db/pushSubscriptions";
+export type {
+  PushDevice,
+  PushSubscriptionInput,
+} from "../../db/pushSubscriptions";
 export { getWebPushConfig, hasVapidKeys } from "./vapid";
 export { webPushTransport } from "./webPushTransport";
 export type {

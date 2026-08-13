@@ -1,6 +1,6 @@
-import { In, IsNull, Not } from "typeorm";
-import { getDataSource, Request } from "../../db/index";
+import type { Request } from "../../db/index";
 import type { LidarrLifecycleStatus } from "../../db/index";
+import { findRequestsAwaitingStatus, saveRequests } from "../../db/requests";
 import { fetchLidarrData, classifyRequest } from "./lidarrEnrichment";
 import { mockEnrichRequestsWithLidarr } from "../../dev/mockLidarrEnrichment";
 import { createLogger } from "../../logger";
@@ -9,10 +9,6 @@ import { notifyRequestStatus } from "../notifications";
 const log = createLogger("request-status-sync");
 
 const TERMINAL_STATUSES: LidarrLifecycleStatus[] = ["failed", "imported"];
-
-function getRequestRepo() {
-  return getDataSource().getRepository(Request);
-}
 
 async function resolveStatuses(
   albumMbids: string[]
@@ -35,14 +31,7 @@ async function resolveStatuses(
  * transient outages don't wipe existing statuses.
  */
 export async function syncRequestStatuses(): Promise<void> {
-  const repo = getRequestRepo();
-
-  const candidates = await repo.find({
-    where: [
-      { status: "approved", lidarr_status: IsNull() },
-      { status: "approved", lidarr_status: Not(In(TERMINAL_STATUSES)) },
-    ],
-  });
+  const candidates = await findRequestsAwaitingStatus(TERMINAL_STATUSES);
 
   if (candidates.length === 0) return;
 
@@ -64,7 +53,7 @@ export async function syncRequestStatuses(): Promise<void> {
   });
 
   if (changed.length > 0) {
-    await repo.save(changed);
+    await saveRequests(changed);
     log.info(`Updated lidarr_status for ${changed.length} request(s)`);
     // Only transitions reach here, so a poll that finds nothing new is silent.
     changed.forEach((request) => {

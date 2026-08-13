@@ -3,7 +3,7 @@ import { createLogger } from "../../logger";
 import {
   deleteSubscriptionByEndpoint,
   listSubscriptions,
-} from "./pushSubscriptions";
+} from "../../db/pushSubscriptions";
 import { getWebPushConfig, hasVapidKeys } from "./vapid";
 import type {
   NotificationMessage,

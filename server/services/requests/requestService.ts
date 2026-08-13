@@ -1,5 +1,11 @@
-import { Brackets } from "typeorm";
-import { getDataSource, Request } from "../../db/index";
+import type { Request } from "../../db/index";
+import {
+  findPendingRequestForAlbum,
+  findRequestById,
+  insertRequest,
+  listRequests,
+  saveRequest,
+} from "../../db/requests";
 import { hasPermission, Permission } from "../../../shared/permissions";
 import { getAlbumByMbid } from "../lidarr/helpers";
 import { fulfillRequest } from "./fulfillRequest";
@@ -41,10 +47,6 @@ function shouldAutoApprove(userPermissions: number): boolean {
   ]);
 }
 
-function getRequestRepo() {
-  return getDataSource().getRepository(Request);
-}
-
 async function resolveAlbumInfo(
   albumMbid: string
 ): Promise<{ artistName: string; albumTitle: string }> {
@@ -60,27 +62,19 @@ export async function createRequest(
   userPermissions: number,
   albumMbid: string
 ): Promise<CreateRequestResult> {
-  const repo = getRequestRepo();
-
-  const existingPending = await repo.findOne({
-    where: { album_mbid: albumMbid, status: "pending" },
-  });
-
+  const existingPending = await findPendingRequestForAlbum(albumMbid);
   if (existingPending) {
     return { status: "duplicate_pending", requestId: existingPending.id };
   }
 
   const { artistName, albumTitle } = await resolveAlbumInfo(albumMbid);
 
-  const request = repo.create({
-    user_id: userId,
-    album_mbid: albumMbid,
-    artist_name: artistName,
-    album_title: albumTitle,
-    status: "pending",
+  const saved = await insertRequest({
+    userId,
+    albumMbid,
+    artistName,
+    albumTitle,
   });
-
-  const saved = await repo.save(request);
   log.info(`Request #${saved.id} created by user ${userId} for ${albumTitle}`);
 
   if (shouldAutoApprove(userPermissions)) {
@@ -97,15 +91,13 @@ async function processApproval(
   request: Request,
   approvedBy: number
 ): Promise<CreateRequestResult> {
-  const repo = getRequestRepo();
-
   request.status = "approved";
   request.approved_by = approvedBy;
   request.approved_at = new Date().toISOString();
 
   try {
     const result = await fulfillRequest(request.album_mbid);
-    await repo.save(request);
+    await saveRequest(request);
 
     log.info(`Request #${request.id} auto-approved and fulfilled`);
 
@@ -116,7 +108,7 @@ async function processApproval(
     return { status: "approved", requestId: request.id };
   } catch (err) {
     request.lidarr_status = "failed";
-    await repo.save(request);
+    await saveRequest(request);
     log.error(`Failed to fulfill request #${request.id}: ${err}`);
     return { status: "failed", requestId: request.id };
   }
@@ -126,9 +118,7 @@ export async function approveRequest(
   requestId: number,
   approvedBy: number
 ): Promise<ApproveRequestResult> {
-  const repo = getRequestRepo();
-
-  const request = await repo.findOne({ where: { id: requestId } });
+  const request = await findRequestById(requestId);
 
   if (!request) {
     return { status: "not_found" };
@@ -144,7 +134,7 @@ export async function approveRequest(
 
   try {
     const result = await fulfillRequest(request.album_mbid);
-    await repo.save(request);
+    await saveRequest(request);
 
     log.info(`Request #${requestId} approved by user ${approvedBy}`);
     void notifyRequestApproved(request);
@@ -156,7 +146,7 @@ export async function approveRequest(
     return { status: "approved" };
   } catch (err) {
     request.lidarr_status = "failed";
-    await repo.save(request);
+    await saveRequest(request);
     log.error(`Failed to fulfill request #${requestId}: ${err}`);
     return { status: "failed" };
   }
@@ -165,9 +155,7 @@ export async function approveRequest(
 export async function declineRequest(
   requestId: number
 ): Promise<DeclineRequestResult> {
-  const repo = getRequestRepo();
-
-  const request = await repo.findOne({ where: { id: requestId } });
+  const request = await findRequestById(requestId);
 
   if (!request) {
     return { status: "not_found" };
@@ -178,7 +166,7 @@ export async function declineRequest(
   }
 
   request.status = "declined";
-  await repo.save(request);
+  await saveRequest(request);
 
   log.info(`Request #${requestId} declined`);
   void notifyRequestDeclined(request);
@@ -190,35 +178,5 @@ export async function getRequests(filters?: {
   status?: string[];
   userId?: number;
 }) {
-  const repo = getRequestRepo();
-
-  const qb = repo
-    .createQueryBuilder("request")
-    .leftJoinAndSelect("request.user", "user")
-    .orderBy("request.created_at", "DESC");
-
-  if (filters?.userId) {
-    qb.andWhere("request.user_id = :userId", { userId: filters.userId });
-  }
-
-  const statuses = filters?.status ?? [];
-  if (statuses.length > 0) {
-    const approvals = statuses.filter((s) => APPROVAL_STATUSES.has(s));
-    const lifecycles = statuses.filter((s) => !APPROVAL_STATUSES.has(s));
-
-    qb.andWhere(
-      new Brackets((b) => {
-        if (approvals.length > 0) {
-          b.orWhere("request.status IN (:...approvals)", { approvals });
-        }
-        if (lifecycles.length > 0) {
-          b.orWhere("request.lidarr_status IN (:...lifecycles)", {
-            lifecycles,
-          });
-        }
-      })
-    );
-  }
-
-  return qb.getMany();
+  return listRequests(filters, APPROVAL_STATUSES);
 }
