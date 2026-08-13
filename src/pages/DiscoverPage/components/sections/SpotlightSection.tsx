@@ -6,20 +6,22 @@ import type { SectionComponentProps } from "../../types";
 export default function SpotlightSection({
   onStatusChange,
 }: SectionComponentProps) {
-  const { promotedAlbums, loading, error, refresh } = usePromotedAlbums();
+  const { promotedAlbums, building, loading, error, refresh } =
+    usePromotedAlbums();
 
   useReportSectionStatus(onStatusChange, {
-    loading,
+    loading: loading || building,
     error: Boolean(error),
-    empty: promotedAlbums.length === 0,
+    empty: promotedAlbums.length === 0 && !building,
   });
 
-  if (promotedAlbums.length === 0 && !loading) return null;
+  if (promotedAlbums.length === 0 && !loading && !building) return null;
 
   return (
     <PromotedAlbumCarousel
       albums={promotedAlbums}
       loading={loading}
+      building={building}
       onRefresh={refresh}
     />
   );

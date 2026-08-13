@@ -22,7 +22,11 @@ vi.mock("../config", () => ({
   getConfigValue: (...args: unknown[]) => mockGetConfigValue(...args),
 }));
 
-import { regenerateProfile, loadFreshProfile } from "./profileService";
+import {
+  regenerateProfile,
+  loadFreshProfile,
+  loadProfileForRequest,
+} from "./profileService";
 import { initializeDatabase, closeDatabase, getDataSource } from "../db";
 import { getUserProfile, updateExplorationHistory } from "../db/userProfile";
 import { parseDerivedProfile } from "../db/userProfile";
@@ -277,6 +281,27 @@ describe("loadFreshProfile", () => {
     expect(mockLoadArtistWeights).toHaveBeenCalledTimes(1);
   });
 
+  it("serves the stored profile when a regeneration produces no genres", async () => {
+    await regenerateProfile(userId, "token");
+    await getDataSource().query(
+      "UPDATE user_profiles SET schema_version = 0 WHERE user_id = ?",
+      [userId]
+    );
+    mockGetArtistTopTags.mockResolvedValue([{ name: "seen live", count: 90 }]);
+
+    const profile = await loadFreshProfile(userId, "token", baseConfig);
+
+    expect(profile!.genreVector).toEqual([
+      { tag: "alternative", weight: 150, fromArtists: ["Radiohead", "Bjork"] },
+    ]);
+  });
+
+  it("returns null when a regeneration produces no genres and nothing is stored", async () => {
+    mockGetArtistTopTags.mockResolvedValue([{ name: "seen live", count: 90 }]);
+
+    expect(await loadFreshProfile(userId, "token", baseConfig)).toBeNull();
+  });
+
   it("in-flight guard prevents concurrent double-regeneration", async () => {
     let resolveTop: (v: unknown) => void = () => {};
     mockLoadArtistWeights.mockImplementation(
@@ -296,5 +321,43 @@ describe("loadFreshProfile", () => {
     await Promise.all([p1, p2]);
 
     expect(mockLoadArtistWeights).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("loadProfileForRequest", () => {
+  it("reports building and schedules the build when nothing is stored", async () => {
+    const load = await loadProfileForRequest(userId, "token", baseConfig);
+
+    expect(load).toEqual({ status: "building" });
+    await vi.waitFor(() =>
+      expect(mockLoadArtistWeights).toHaveBeenCalledWith(
+        userId,
+        "token",
+        expect.anything()
+      )
+    );
+  });
+
+  it("serves a fresh profile without scheduling a build", async () => {
+    await regenerateProfile(userId, "token");
+    mockLoadArtistWeights.mockClear();
+
+    const load = await loadProfileForRequest(userId, "token", baseConfig);
+
+    expect(load.status).toBe("ready");
+    expect(mockLoadArtistWeights).not.toHaveBeenCalled();
+  });
+
+  it("serves a stale profile rather than blocking on its rebuild", async () => {
+    await regenerateProfile(userId, "token");
+    await getDataSource().query(
+      "UPDATE user_profiles SET schema_version = 0 WHERE user_id = ?",
+      [userId]
+    );
+
+    const load = await loadProfileForRequest(userId, "token", baseConfig);
+
+    expect(load.status).toBe("ready");
+    expect(load.status === "ready" && load.profile.genreVector).toHaveLength(1);
   });
 });

@@ -46,13 +46,46 @@ vi.mock("../config", () => ({
   getConfigValue: (...args: unknown[]) => mockGetConfigValue(...args),
 }));
 
-import { getPromotedAlbums, clearPromotedAlbumCache } from "./getPromotedAlbum";
+import {
+  getPromotedAlbums,
+  clearPromotedAlbumCache,
+  type PromotedAlbumDeps,
+} from "./getPromotedAlbum";
+import { loadFreshProfile } from "./profileService";
+import { findUserById } from "../auth/users";
 import { initializeDatabase, closeDatabase, getDataSource } from "../db";
 import type { WithinTasteResult, ExploreResult } from "./types";
 
+/**
+ * Await the profile build that the request path now only schedules, so a case can assert on
+ * recommendations instead of the "building" state a first-ever load returns. Mirrors what a
+ * real second request sees once the background build has landed.
+ */
+async function seedProfile(userId: number) {
+  const user = await findUserById(userId);
+  if (!user?.plexToken) return;
+  await loadFreshProfile(
+    userId,
+    user.plexToken,
+    mockGetConfigValue("promotedAlbum") as PromotedAlbumConfig
+  );
+}
+
+/** The albums half of the carousel payload; the `status` half has its own cases. */
+async function getAlbums(
+  userId: number,
+  forceRefresh = false,
+  count?: number,
+  deps?: PromotedAlbumDeps
+) {
+  await seedProfile(userId);
+  const { albums } = await getPromotedAlbums(userId, forceRefresh, count, deps);
+  return albums;
+}
+
 /** Single-pick view of the carousel batch, so per-selection cases stay readable. */
 async function getOne(userId: number, forceRefresh = false) {
-  const [first] = await getPromotedAlbums(userId, forceRefresh, 1);
+  const [first] = await getAlbums(userId, forceRefresh, 1);
   return first ?? null;
 }
 
@@ -578,7 +611,7 @@ describe("getPromotedAlbums", () => {
     vi.useRealTimers();
   });
 
-  it("regenerates the profile after the profile TTL expires", async () => {
+  it("serves the stale profile once the profile TTL expires instead of blocking on a rebuild", async () => {
     vi.useFakeTimers();
     mockLoadArtistWeights.mockResolvedValue(plexArtists);
     mockGetArtistTopTags.mockResolvedValue(tags);
@@ -586,13 +619,45 @@ describe("getPromotedAlbums", () => {
     mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
     await getOne(userId);
-    mockLoadArtistWeights.mockClear();
+    clearPromotedAlbumCache();
 
     vi.advanceTimersByTime((1440 + 1) * 60 * 1000);
-    await getOne(userId);
-    expect(mockLoadArtistWeights).toHaveBeenCalled();
+    const stale = await getPromotedAlbums(userId, true, 1);
+
+    expect(stale.status).toBe("ready");
+    expect(stale.albums).toHaveLength(1);
 
     vi.useRealTimers();
+  });
+
+  it("reports building until the profile exists, then serves it", async () => {
+    mockLoadArtistWeights.mockResolvedValue(plexArtists);
+    mockGetArtistTopTags.mockResolvedValue(tags);
+    mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
+    mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
+
+    const first = await getPromotedAlbums(userId, false, 1);
+    expect(first).toEqual({ status: "building", albums: [] });
+
+    // The build the first call scheduled runs off-request; it is what fills the carousel.
+    await vi.waitFor(async () => {
+      const next = await getPromotedAlbums(userId, true, 1);
+      expect(next.status).toBe("ready");
+      expect(next.albums).toHaveLength(1);
+    });
+  });
+
+  it("reports ready rather than building when the user has no Plex token", async () => {
+    const tokenlessId = (
+      (await getDataSource().query(
+        "INSERT INTO users (user_type, enabled) VALUES ('local', 1) RETURNING id"
+      )) as { id: number }[]
+    )[0].id;
+
+    expect(await getPromotedAlbums(tokenlessId)).toEqual({
+      status: "ready",
+      albums: [],
+    });
   });
 
   it("respects custom result-cache duration from config", async () => {
@@ -732,9 +797,65 @@ describe("getPromotedAlbums", () => {
         })
       );
 
-      const results = await getPromotedAlbums(userId, false, 2);
+      const results = await getAlbums(userId, false, 2);
 
       expect(results.map((r) => r.album.mbid)).toEqual(["rg-alb-2"]);
+    });
+
+    it("resolves only the preferred candidates, not the whole pool", async () => {
+      const libraryHeavyPage = {
+        albums: [
+          ...Array.from({ length: 20 }, (_, i) => ({
+            name: `Owned ${i}`,
+            mbid: `owned-${i}`,
+            artistName: "Radiohead",
+            artistMbid: "art-owned",
+          })),
+          {
+            name: "Unowned",
+            mbid: "unowned-1",
+            artistName: "Bjork",
+            artistMbid: "art-new",
+          },
+        ],
+        pagination: { page: 1, totalPages: 1 },
+      };
+      mockLoadArtistWeights.mockResolvedValue(plexArtists);
+      mockGetArtistTopTags.mockResolvedValue(tags);
+      mockGetTopAlbumsByTag.mockResolvedValue(libraryHeavyPage);
+      mockLidarrGet.mockImplementation((path: string) =>
+        Promise.resolve(
+          path === "/artist"
+            ? { ok: true, data: [{ foreignArtistId: "art-owned" }] }
+            : { ok: true, data: [] }
+        )
+      );
+
+      const result = await getOne(userId);
+
+      expect(result!.album.artistMbid).toBe("art-new");
+      expect(mockResolveReleaseGroupInfo).toHaveBeenCalledTimes(1);
+    });
+
+    it("gives up on a pick rather than resolving an unbounded pool", async () => {
+      mockLoadArtistWeights.mockResolvedValue(plexArtists);
+      mockGetArtistTopTags.mockResolvedValue(tags);
+      mockGetTopAlbumsByTag.mockResolvedValue({
+        albums: Array.from({ length: 60 }, (_, i) => ({
+          name: `Dead ${i}`,
+          mbid: `dead-${i}`,
+          artistName: "Radiohead",
+          artistMbid: "art-1",
+        })),
+        pagination: { page: 1, totalPages: 1 },
+      });
+      mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
+      mockResolveReleaseGroupInfo.mockResolvedValue(null);
+
+      expect(await getOne(userId)).toBeNull();
+      expect(mockResolveReleaseGroupInfo.mock.calls.length).toBeLessThanOrEqual(
+        30
+      );
     });
 
     it("returns nothing when every candidate is a live album or compilation", async () => {
@@ -766,7 +887,7 @@ describe("getPromotedAlbums", () => {
     it("returns five distinct albums by default", async () => {
       mockHappyPath();
 
-      const results = await getPromotedAlbums(userId);
+      const results = await getAlbums(userId);
       expect(results).toHaveLength(5);
       expect(new Set(results.map((r) => r.album.mbid)).size).toBe(5);
     });
@@ -774,14 +895,14 @@ describe("getPromotedAlbums", () => {
     it("returns the requested number of albums", async () => {
       mockHappyPath();
 
-      const results = await getPromotedAlbums(userId, false, 3);
+      const results = await getAlbums(userId, false, 3);
       expect(results).toHaveLength(3);
     });
 
     it("returns a shorter batch when the pool cannot fill it", async () => {
       mockHappyPath(albumsPage);
 
-      const results = await getPromotedAlbums(userId, false, 5);
+      const results = await getAlbums(userId, false, 5);
       expect(results).toHaveLength(2);
       expect(new Set(results.map((r) => r.album.mbid)).size).toBe(2);
     });
@@ -789,17 +910,17 @@ describe("getPromotedAlbums", () => {
     it("returns an empty list when nothing can be built", async () => {
       mockLoadArtistWeights.mockResolvedValue([]);
 
-      const results = await getPromotedAlbums(userId);
+      const results = await getAlbums(userId);
       expect(results).toEqual([]);
     });
 
     it("serves the whole batch from cache on the next call", async () => {
       mockHappyPath();
 
-      const first = await getPromotedAlbums(userId);
+      const first = await getAlbums(userId);
       mockGetTopAlbumsByTag.mockClear();
 
-      const second = await getPromotedAlbums(userId);
+      const second = await getAlbums(userId);
       expect(second).toEqual(first);
       expect(mockGetTopAlbumsByTag).not.toHaveBeenCalled();
     });
@@ -807,10 +928,10 @@ describe("getPromotedAlbums", () => {
     it("rebuilds when the cached batch is smaller than the requested count", async () => {
       mockHappyPath();
 
-      await getPromotedAlbums(userId, false, 1);
+      await getAlbums(userId, false, 1);
       mockGetTopAlbumsByTag.mockClear();
 
-      const results = await getPromotedAlbums(userId, false, 4);
+      const results = await getAlbums(userId, false, 4);
       expect(results).toHaveLength(4);
       expect(mockGetTopAlbumsByTag).toHaveBeenCalled();
     });
@@ -818,8 +939,8 @@ describe("getPromotedAlbums", () => {
     it("remembers every album in the batch for anti-repeat", async () => {
       mockHappyPath();
 
-      const first = await getPromotedAlbums(userId, false, 3);
-      const second = await getPromotedAlbums(userId, true, 3);
+      const first = await getAlbums(userId, false, 3);
+      const second = await getAlbums(userId, true, 3);
 
       const firstMbids = new Set(first.map((r) => r.album.mbid));
       expect(second).toHaveLength(3);
@@ -1241,7 +1362,7 @@ describe("injected randomness and clock", () => {
   it("explores when the coin lands under the exploration rate", async () => {
     setupBothPaths();
 
-    const [result] = await getPromotedAlbums(userId, false, 1, {
+    const [result] = await getAlbums(userId, false, 1, {
       rng: seqRng([0.1]),
     });
 
@@ -1251,7 +1372,7 @@ describe("injected randomness and clock", () => {
   it("stays within taste when the coin lands above the exploration rate", async () => {
     setupBothPaths();
 
-    const [result] = await getPromotedAlbums(userId, false, 1, {
+    const [result] = await getAlbums(userId, false, 1, {
       rng: seqRng([0.9, 0, 0]),
     });
 
@@ -1262,7 +1383,7 @@ describe("injected randomness and clock", () => {
     setupBothPaths();
 
     // range = deepPageMax - deepPageMin + 1 = 9; floor(0.5 * 9) + 2 = 6
-    await getPromotedAlbums(userId, false, 1, {
+    await getAlbums(userId, false, 1, {
       rng: seqRng([0.9, 0, 0.5, 0]),
     });
 
@@ -1275,16 +1396,16 @@ describe("injected randomness and clock", () => {
     const base = 1_700_000_000_000;
     const ttlMs = exploreCapable.cacheDurationMinutes * 60 * 1000;
 
-    await getPromotedAlbums(userId, false, 1, { rng, now: () => base });
+    await getAlbums(userId, false, 1, { rng, now: () => base });
     mockGetTopAlbumsByTag.mockClear();
 
-    await getPromotedAlbums(userId, false, 1, {
+    await getAlbums(userId, false, 1, {
       rng,
       now: () => base + ttlMs - 1,
     });
     expect(mockGetTopAlbumsByTag).not.toHaveBeenCalled();
 
-    await getPromotedAlbums(userId, false, 1, {
+    await getAlbums(userId, false, 1, {
       rng,
       now: () => base + ttlMs,
     });

@@ -17,10 +17,12 @@ import { updateExplorationHistory } from "../db/userProfile";
 import type { DerivedProfile } from "../db/entity/UserProfile";
 import { getMonitoredAlbums } from "../services/lidarr/albums";
 import { isAllowedReleaseType } from "../services/discover/typeFilter";
+import { createLogger } from "../logger";
 import { buildExploreResult } from "./explore";
-import { loadFreshProfile, normalizedTagWeights } from "./profileService";
+import { loadProfileForRequest, normalizedTagWeights } from "./profileService";
 import type {
   BuiltAlbum,
+  ResolutionBudget,
   PromotedAlbumEntry,
   WithinTasteResult,
   WithinTasteTrace,
@@ -32,11 +34,26 @@ import type {
 
 export type { PromotedAlbumResult, PromotedAlbumEntry } from "./types";
 
+/** Carousel payload plus whether the profile behind it exists yet. */
+export type PromotedAlbumsResult = {
+  status: "ready" | "building";
+  albums: PromotedAlbumEntry[];
+};
+
 type WeightedTag = { name: string; weight: number };
 
 type LibraryLookups = {
   artistInLibrary: (mbid: string) => boolean;
   albumLibrary: (mbid: string) => AlbumLibraryInfo | null;
+};
+
+/** Everything one carousel build shares across its picks, including the spend budget. */
+type PickContext = {
+  profile: DerivedProfile;
+  config: PromotedAlbumConfig;
+  library: LibraryLookups;
+  budget: ResolutionBudget;
+  rng: Rng;
 };
 
 /** One Last.fm tag-chart album, before it has been resolved to a release group. */
@@ -67,6 +84,7 @@ type SelectionWalk = PreferenceRule & {
   candidates: CandidateAlbum[];
   getRgInfo: GetRgInfo;
   recentlyShown: Set<string>;
+  budget: ResolutionBudget;
 };
 
 /**
@@ -86,6 +104,11 @@ export const SPOTLIGHT_COUNT = 5;
 const PICK_ATTEMPT_SLACK = 3;
 
 const RECENT_SHOWN_LIMIT = 25;
+
+/** Paced MusicBrainz lookups one carousel build may spend across all of its picks. */
+const RESOLUTION_BUDGET = 30;
+
+const log = createLogger("promoted-album");
 
 /** Short-lived final-result cache (layer 2) — keeps album selection off MusicBrainz on every load. */
 const resultCache = createTtlMap<number, PromotedAlbumEntry[]>();
@@ -134,18 +157,39 @@ function buildTraceFromProfile(
 }
 
 /**
- * Walk the pool and take the first album that resolves to a release group, is a release
- * type worth recommending, hasn't been shown recently, AND satisfies `isPreferred` —
- * falling back to the first that merely qualifies. Candidates that fail any of the earlier
- * checks are skipped entirely; a greatest-hits package or a live album is not an album
- * recommendation, and the type only becomes known once the candidate has been resolved.
+ * Preferred candidates first, then the rest. The preference reads `artistMbid`, which the
+ * chart already carries, so ordering the pool by it costs nothing — whereas evaluating it
+ * *after* resolving each candidate is what used to walk a whole 100-album pool through
+ * paced MusicBrainz lookups whenever the pool was mostly library artists.
+ */
+function orderByPreference(walk: SelectionWalk): CandidateAlbum[] {
+  return [
+    ...walk.candidates.filter((a) => walk.isPreferred(a)),
+    ...walk.candidates.filter((a) => !walk.isPreferred(a)),
+  ];
+}
+
+/**
+ * Take the first album that resolves to a release group, is a release type worth
+ * recommending, and hasn't been shown recently. Candidates are visited in preference order,
+ * so the first qualifying one is also the most preferred available and the walk can stop
+ * there; a greatest-hits package or a live album is not an album recommendation, and the
+ * type only becomes known once the candidate has been resolved.
+ *
+ * The shared {@link ResolutionBudget} bounds how many MusicBrainz lookups the whole build
+ * may spend: without it, a pool of unresolvable MBIDs walks the full pool per pick and every
+ * pick attempt pays it again.
  */
 async function walkCandidates(
   walk: SelectionWalk
 ): Promise<AlbumSelection | null> {
-  let fallback: Omit<AlbumSelection, "reason"> | undefined;
+  for (const album of orderByPreference(walk)) {
+    if (walk.budget.remaining <= 0) {
+      log.debug("Resolution budget spent; giving up on this pick");
+      return null;
+    }
+    walk.budget.remaining -= 1;
 
-  for (const album of walk.candidates) {
     const rgInfo = await walk.getRgInfo(album.mbid);
     if (!rgInfo) continue;
     if (!isAllowedReleaseType(rgInfo.primaryType, rgInfo.secondaryTypes)) {
@@ -153,16 +197,17 @@ async function walkCandidates(
     }
     if (walk.recentlyShown.has(rgInfo.id)) continue;
 
-    const year = rgInfo.firstReleaseDate.slice(0, 4);
-    if (walk.isPreferred(album)) {
-      return { album, rgMbid: rgInfo.id, year, reason: walk.preferredReason };
-    }
-    if (!fallback) {
-      fallback = { album, rgMbid: rgInfo.id, year };
-    }
+    return {
+      album,
+      rgMbid: rgInfo.id,
+      year: rgInfo.firstReleaseDate.slice(0, 4),
+      reason: walk.isPreferred(album)
+        ? walk.preferredReason
+        : walk.fallbackReason,
+    };
   }
 
-  return fallback ? { ...fallback, reason: walk.fallbackReason } : null;
+  return null;
 }
 
 function preferenceRule(
@@ -203,12 +248,14 @@ async function selectAlbum(
   artistInLibrary: (mbid: string) => boolean,
   libraryPreference: LibraryPreference,
   getRgInfo: GetRgInfo,
-  recentlyShown: Set<string>
+  recentlyShown: Set<string>,
+  budget: ResolutionBudget
 ): Promise<AlbumSelection | null> {
   const walk: SelectionWalk = {
     candidates: shuffled,
     getRgInfo,
     recentlyShown,
+    budget,
     ...preferenceRule(libraryPreference, artistInLibrary),
   };
 
@@ -223,13 +270,10 @@ async function selectAlbum(
  * expensive Plex + Last.fm fan-out is NOT re-run here — that lives in the profile.
  */
 async function buildWithinTasteFromProfile(
-  profile: DerivedProfile,
-  config: PromotedAlbumConfig,
-  recentlyShown: Set<string>,
-  artistInLibrary: (mbid: string) => boolean,
-  albumLibrary: (mbid: string) => AlbumLibraryInfo | null,
-  rng: Rng
+  ctx: PickContext,
+  recentlyShown: Set<string>
 ): Promise<BuiltAlbum | null> {
+  const { profile, config, rng } = ctx;
   const weightedTags: WeightedTag[] = profile.genreVector.map((g) => ({
     name: g.tag,
     weight: g.weight,
@@ -258,10 +302,11 @@ async function buildWithinTasteFromProfile(
 
   const picked = await selectAlbum(
     shuffle(allAlbums, rng),
-    artistInLibrary,
+    ctx.library.artistInLibrary,
     config.libraryPreference,
     resolveReleaseGroupInfo,
-    recentlyShown
+    recentlyShown,
+    ctx.budget
   );
   if (!picked) return null;
 
@@ -279,7 +324,7 @@ async function buildWithinTasteFromProfile(
     picked.reason
   );
 
-  const library = albumLibrary(picked.rgMbid);
+  const library = ctx.library.albumLibrary(picked.rgMbid);
 
   const result: WithinTasteResult = {
     mode: "within_taste",
@@ -334,50 +379,30 @@ async function loadLibraryMbids(): Promise<LibraryLookups> {
 }
 
 function buildExplore(
-  profile: DerivedProfile,
-  config: PromotedAlbumConfig,
-  recentlyShown: Set<string>,
-  artistInLibrary: (mbid: string) => boolean,
-  albumLibrary: (mbid: string) => AlbumLibraryInfo | null,
-  rng: Rng
+  ctx: PickContext,
+  recentlyShown: Set<string>
 ): Promise<BuiltAlbum | null> {
   return buildExploreResult({
-    similarGraph: profile.similarGraph,
-    config,
+    similarGraph: ctx.profile.similarGraph,
+    config: ctx.config,
     recentlyShown,
-    artistInLibrary,
-    albumLibrary,
-    rng,
+    artistInLibrary: ctx.library.artistInLibrary,
+    albumLibrary: ctx.library.albumLibrary,
+    budget: ctx.budget,
+    rng: ctx.rng,
   });
 }
 
 /** One recommendation: explore first when the coin says so, within-taste otherwise. */
 async function buildOnePick(
-  profile: DerivedProfile,
-  config: PromotedAlbumConfig,
-  excluded: Set<string>,
-  library: LibraryLookups,
-  rng: Rng
+  ctx: PickContext,
+  excluded: Set<string>
 ): Promise<BuiltAlbum | null> {
-  if (rng() < config.explorationRate) {
-    const explored = await buildExplore(
-      profile,
-      config,
-      excluded,
-      library.artistInLibrary,
-      library.albumLibrary,
-      rng
-    );
+  if (ctx.rng() < ctx.config.explorationRate) {
+    const explored = await buildExplore(ctx, excluded);
     if (explored) return explored;
   }
-  return buildWithinTasteFromProfile(
-    profile,
-    config,
-    excluded,
-    library.artistInLibrary,
-    library.albumLibrary,
-    rng
-  );
+  return buildWithinTasteFromProfile(ctx, excluded);
 }
 
 /**
@@ -386,12 +411,9 @@ async function buildOnePick(
  * carousel spans several tags instead of repeating one pool.
  */
 async function buildPicks(
-  profile: DerivedProfile,
-  config: PromotedAlbumConfig,
+  ctx: PickContext,
   recentlyShown: Set<string>,
-  library: LibraryLookups,
-  count: number,
-  rng: Rng
+  count: number
 ): Promise<BuiltAlbum[]> {
   const picks: BuiltAlbum[] = [];
   const excluded = new Set(recentlyShown);
@@ -403,7 +425,7 @@ async function buildPicks(
     attempt < attemptLimit && picks.length < count;
     attempt += 1
   ) {
-    const built = await buildOnePick(profile, config, excluded, library, rng);
+    const built = await buildOnePick(ctx, excluded);
     if (!built) continue;
 
     excluded.add(built.rememberKey);
@@ -416,12 +438,19 @@ async function buildPicks(
   return picks;
 }
 
+/**
+ * The carousel's recommendations, or `building` when the user has no usable profile yet.
+ * Profile construction never runs inside this call: a cold start walks every played track
+ * in the Plex library and resolves every seed against MusicBrainz at ~1 req/sec, which is
+ * minutes of work. It is started in the background instead, and the caller shows that the
+ * profile is being built rather than an empty page indistinguishable from "no results".
+ */
 export async function getPromotedAlbums(
   userId: number,
   forceRefresh = false,
   count = SPOTLIGHT_COUNT,
   deps: PromotedAlbumDeps = {}
-): Promise<PromotedAlbumEntry[]> {
+): Promise<PromotedAlbumsResult> {
   const rng = deps.rng ?? Math.random;
   const now = deps.now ?? Date.now;
 
@@ -430,28 +459,28 @@ export async function getPromotedAlbums(
 
   const cached = forceRefresh ? undefined : resultCache.get(userId, now());
   if (cached && cached.length >= count) {
-    return cached.slice(0, count);
+    return { status: "ready", albums: cached.slice(0, count) };
   }
 
   const user = await findUserById(userId);
   const plexToken = user?.plexToken;
-  if (!plexToken) return [];
+  if (!plexToken) return { status: "ready", albums: [] };
 
-  const profile = await loadFreshProfile(userId, plexToken, config);
-  if (!profile) return [];
+  const load = await loadProfileForRequest(userId, plexToken, config);
+  if (load.status === "building") return { status: "building", albums: [] };
+  const profile = load.profile;
 
-  const library = await loadLibraryMbids();
   const recentAlbums = profile.explorationHistory.albums ?? [];
-
-  const picks = await buildPicks(
+  const ctx: PickContext = {
     profile,
     config,
-    new Set(recentAlbums),
-    library,
-    count,
-    rng
-  );
-  if (picks.length === 0) return [];
+    library: await loadLibraryMbids(),
+    budget: { remaining: RESOLUTION_BUDGET },
+    rng,
+  };
+
+  const picks = await buildPicks(ctx, new Set(recentAlbums), count);
+  if (picks.length === 0) return { status: "ready", albums: [] };
 
   const rememberKeys = picks.map((p) => p.rememberKey);
   const nextAlbums = [
@@ -463,5 +492,5 @@ export async function getPromotedAlbums(
   const results = picks.map((p) => p.result);
   resultCache.set(userId, results, resultTtlMs, now());
 
-  return results;
+  return { status: "ready", albums: results };
 }

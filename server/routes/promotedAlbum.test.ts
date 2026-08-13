@@ -64,11 +64,11 @@ describe("GET /", () => {
         inLibrary: false,
       },
     ];
-    mockGetPromotedAlbums.mockResolvedValue(data);
+    mockGetPromotedAlbums.mockResolvedValue({ status: "ready", albums: data });
 
     const res = await request(app).get("/");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual(data);
+    expect(res.body).toEqual({ status: "ready", albums: data });
     expect(mockGetPromotedAlbums).toHaveBeenCalledWith(1, false);
   });
 
@@ -77,11 +77,22 @@ describe("GET /", () => {
     app.use(withUser("plex-token-123"));
     app.use("/", promotedAlbumRouter);
 
-    mockGetPromotedAlbums.mockResolvedValue([]);
+    mockGetPromotedAlbums.mockResolvedValue({ status: "ready", albums: [] });
 
     const res = await request(app).get("/");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
+    expect(res.body).toEqual({ status: "ready", albums: [] });
+  });
+
+  it("passes the building status through so the client can tell it apart", async () => {
+    const app = express();
+    app.use(withUser("plex-token-123"));
+    app.use("/", promotedAlbumRouter);
+
+    mockGetPromotedAlbums.mockResolvedValue({ status: "building", albums: [] });
+
+    const res = await request(app).get("/");
+    expect(res.body).toEqual({ status: "building", albums: [] });
   });
 
   it("forwards refresh param as forceRefresh", async () => {
@@ -89,7 +100,7 @@ describe("GET /", () => {
     app.use(withUser("plex-token-123"));
     app.use("/", promotedAlbumRouter);
 
-    mockGetPromotedAlbums.mockResolvedValue([]);
+    mockGetPromotedAlbums.mockResolvedValue({ status: "ready", albums: [] });
 
     await request(app).get("/?refresh=true");
     expect(mockGetPromotedAlbums).toHaveBeenCalledWith(1, true);
@@ -101,7 +112,7 @@ describe("GET /", () => {
 
     const res = await request(app).get("/");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
+    expect(res.body).toEqual({ status: "ready", albums: [] });
     expect(mockGetPromotedAlbums).not.toHaveBeenCalled();
   });
 });
