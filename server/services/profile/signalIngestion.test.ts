@@ -275,8 +275,20 @@ describe("rollupToArtists", () => {
       Infinity
     );
     expect(rollupToArtists(tracks)).toEqual([
-      { artistKey: "ak-A", name: "A", playCount: 10 },
-      { artistKey: "ak-B", name: "B", playCount: 2 },
+      {
+        artistKey: "ak-A",
+        name: "A",
+        playCount: 10,
+        distinctTracksPlayed: 2,
+        topTrackPlayCount: 6,
+      },
+      {
+        artistKey: "ak-B",
+        name: "B",
+        playCount: 2,
+        distinctTracksPlayed: 1,
+        topTrackPlayCount: 2,
+      },
     ]);
   });
 
@@ -294,7 +306,13 @@ describe("rollupToArtists", () => {
       Infinity
     );
     expect(rollupToArtists(tracks)).toEqual([
-      { artistKey: "k1", name: "Old", playCount: 8 },
+      {
+        artistKey: "k1",
+        name: "Old",
+        playCount: 8,
+        distinctTracksPlayed: 2,
+        topTrackPlayCount: 5,
+      },
     ]);
   });
 
@@ -309,7 +327,13 @@ describe("rollupToArtists", () => {
       Infinity
     );
     expect(rollupToArtists(tracks)).toEqual([
-      { artistKey: "A", name: "A", playCount: 3 },
+      {
+        artistKey: "A",
+        name: "A",
+        playCount: 3,
+        distinctTracksPlayed: 1,
+        topTrackPlayCount: 3,
+      },
     ]);
   });
 
@@ -324,6 +348,56 @@ describe("rollupToArtists", () => {
       Infinity
     );
     expect(rollupToArtists(tracks)).toEqual([]);
+  });
+});
+
+describe("rollupToArtists with a baseline", () => {
+  it("rolls up only the plays gained since the baseline", () => {
+    const latest = reconstructTrackPlayCounts(
+      [
+        trackPlaysEvent(
+          [trackState("1", "A", 30), trackState("2", "A", 10)],
+          "2026-02-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+    const baseline = reconstructTrackPlayCounts(
+      [
+        trackPlaysEvent(
+          [trackState("1", "A", 25), trackState("2", "A", 10)],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+
+    expect(rollupToArtists(latest, baseline)).toEqual([
+      {
+        artistKey: "ak-A",
+        name: "A",
+        playCount: 5,
+        distinctTracksPlayed: 1,
+        topTrackPlayCount: 5,
+      },
+    ]);
+  });
+
+  it("counts a track absent from the baseline in full", () => {
+    const latest = reconstructTrackPlayCounts(
+      [trackPlaysEvent([trackState("9", "A", 4)], "2026-02-01T00:00:00.000Z")],
+      Infinity
+    );
+
+    expect(rollupToArtists(latest, new Map())).toEqual([
+      {
+        artistKey: "ak-A",
+        name: "A",
+        playCount: 4,
+        distinctTracksPlayed: 1,
+        topTrackPlayCount: 4,
+      },
+    ]);
   });
 });
 

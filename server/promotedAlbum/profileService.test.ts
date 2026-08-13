@@ -47,6 +47,8 @@ const baseConfig: PromotedAlbumConfig = {
   ratingsBackupEnabled: true,
   playTrendWindowDays: 90,
   ratingWeight: 0.5,
+  distributionWeight: 0,
+  minPlaysForDistribution: 5,
 };
 
 const plexArtists = [
@@ -134,6 +136,33 @@ describe("regenerateProfile", () => {
     const row = await getUserProfile(userId);
     expect(row).not.toBeNull();
     expect(parseDerivedProfile(row!.profile_json).genreVector).toHaveLength(1);
+  });
+
+  it("persists the play-distribution stats carried by the weight set", async () => {
+    mockLoadArtistWeights.mockResolvedValue([
+      {
+        name: "Radiohead",
+        viewCount: 60,
+        distinctTracksPlayed: 4,
+        topTrackShare: 0.4,
+        distributionFactor: 0.8,
+      },
+    ]);
+    mockGetArtistTopTags.mockResolvedValue(tags);
+
+    const profile = await regenerateProfile(userId, "tok");
+
+    expect(profile!.artistTags[0]).toMatchObject({
+      name: "Radiohead",
+      distinctTracksPlayed: 4,
+      topTrackShare: 0.4,
+      distributionFactor: 0.8,
+    });
+
+    const stored = parseDerivedProfile(
+      (await getUserProfile(userId))!.profile_json
+    );
+    expect(stored.artistTags[0].distributionFactor).toBe(0.8);
   });
 
   it("builds and persists the similar-artist graph from the top artists", async () => {

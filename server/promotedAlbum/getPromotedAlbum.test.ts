@@ -116,6 +116,8 @@ const defaultPromotedAlbumConfig: PromotedAlbumConfig = {
   ratingsBackupEnabled: true,
   playTrendWindowDays: 90,
   ratingWeight: 0.5,
+  distributionWeight: 0,
+  minPlaysForDistribution: 5,
 };
 
 let userId: number;
@@ -202,8 +204,7 @@ describe("getPromotedAlbums", () => {
     expect(mockLoadArtistWeights).toHaveBeenCalledWith(
       expect.any(Number),
       "test-plex-token",
-      expect.any(Number),
-      expect.any(Number)
+      expect.objectContaining({ windowMs: expect.any(Number) })
     );
   });
 
@@ -462,8 +463,7 @@ describe("getPromotedAlbums", () => {
     expect(mockLoadArtistWeights).toHaveBeenCalledWith(
       expect.any(Number),
       "user-b-token",
-      expect.any(Number),
-      expect.any(Number)
+      expect.objectContaining({ windowMs: expect.any(Number) })
     );
   });
 
@@ -831,6 +831,30 @@ describe("getPromotedAlbums", () => {
       expect(radiohead!.tagContributions).toHaveLength(2);
       expect(radiohead!.tagContributions[0].tagName).toBe("alternative");
     });
+
+    it("carries the play-distribution stats into the trace", async () => {
+      mockLoadArtistWeights.mockResolvedValue([
+        {
+          name: "Radiohead",
+          viewCount: 100,
+          distinctTracksPlayed: 6,
+          topTrackShare: 0.3,
+          distributionFactor: 0.85,
+        },
+      ]);
+      mockGetArtistTopTags.mockResolvedValue(tags);
+      mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
+      mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
+
+      const result = await getOne(userId);
+
+      expect(wt(result).trace.plexArtists[0]).toMatchObject({
+        name: "Radiohead",
+        distinctTracksPlayed: 6,
+        topTrackShare: 0.3,
+        distributionFactor: 0.85,
+      });
+    });
   });
 
   describe("config-driven behavior", () => {
@@ -848,8 +872,7 @@ describe("getPromotedAlbums", () => {
       expect(mockLoadArtistWeights).toHaveBeenCalledWith(
         expect.any(Number),
         "test-plex-token",
-        30 * 24 * 60 * 60 * 1000,
-        expect.any(Number)
+        expect.objectContaining({ windowMs: 30 * 24 * 60 * 60 * 1000 })
       );
     });
 
@@ -867,8 +890,7 @@ describe("getPromotedAlbums", () => {
       expect(mockLoadArtistWeights).toHaveBeenCalledWith(
         expect.any(Number),
         "test-plex-token",
-        expect.any(Number),
-        1.0
+        expect.objectContaining({ ratingWeight: 1.0 })
       );
     });
 

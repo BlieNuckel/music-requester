@@ -2,6 +2,7 @@ import type {
   RecommendationTrace,
   WithinTasteTrace,
   ExploreTrace,
+  TraceArtistEntry,
   TraceSelectionReason,
   TraceSimilarArtist,
 } from "@/hooks/usePromotedAlbums";
@@ -76,6 +77,27 @@ function GenreChips({
   );
 }
 
+function SpreadNote({ artist }: { artist: TraceArtistEntry }) {
+  if (
+    artist.topTrackShare === undefined ||
+    artist.distributionFactor === undefined
+  ) {
+    return null;
+  }
+
+  return (
+    <span
+      data-testid="artist-spread"
+      className="text-[10px] opacity-70"
+      title={`${artist.distinctTracksPlayed ?? 0} track(s) played; top track is ${Math.round(
+        artist.topTrackShare * 100
+      )}% of plays`}
+    >
+      ×{artist.distributionFactor.toFixed(2)} spread
+    </span>
+  );
+}
+
 function PlexArtistsStage({
   artists,
 }: {
@@ -96,6 +118,7 @@ function PlexArtistsStage({
           >
             {a.name}
             <span className="text-[10px] opacity-70">({a.viewCount})</span>
+            <SpreadNote artist={a} />
           </span>
         ))}
       </div>

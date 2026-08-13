@@ -74,6 +74,8 @@ const baseConfig: PromotedAlbumConfig = {
   ratingsBackupEnabled: true,
   playTrendWindowDays: 90,
   ratingWeight: 0.5,
+  distributionWeight: 0,
+  minPlaysForDistribution: 5,
 };
 
 const TOP_ARTISTS = [
@@ -138,12 +140,12 @@ describe("getPromotedArtists", () => {
 
   it("loads artist weights from the plays series for this user", async () => {
     await getPromotedArtists(userId);
-    expect(mockLoadArtistWeights).toHaveBeenCalledWith(
-      userId,
-      "token",
-      90 * 24 * 60 * 60 * 1000,
-      0.5
-    );
+    expect(mockLoadArtistWeights).toHaveBeenCalledWith(userId, "token", {
+      windowMs: 90 * 24 * 60 * 60 * 1000,
+      ratingWeight: 0.5,
+      distributionWeight: 0,
+      minPlaysForDistribution: 5,
+    });
   });
 
   it("returns similar artists seeded from the top artists", async () => {

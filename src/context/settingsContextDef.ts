@@ -25,6 +25,8 @@ export interface PromotedAlbumSettings {
   ratingsBackupEnabled: boolean;
   playTrendWindowDays: number;
   ratingWeight: number;
+  distributionWeight: number;
+  minPlaysForDistribution: number;
 }
 
 export interface PurchaseDecisionSettings {

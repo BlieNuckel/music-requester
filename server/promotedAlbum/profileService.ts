@@ -1,4 +1,4 @@
-import { loadArtistWeights } from "./artistWeights";
+import { loadArtistWeights, type ArtistWeight } from "./artistWeights";
 import { buildSimilarGraph } from "./explore";
 import { getArtistTopTags } from "../api/lastfm/artists";
 import { getConfigValue } from "../config";
@@ -16,7 +16,7 @@ import type { UserProfile, DerivedProfile } from "../db/entity/UserProfile";
 import { DERIVED_PROFILE_SCHEMA_VERSION } from "../db/entity/UserProfile";
 
 type TagResultEntry = {
-  artist: { name: string; viewCount: number };
+  artist: ArtistWeight;
   tags: { name: string; count: number }[];
 };
 
@@ -44,6 +44,9 @@ function buildProfileArtifacts(
       tags: tags
         .filter((t) => !genericTags.has(t.name.toLowerCase()))
         .slice(0, tagsPerArtist),
+      distinctTracksPlayed: artist.distinctTracksPlayed,
+      topTrackShare: artist.topTrackShare,
+      distributionFactor: artist.distributionFactor,
     })
   );
 
@@ -78,7 +81,7 @@ function buildProfileArtifacts(
 }
 
 async function fetchTagResults(
-  pickedArtists: { name: string; viewCount: number }[]
+  pickedArtists: ArtistWeight[]
 ): Promise<TagResultEntry[]> {
   return Promise.all(
     pickedArtists.map(async (artist) => {
@@ -104,13 +107,12 @@ export async function regenerateProfile(
 ): Promise<DerivedProfile | null> {
   const config = getConfigValue("promotedAlbum");
 
-  const windowMs = config.playTrendWindowDays * 24 * 60 * 60 * 1000;
-  const weighted = await loadArtistWeights(
-    userId,
-    plexToken,
-    windowMs,
-    config.ratingWeight
-  );
+  const weighted = await loadArtistWeights(userId, plexToken, {
+    windowMs: config.playTrendWindowDays * 24 * 60 * 60 * 1000,
+    ratingWeight: config.ratingWeight,
+    distributionWeight: config.distributionWeight,
+    minPlaysForDistribution: config.minPlaysForDistribution,
+  });
   if (weighted.length === 0) return null;
 
   const topArtists = [...weighted]

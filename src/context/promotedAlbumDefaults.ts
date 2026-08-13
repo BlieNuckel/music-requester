@@ -33,4 +33,6 @@ export const DEFAULT_PROMOTED_ALBUM: PromotedAlbumSettings = {
   ratingsBackupEnabled: true,
   playTrendWindowDays: 90,
   ratingWeight: 0.5,
+  distributionWeight: 0.5,
+  minPlaysForDistribution: 5,
 };

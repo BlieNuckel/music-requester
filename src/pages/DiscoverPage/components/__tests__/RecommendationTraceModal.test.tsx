@@ -210,4 +210,34 @@ describe("RecommendationTraceModal", () => {
       );
     });
   });
+
+  describe("play distribution", () => {
+    it("shows the spread factor for artists that carry one", () => {
+      renderModal({
+        plexArtists: [
+          {
+            name: "One Hit",
+            viewCount: 50,
+            picked: true,
+            tagContributions: [],
+            distinctTracksPlayed: 1,
+            topTrackShare: 1,
+            distributionFactor: 0.5,
+          },
+        ],
+      });
+
+      const spread = screen.getByTestId("artist-spread");
+      expect(spread).toHaveTextContent("×0.50 spread");
+      expect(spread).toHaveAttribute(
+        "title",
+        "1 track(s) played; top track is 100% of plays"
+      );
+    });
+
+    it("omits the spread factor for legacy artists without track detail", () => {
+      renderModal();
+      expect(screen.queryByTestId("artist-spread")).not.toBeInTheDocument();
+    });
+  });
 });
