@@ -30,6 +30,7 @@ const EMPTY_DERIVED_PROFILE: DerivedProfile = {
   genreVector: [],
   artistTags: [],
   similarGraph: [],
+  knownAlbums: [],
   explorationHistory: { albums: [], artists: [] },
 };
 
@@ -51,6 +52,7 @@ export function parseDerivedProfile(json: string): DerivedProfile {
       genreVector: parsed.genreVector ?? [],
       artistTags: parsed.artistTags ?? [],
       similarGraph: parsed.similarGraph ?? [],
+      knownAlbums: parsed.knownAlbums ?? [],
       explorationHistory: {
         albums: parsed.explorationHistory?.albums ?? [],
         artists: parsed.explorationHistory?.artists ?? [],

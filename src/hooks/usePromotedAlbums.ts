@@ -74,7 +74,21 @@ export type ExploreTrace = {
   selectionReason: TraceSelectionReason;
 };
 
-export type RecommendationTrace = WithinTasteTrace | ExploreTrace;
+export type PersonalTrace = {
+  kind: "personal";
+  seedArtist: string;
+  seedGenres: string[];
+  candidates: TraceSimilarArtist[];
+  chosenArtist: string;
+  chosenGenres: string[];
+  sharedGenres: string[];
+  /** True when no neighbour was close enough and the pool fell back to the whole graph. */
+  widened: boolean;
+  selectionReason: TraceSelectionReason;
+};
+
+export type RecommendationTrace =
+  WithinTasteTrace | ExploreTrace | PersonalTrace;
 
 export type PromotedAlbumInfo = {
   name: string;
@@ -96,6 +110,12 @@ export type PromotedAlbumData = {
       seedArtist: string;
       newGenres: string[];
       trace: ExploreTrace;
+    }
+  | {
+      mode: "personal";
+      seedArtist: string;
+      sharedGenres: string[];
+      trace: PersonalTrace;
     }
 );
 

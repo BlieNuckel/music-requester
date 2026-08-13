@@ -1,6 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import RecommendationTraceModal from "../RecommendationTraceModal";
-import type { WithinTasteTrace, ExploreTrace } from "@/hooks/usePromotedAlbums";
+import type {
+  WithinTasteTrace,
+  ExploreTrace,
+  PersonalTrace,
+} from "@/hooks/usePromotedAlbums";
 
 vi.mock("@/components/Modal", () => ({
   default: ({
@@ -79,6 +83,39 @@ const exploreTrace: ExploreTrace = {
   newGenres: ["jazz", "bebop"],
   selectionReason: "preferred_non_library",
 };
+
+const personalTrace: PersonalTrace = {
+  kind: "personal",
+  seedArtist: "Slowdive",
+  seedGenres: ["shoegaze", "dream pop"],
+  candidates: [
+    {
+      name: "Near Band",
+      score: 0.9,
+      genres: ["shoegaze", "noise pop"],
+      genreOverlap: 0.5,
+      isDifferentGenre: false,
+      chosen: true,
+    },
+  ],
+  chosenArtist: "Near Band",
+  chosenGenres: ["shoegaze", "noise pop"],
+  sharedGenres: ["shoegaze"],
+  widened: false,
+  selectionReason: "preferred_non_library",
+};
+
+function renderPersonalModal(overrides?: Partial<PersonalTrace>) {
+  return render(
+    <RecommendationTraceModal
+      isOpen={true}
+      onClose={vi.fn()}
+      trace={{ ...personalTrace, ...overrides }}
+      albumName="Nowhere"
+      artistName="Near Band"
+    />
+  );
+}
 
 function renderModal(overrides?: Partial<WithinTasteTrace>) {
   return render(
@@ -311,6 +348,31 @@ describe("RecommendationTraceModal", () => {
 
       expect(screen.queryByTestId("artist-catalogue")).not.toBeInTheDocument();
       expect(screen.getByTestId("artist-spread")).toBeInTheDocument();
+    });
+  });
+
+  describe("personal flow", () => {
+    it("renders the seed, the neighbours, and the shared ground", () => {
+      renderPersonalModal();
+
+      expect(screen.getAllByTestId("stage-card")).toHaveLength(4);
+      expect(screen.getByText("Slowdive")).toBeInTheDocument();
+      expect(screen.getByTestId("chosen-candidate")).toHaveTextContent(
+        "Near Band"
+      );
+      expect(screen.getByTestId("selection-reason")).toHaveTextContent(
+        "New discovery"
+      );
+    });
+
+    it("says so when the pool had to widen", () => {
+      renderPersonalModal({ widened: true });
+      expect(screen.getByTestId("personal-widened")).toBeInTheDocument();
+    });
+
+    it("stays quiet about widening on a normal pick", () => {
+      renderPersonalModal();
+      expect(screen.queryByTestId("personal-widened")).not.toBeInTheDocument();
     });
   });
 });

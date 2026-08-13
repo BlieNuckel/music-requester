@@ -54,7 +54,7 @@ import {
 import { loadFreshProfile } from "./profileService";
 import { findUserById } from "../auth/users";
 import { initializeDatabase, closeDatabase, getDataSource } from "../db";
-import type { WithinTasteResult, ExploreResult } from "./types";
+import type { WithinTasteResult, ExploreResult, PersonalResult } from "./types";
 
 /**
  * Await the profile build that the request path now only schedules, so a case can assert on
@@ -106,6 +106,13 @@ async function getOne(userId: number, forceRefresh = false) {
 function wt(result: Awaited<ReturnType<typeof getOne>>): WithinTasteResult {
   if (!result || result.mode !== "within_taste") {
     throw new Error("expected a within_taste result");
+  }
+  return result;
+}
+
+function pe(result: Awaited<ReturnType<typeof getOne>>): PersonalResult {
+  if (!result || result.mode !== "personal") {
+    throw new Error("expected a personal result");
   }
   return result;
 }
@@ -1375,9 +1382,20 @@ describe("getPromotedAlbums", () => {
       expect(result!.mode).toBe("within_taste");
     });
 
-    it("falls back to within-taste when no candidate is a different genre", async () => {
+    it("falls back to the personal source when no candidate is a different genre", async () => {
       setupExplore();
       mockGetArtistTopTags.mockResolvedValue(genreByArtist["Radiohead"]);
+      mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
+
+      const result = await getOne(userId);
+      expect(pe(result).mode).toBe("personal");
+      expect(pe(result).album.artistName).toBe("Jazz Cat");
+    });
+
+    it("falls back to the tag path when neither graph source yields an album", async () => {
+      setupExplore();
+      mockGetArtistTopTags.mockResolvedValue(genreByArtist["Radiohead"]);
+      mockFetchReleaseGroupsForArtist.mockResolvedValue([]);
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
 
       const result = await getOne(userId);
@@ -1471,10 +1489,10 @@ describe("injected randomness and clock", () => {
   it("derives the deep page from the configured range", async () => {
     setupBothPaths();
 
-    // Draws in order: explore coin, one per sampled artist, tag, deep page.
-    // range = deepPageMax - deepPageMin + 1 = 9; floor(0.5 * 9) + 2 = 6
+    // Draws in order: explore coin, one per personal candidate drawn, one per sampled
+    // artist, tag, deep page. range = deepPageMax - deepPageMin + 1 = 9; floor(0.5*9)+2 = 6
     await getAlbums(userId, false, 1, {
-      rng: seqRng([0.9, 0, 0, 0, 0.5, 0]),
+      rng: seqRng([0.9, 0, 0, 0, 0, 0.5, 0]),
     });
 
     expect(mockGetTopAlbumsByTag).toHaveBeenCalledWith(expect.any(String), "6");

@@ -41,6 +41,7 @@ const SAMPLE_PROFILE: DerivedProfile = {
       ],
     },
   ],
+  knownAlbums: ["slowdive::souvlaki"],
   explorationHistory: {
     albums: ["mbid-album-1", "mbid-album-2"],
     artists: ["mbid-artist-1"],
@@ -89,6 +90,7 @@ describe("serializeDerivedProfile / parseDerivedProfile", () => {
       genreVector: [],
       artistTags: [],
       similarGraph: [],
+      knownAlbums: [],
       explorationHistory: { albums: [], artists: [] },
     });
   });
@@ -98,6 +100,7 @@ describe("serializeDerivedProfile / parseDerivedProfile", () => {
       genreVector: [],
       artistTags: [],
       similarGraph: [],
+      knownAlbums: [],
       explorationHistory: { albums: [], artists: [] },
     });
   });
@@ -187,6 +190,7 @@ describe("upsertUserProfile / getUserProfile", () => {
       genreVector: [{ tag: "techno", weight: 9, fromArtists: ["Aphex Twin"] }],
       artistTags: [],
       similarGraph: [],
+      knownAlbums: [],
       explorationHistory: { albums: [], artists: [] },
     };
     await upsertUserProfile(userId, updated, "hash-2");
