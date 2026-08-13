@@ -134,6 +134,7 @@ export function useOnboarding() {
         slskdUrl: "",
         slskdApiKey: "",
         slskdDownloadPath: "",
+        torznabApiKey: "",
       });
 
       setTestResult(result);
@@ -173,6 +174,7 @@ export function useOnboarding() {
         slskdUrl: "",
         slskdApiKey: "",
         slskdDownloadPath: "",
+        torznabApiKey: "",
       });
       navigate("/");
     } catch (err) {

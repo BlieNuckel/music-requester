@@ -30,6 +30,7 @@ const fullConfig = {
   slskdUrl: "http://slskd:5030",
   slskdApiKey: "slskd-api-key-123",
   slskdDownloadPath: "/downloads",
+  torznabApiKey: "",
   theme: "system" as const,
   promotedAlbum: DEFAULT_PROMOTED_ALBUM,
   purchaseDecision: DEFAULT_PURCHASE_DECISION,

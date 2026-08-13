@@ -25,6 +25,7 @@ export interface AppSettings {
   slskdUrl: string;
   slskdApiKey: string;
   slskdDownloadPath: string;
+  torznabApiKey: string;
   promotedAlbum?: PromotedAlbumSettings;
   purchaseDecision?: PurchaseDecisionSettings;
   spending?: SpendingSettings;

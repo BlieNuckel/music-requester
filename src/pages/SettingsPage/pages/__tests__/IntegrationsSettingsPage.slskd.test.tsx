@@ -15,6 +15,7 @@ const settings: AppSettings = {
   slskdUrl: "http://slskd:5030",
   slskdApiKey: "key",
   slskdDownloadPath: "/downloads",
+  torznabApiKey: "",
 };
 
 vi.mock("@/context/useSettings", () => ({

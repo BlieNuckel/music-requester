@@ -100,7 +100,17 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   slskd: {
     label: "slskd",
     tab: "integrations",
-    keywords: ["slskd", "soulseek", "download", "api", "key", "path"],
+    keywords: [
+      "slskd",
+      "soulseek",
+      "download",
+      "api",
+      "key",
+      "path",
+      "indexer",
+      "torznab",
+      "sabnzbd",
+    ],
     permission: Permission.ADMIN,
   },
   recommendations: {

@@ -53,6 +53,7 @@ function renderOnboarding(overrides: Partial<SettingsContextValue> = {}) {
       slskdUrl: "",
       slskdApiKey: "",
       slskdDownloadPath: "",
+      torznabApiKey: "",
     },
     isConnected: false,
     isLoading: false,
@@ -102,6 +103,7 @@ describe("OnboardingPage", () => {
         slskdUrl: "",
         slskdApiKey: "",
         slskdDownloadPath: "",
+        torznabApiKey: "",
       },
     });
     expect(screen.getByText("Welcome to Tunearr")).toBeInTheDocument();
@@ -121,6 +123,7 @@ describe("OnboardingPage", () => {
         slskdUrl: "",
         slskdApiKey: "",
         slskdDownloadPath: "",
+        torznabApiKey: "",
       },
     });
     expect(screen.getByText("Home Page")).toBeInTheDocument();

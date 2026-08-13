@@ -7,10 +7,18 @@ import type {
   LidarrSchemaField,
 } from "../../api/lidarr/types";
 import { extractLidarrError } from "../../api/lidarr/types";
+import { getConfigValue } from "../../config";
 
 type SetupResult = { success: boolean; error?: string };
 
 const TUNEARR_NAME = "Tunearr";
+
+/** Lidarr rejects a blank apikey field, so an unsecured install still needs a placeholder. */
+const PLACEHOLDER_API_KEY = "a";
+
+function indexerApiKey(): string {
+  return getConfigValue("torznabApiKey") || PLACEHOLDER_API_KEY;
+}
 
 function patchField(
   fields: LidarrSchemaField[],
@@ -34,7 +42,7 @@ async function createIndexer(
   let fields = newznab.fields;
   fields = patchField(fields, "baseUrl", `http://${host}:${port}/api/torznab`);
   fields = patchField(fields, "apiPath", "");
-  fields = patchField(fields, "apiKey", "a");
+  fields = patchField(fields, "apiKey", indexerApiKey());
 
   const result = await lidarrPost("/indexer", {
     ...newznab,
@@ -65,8 +73,8 @@ async function createDownloadClient(
   let fields = sabnzbd.fields;
   fields = patchField(fields, "host", host);
   fields = patchField(fields, "port", port);
-  fields = patchField(fields, "apiKey", "a");
-  fields = patchField(fields, "password", "a");
+  fields = patchField(fields, "apiKey", indexerApiKey());
+  fields = patchField(fields, "password", PLACEHOLDER_API_KEY);
   fields = patchField(fields, "urlBase", "/api/sabnzbd");
 
   const result = await lidarrPost("/downloadclient", {

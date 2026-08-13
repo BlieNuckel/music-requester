@@ -22,6 +22,7 @@ const connectedContext: SettingsContextValue = {
     slskdUrl: "",
     slskdApiKey: "",
     slskdDownloadPath: "",
+    torznabApiKey: "",
   },
   isConnected: true,
   isLoading: false,
@@ -47,6 +48,7 @@ const unconfiguredContext: SettingsContextValue = {
     slskdUrl: "",
     slskdApiKey: "",
     slskdDownloadPath: "",
+    torznabApiKey: "",
   },
   isConnected: false,
 };
