@@ -183,4 +183,55 @@ describe("getTopArtists", () => {
     expect(result.map((a) => a.name)).toEqual(["C", "B"]);
     expect(result[0].viewCount).toBe(3);
   });
+
+  it("sums an artist's plays across every music section", async () => {
+    mockFetch
+      .mockResolvedValueOnce(
+        okResponse({
+          MediaContainer: {
+            Directory: [
+              { key: "2", type: "artist", title: "Music" },
+              { key: "6", type: "artist", title: "Soundtracks" },
+            ],
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        okResponse({
+          MediaContainer: {
+            Metadata: [
+              {
+                title: "Hans Zimmer",
+                viewCount: 40,
+                Genre: [{ tag: "score" }],
+              },
+              { title: "Radiohead", viewCount: 30, Genre: [] },
+            ],
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        okResponse({
+          MediaContainer: {
+            Metadata: [
+              {
+                title: "Hans Zimmer",
+                viewCount: 25,
+                thumb: "/library/metadata/9/thumb",
+                Genre: [{ tag: "soundtrack" }],
+              },
+            ],
+          },
+        })
+      );
+
+    const result = await getTopArtists("tok", 5);
+
+    expect(result.map((a) => [a.name, a.viewCount])).toEqual([
+      ["Hans Zimmer", 65],
+      ["Radiohead", 30],
+    ]);
+    expect(result[0].genres).toEqual(["score", "soundtrack"]);
+    expect(result[0].thumb).toContain("%2Flibrary%2Fmetadata%2F9%2Fthumb");
+  });
 });

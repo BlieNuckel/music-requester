@@ -1,6 +1,6 @@
 import { resilientFetch } from "../resilientFetch";
 import { getPlexConfig } from "./config";
-import { getMusicSectionKey } from "./sections";
+import { getMusicSectionKeys } from "./sections";
 import type {
   PlexArtistsResponse,
   PlexHistoryResponse,
@@ -47,7 +47,6 @@ async function getTopArtistsByHistory(
   baseUrl: string,
   headers: Record<string, string>,
   sectionKey: string,
-  limit: number,
   sinceSeconds: number
 ): Promise<PlexTopArtist[]> {
   const url = `${baseUrl}/status/sessions/history/all?librarySectionID=${sectionKey}&viewedAt%3E=${sinceSeconds}&sort=viewedAt:desc&X-Plex-Container-Start=0&X-Plex-Container-Size=${HISTORY_FETCH_SIZE}`;
@@ -73,13 +72,37 @@ async function getTopArtistsByHistory(
     }
   }
 
-  return [...counts.entries()]
-    .map(([name, { count, thumb }]) => ({
-      name,
-      viewCount: count,
-      thumb: buildThumbUrl(thumb),
-      genres: [],
-    }))
+  return [...counts.entries()].map(([name, { count, thumb }]) => ({
+    name,
+    viewCount: count,
+    thumb: buildThumbUrl(thumb),
+    genres: [],
+  }));
+}
+
+/**
+ * Fold each section's list into one ranking. An artist present in two music sections is one
+ * artist to the user, so their counts add rather than competing for a slot.
+ */
+function mergeTopArtists(
+  perSection: PlexTopArtist[][],
+  limit: number
+): PlexTopArtist[] {
+  const merged = new Map<string, PlexTopArtist>();
+  for (const artist of perSection.flat()) {
+    const existing = merged.get(artist.name);
+    if (!existing) {
+      merged.set(artist.name, { ...artist, genres: [...artist.genres] });
+      continue;
+    }
+    existing.viewCount += artist.viewCount;
+    if (!existing.thumb) existing.thumb = artist.thumb;
+    for (const genre of artist.genres) {
+      if (!existing.genres.includes(genre)) existing.genres.push(genre);
+    }
+  }
+
+  return [...merged.values()]
     .sort((a, b) => b.viewCount - a.viewCount)
     .slice(0, limit);
 }
@@ -90,19 +113,23 @@ export async function getTopArtists(
   range: TopArtistsRange = "all"
 ): Promise<PlexTopArtist[]> {
   const { baseUrl, headers } = getPlexConfig(plexToken);
-  const sectionKey = await getMusicSectionKey(baseUrl, headers);
+  const sectionKeys = await getMusicSectionKeys(baseUrl, headers);
 
   if (range === "all") {
-    return getTopArtistsAllTime(baseUrl, headers, sectionKey, limit);
+    const perSection = await Promise.all(
+      sectionKeys.map((key) =>
+        getTopArtistsAllTime(baseUrl, headers, key, limit)
+      )
+    );
+    return mergeTopArtists(perSection, limit);
   }
 
   const sinceSeconds =
     Math.floor(Date.now() / 1000) - RANGE_DAYS[range] * SECONDS_PER_DAY;
-  return getTopArtistsByHistory(
-    baseUrl,
-    headers,
-    sectionKey,
-    limit,
-    sinceSeconds
+  const perSection = await Promise.all(
+    sectionKeys.map((key) =>
+      getTopArtistsByHistory(baseUrl, headers, key, sinceSeconds)
+    )
   );
+  return mergeTopArtists(perSection, limit);
 }

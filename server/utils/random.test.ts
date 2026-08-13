@@ -43,6 +43,32 @@ describe("weightedRandomPick", () => {
     expect(result).toEqual([{ name: "only" }]);
   });
 
+  it("picks uniformly when every weight is zero", () => {
+    const items = [{ name: "a" }, { name: "b" }, { name: "c" }];
+    const picked = new Set<string>();
+    for (let i = 0; i < 200; i++) {
+      picked.add(weightedRandomPick(items, () => 0, 1)[0].name);
+    }
+    expect(picked).toEqual(new Set(["a", "b", "c"]));
+  });
+
+  it("still picks without replacement at zero total weight", () => {
+    const items = [{ name: "a" }, { name: "b" }, { name: "c" }];
+    const result = weightedRandomPick(items, () => 0, 3);
+    expect(new Set(result.map((r) => r.name)).size).toBe(3);
+  });
+
+  it("never overruns the pool when the rng returns 1", () => {
+    const items = [{ name: "a" }, { name: "b" }];
+    const result = weightedRandomPick(
+      items,
+      () => 0,
+      1,
+      () => 1
+    );
+    expect(result).toEqual([{ name: "b" }]);
+  });
+
   it("respects weights over many iterations", () => {
     const items = [
       { name: "heavy", w: 100 },

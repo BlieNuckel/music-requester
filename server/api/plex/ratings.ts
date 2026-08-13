@@ -1,6 +1,6 @@
 import { resilientFetch } from "../resilientFetch";
 import { getPlexConfig } from "./config";
-import { getMusicSectionKey } from "./sections";
+import { getMusicSectionKeys } from "./sections";
 import type {
   PlexRatedItem,
   PlexRatedItemMetadata,
@@ -86,8 +86,8 @@ async function fetchRatedByType(
 }
 
 /**
- * Read the current user's rated music via the per-user token path.
- * Uses a server-side `userRating>=1` filter so only the (small) rated set is
+ * Read the current user's rated music across every music section, via the per-user token
+ * path. Uses a server-side `userRating>=1` filter so only the (small) rated set is
  * fetched — the full library is never scanned. Missing `userRating` is treated
  * as unrated and excluded by the filter; an item read with `userRating` absent
  * is also dropped client-side rather than coerced to 0.
@@ -97,12 +97,14 @@ export async function getRatedItems(
   types: PlexRatingType[] = DEFAULT_RATING_TYPES
 ): Promise<PlexRatedItem[]> {
   const { baseUrl, headers } = getPlexConfig(plexToken);
-  const sectionKey = await getMusicSectionKey(baseUrl, headers);
+  const sectionKeys = await getMusicSectionKeys(baseUrl, headers);
 
-  const perType = await Promise.all(
-    types.map((type) => fetchRatedByType(baseUrl, headers, sectionKey, type))
+  const perWalk = await Promise.all(
+    sectionKeys.flatMap((sectionKey) =>
+      types.map((type) => fetchRatedByType(baseUrl, headers, sectionKey, type))
+    )
   );
-  return perType.flat();
+  return perWalk.flat();
 }
 
 /**

@@ -169,6 +169,41 @@ describe("getRatedItems", () => {
       "Plex returned 401"
     );
   });
+
+  it("reads ratings from every music section", async () => {
+    const ratedIn = (sectionTitle: string) =>
+      okResponse({
+        MediaContainer: {
+          totalSize: 1,
+          Metadata: [
+            {
+              ratingKey: sectionTitle,
+              title: sectionTitle,
+              userRating: 8,
+              parentTitle: "A",
+            },
+          ],
+        },
+      });
+
+    mockFetch
+      .mockResolvedValueOnce(
+        okResponse({
+          MediaContainer: {
+            Directory: [
+              { key: "2", type: "artist", title: "Music" },
+              { key: "6", type: "artist", title: "Classical" },
+            ],
+          },
+        })
+      )
+      .mockResolvedValueOnce(ratedIn("music"))
+      .mockResolvedValueOnce(ratedIn("classical"));
+
+    const result = await getRatedItems("tok", [9]);
+
+    expect(result.map((r) => r.title)).toEqual(["music", "classical"]);
+  });
 });
 
 describe("getItemRating", () => {

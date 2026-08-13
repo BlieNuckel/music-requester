@@ -34,7 +34,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const baseConfig: PromotedAlbumConfig = {
   cacheDurationMinutes: 30,
   profileTtlMinutes: 1440,
-  topArtistsRange: "6months",
   topArtistsCount: 10,
   pickedArtistsCount: 3,
   tagsPerArtist: 5,

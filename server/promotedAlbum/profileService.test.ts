@@ -30,7 +30,6 @@ import { parseDerivedProfile } from "../db/userProfile";
 const baseConfig: PromotedAlbumConfig = {
   cacheDurationMinutes: 30,
   profileTtlMinutes: 1440,
-  topArtistsRange: "6months",
   topArtistsCount: 10,
   pickedArtistsCount: 3,
   tagsPerArtist: 5,
@@ -116,7 +115,7 @@ describe("regenerateProfile", () => {
     expect(profile!.genreVector).toEqual([
       {
         tag: "alternative",
-        weight: 100 * 100 + 100 * 50,
+        weight: 100 + 50,
         fromArtists: ["Radiohead", "Bjork"],
       },
     ]);
@@ -136,6 +135,53 @@ describe("regenerateProfile", () => {
     const row = await getUserProfile(userId);
     expect(row).not.toBeNull();
     expect(parseDerivedProfile(row!.profile_json).genreVector).toHaveLength(1);
+  });
+
+  it("gives artists of equal play weight equal influence however Last.fm tagged them", async () => {
+    mockLoadArtistWeights.mockResolvedValue([
+      { name: "Broadly Tagged", viewCount: 100 },
+      { name: "Thinly Tagged", viewCount: 100 },
+    ]);
+    mockGetArtistTopTags.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === "Broadly Tagged"
+          ? [
+              { name: "shoegaze", count: 100 },
+              { name: "dream pop", count: 90 },
+              { name: "noise", count: 80 },
+            ]
+          : [
+              { name: "techno", count: 100 },
+              { name: "minimal", count: 5 },
+            ]
+      )
+    );
+
+    const profile = await regenerateProfile(userId, "token");
+
+    const massOf = (artist: string) =>
+      profile!.genreVector
+        .filter((g) => g.fromArtists.includes(artist))
+        .reduce((sum, g) => sum + g.weight, 0);
+    expect(massOf("Broadly Tagged")).toBeCloseTo(100);
+    expect(massOf("Thinly Tagged")).toBeCloseTo(100);
+  });
+
+  it("keeps an artist in the vector when every tag count is zero", async () => {
+    mockLoadArtistWeights.mockResolvedValue([
+      { name: "Untagged", viewCount: 60 },
+    ]);
+    mockGetArtistTopTags.mockResolvedValue([
+      { name: "drone", count: 0 },
+      { name: "ambient", count: 0 },
+    ]);
+
+    const profile = await regenerateProfile(userId, "token");
+
+    expect(profile!.genreVector).toEqual([
+      { tag: "drone", weight: 30, fromArtists: ["Untagged"] },
+      { tag: "ambient", weight: 30, fromArtists: ["Untagged"] },
+    ]);
   });
 
   it("persists the play-distribution stats carried by the weight set", async () => {

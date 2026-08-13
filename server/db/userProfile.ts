@@ -9,7 +9,6 @@ import { UserSignalEvent } from "./entity/UserSignalEvent";
 
 /** The config fields that shape the derived profile and thus invalidate it on change. */
 export type ProfileConfigInputs = {
-  topArtistsRange: string;
   genericTags: string[];
   tagsPerArtist: number;
   pickedArtistsCount: number;
@@ -65,7 +64,6 @@ export function parseDerivedProfile(json: string): DerivedProfile {
 /** Stable hash of the config inputs that shape the vector — a mismatch forces a regenerate. */
 export function computeConfigHash(inputs: ProfileConfigInputs): string {
   const stable = JSON.stringify({
-    topArtistsRange: inputs.topArtistsRange,
     genericTags: [...inputs.genericTags].map((t) => t.toLowerCase()).sort(),
     tagsPerArtist: inputs.tagsPerArtist,
     pickedArtistsCount: inputs.pickedArtistsCount,

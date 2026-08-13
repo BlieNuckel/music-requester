@@ -208,7 +208,8 @@ describe("derivePlayWeights", () => {
       trackEvent([{ ratingKey: "1", artistName: "A", playCount: 30 }], 0),
     ];
     const result = derivePlayWeights(trackEvents, [], NOW, 30 * DAY);
-    expect(result).toEqual([{ name: "A", viewCount: 20 }]);
+    expect(result.weights).toEqual([{ name: "A", viewCount: 20 }]);
+    expect(result.windowStart).toBe(NOW - 30 * DAY);
   });
 
   it("falls back to latest all-time counts until the window is covered", () => {
@@ -217,7 +218,8 @@ describe("derivePlayWeights", () => {
       trackEvent([{ ratingKey: "1", artistName: "A", playCount: 12 }], 0),
     ];
     const result = derivePlayWeights(trackEvents, [], NOW, 30 * DAY);
-    expect(result).toEqual([{ name: "A", viewCount: 12 }]);
+    expect(result.weights).toEqual([{ name: "A", viewCount: 12 }]);
+    expect(result.windowStart).toBeNull();
   });
 
   it("falls back to all-time when nothing was played in the window", () => {
@@ -226,11 +228,15 @@ describe("derivePlayWeights", () => {
       trackEvent([{ ratingKey: "1", artistName: "A", playCount: 10 }], 0),
     ];
     const result = derivePlayWeights(trackEvents, [], NOW, 30 * DAY);
-    expect(result).toEqual([{ name: "A", viewCount: 10 }]);
+    expect(result.weights).toEqual([{ name: "A", viewCount: 10 }]);
+    expect(result.windowStart).toBeNull();
   });
 
   it("returns empty when neither series has captures", () => {
-    expect(derivePlayWeights([], [], NOW, 30 * DAY)).toEqual([]);
+    expect(derivePlayWeights([], [], NOW, 30 * DAY)).toEqual({
+      weights: [],
+      windowStart: null,
+    });
   });
 
   it("still derives windowed weights from a legacy-only series", () => {
@@ -245,7 +251,7 @@ describe("derivePlayWeights", () => {
       legacyEvent([{ name: "A", playCount: 30 }], 0),
     ];
     const result = derivePlayWeights([], legacyEvents, NOW, 30 * DAY);
-    expect(result).toEqual([{ name: "A", viewCount: 20 }]);
+    expect(result.weights).toEqual([{ name: "A", viewCount: 20 }]);
   });
 
   it("bridges a legacy baseline to a track-series latest across the cutover", () => {
@@ -260,7 +266,19 @@ describe("derivePlayWeights", () => {
       ),
     ];
     const result = derivePlayWeights(trackEvents, legacyEvents, NOW, 30 * DAY);
-    expect(result).toEqual([{ name: "A", viewCount: 15 }]);
+    expect(result.weights).toEqual([{ name: "A", viewCount: 15 }]);
+  });
+
+  it("reports the all-time window when a legacy-only baseline covers it", () => {
+    const legacyEvents = [
+      legacyEvent([{ name: "A", playCount: 10 }], 40),
+      legacyEvent([{ name: "A", playCount: 30 }], 0),
+    ];
+    const trackEvents = [
+      trackEvent([{ ratingKey: "1", artistName: "A", playCount: 4 }], 0),
+    ];
+    const result = derivePlayWeights(trackEvents, legacyEvents, NOW, 30 * DAY);
+    expect(result.windowStart).toBe(NOW - 30 * DAY);
   });
 });
 
@@ -277,8 +295,7 @@ describe("deriveArtistDistributions", () => {
           0
         ),
       ],
-      NOW,
-      30 * DAY
+      null
     );
     expect(dists.get("A")).toMatchObject({
       playCount: 40,
@@ -299,8 +316,7 @@ describe("deriveArtistDistributions", () => {
         ),
         trackEvent([{ ratingKey: "1", artistName: "A", playCount: 110 }], 0),
       ],
-      NOW,
-      30 * DAY
+      NOW - 30 * DAY
     );
     expect(dists.get("A")).toMatchObject({
       playCount: 10,
@@ -330,8 +346,7 @@ describe("deriveArtistDistributions", () => {
           0
         ),
       ],
-      NOW,
-      30 * DAY
+      null
     );
     expect(dists.get("Nova")?.playCount).toBe(9);
   });

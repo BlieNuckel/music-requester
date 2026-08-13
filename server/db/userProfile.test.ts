@@ -48,7 +48,6 @@ const SAMPLE_PROFILE: DerivedProfile = {
 };
 
 const CONFIG_INPUTS = {
-  topArtistsRange: "6months",
   genericTags: ["seen live", "favorites"],
   tagsPerArtist: 5,
   pickedArtistsCount: 3,
@@ -125,7 +124,7 @@ describe("computeConfigHash", () => {
       computeConfigHash(CONFIG_INPUTS)
     );
     expect(
-      computeConfigHash({ ...CONFIG_INPUTS, topArtistsRange: "all" })
+      computeConfigHash({ ...CONFIG_INPUTS, playTrendWindowDays: 30 })
     ).not.toBe(computeConfigHash(CONFIG_INPUTS));
     expect(
       computeConfigHash({ ...CONFIG_INPUTS, distributionWeight: 0 })

@@ -11,12 +11,9 @@
 export type LibraryPreference =
   "prefer_new" | "prefer_library" | "no_preference";
 
-export type TopArtistsRange = "all" | "4weeks" | "6months" | "12months";
-
 export type PromotedAlbumSettings = {
   cacheDurationMinutes: number;
   profileTtlMinutes: number;
-  topArtistsRange: TopArtistsRange;
   topArtistsCount: number;
   pickedArtistsCount: number;
   tagsPerArtist: number;
@@ -50,7 +47,6 @@ export type SpendingSettings = {
 export const DEFAULT_PROMOTED_ALBUM: PromotedAlbumSettings = {
   cacheDurationMinutes: 30,
   profileTtlMinutes: 1440,
-  topArtistsRange: "6months",
   topArtistsCount: 10,
   pickedArtistsCount: 3,
   tagsPerArtist: 5,

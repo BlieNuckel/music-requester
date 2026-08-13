@@ -5,7 +5,7 @@ const mockLoadArtistWeights = vi.fn();
 const mockGetArtistTopTags = vi.fn();
 const mockGetTopAlbumsByTag = vi.fn();
 const mockLidarrGet = vi.fn();
-const mockGetReleaseGroupIdFromRelease = vi.fn();
+const mockResolveReleaseGroupInfo = vi.fn();
 const mockFetchReleaseGroupsForArtist = vi.fn();
 const mockGetConfigValue = vi.fn();
 const mockGetSimilarArtists = vi.fn();
@@ -28,8 +28,8 @@ vi.mock("../api/lidarr/get", () => ({
 }));
 
 vi.mock("../api/musicbrainz/releaseGroups", () => ({
-  getReleaseGroupIdFromRelease: (...args: unknown[]) =>
-    mockGetReleaseGroupIdFromRelease(...args),
+  resolveReleaseGroupInfo: (...args: unknown[]) =>
+    mockResolveReleaseGroupInfo(...args),
   fetchReleaseGroupsForArtist: (...args: unknown[]) =>
     mockFetchReleaseGroupsForArtist(...args),
 }));
@@ -86,7 +86,6 @@ async function createUserWithToken(token: string): Promise<number> {
 const defaultPromotedAlbumConfig: PromotedAlbumConfig = {
   cacheDurationMinutes: 30,
   profileTtlMinutes: 1440,
-  topArtistsRange: "6months",
   topArtistsCount: 10,
   explorationRate: 0,
   exploreCandidateCount: 12,
@@ -127,8 +126,13 @@ beforeEach(async () => {
   clearPromotedAlbumCache();
   vi.spyOn(Math, "random").mockReturnValue(0.1);
   mockGetConfigValue.mockReturnValue(defaultPromotedAlbumConfig);
-  mockGetReleaseGroupIdFromRelease.mockImplementation((mbid: string) =>
-    Promise.resolve({ id: `rg-${mbid}`, firstReleaseDate: "1997-06-16" })
+  mockResolveReleaseGroupInfo.mockImplementation((mbid: string) =>
+    Promise.resolve({
+      id: `rg-${mbid}`,
+      firstReleaseDate: "1997-06-16",
+      primaryType: "Album",
+      secondaryTypes: [],
+    })
   );
   await initializeDatabase(":memory:");
   userId = await createUserWithToken("test-plex-token");
@@ -641,7 +645,7 @@ describe("getPromotedAlbums", () => {
     mockGetArtistTopTags.mockResolvedValue(tags);
     mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
     mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
-    mockGetReleaseGroupIdFromRelease.mockResolvedValue(null);
+    mockResolveReleaseGroupInfo.mockResolvedValue(null);
 
     const result = await getOne(userId);
     expect(result).toBeNull();
@@ -691,6 +695,63 @@ describe("getPromotedAlbums", () => {
 
       expect(first).not.toBeNull();
       expect(second!.album.mbid).toBe(first!.album.mbid);
+    });
+
+    it("remembers the release group, so two release MBIDs for one album count as one", async () => {
+      mockLoadArtistWeights.mockResolvedValue(plexArtists);
+      mockGetArtistTopTags.mockResolvedValue(tags);
+      mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
+      mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
+      // Both chart entries are pressings of the same album, as Last.fm hands them back.
+      mockResolveReleaseGroupInfo.mockResolvedValue({
+        id: "rg-shared",
+        firstReleaseDate: "1997-06-16",
+        primaryType: "Album",
+        secondaryTypes: [],
+      });
+
+      const first = await getOne(userId);
+      const second = await getOne(userId, true);
+
+      expect(first!.album.mbid).toBe("rg-shared");
+      expect(second!.album.mbid).toBe("rg-shared");
+      expect(second!.trace.selectionReason).toBe(first!.trace.selectionReason);
+    });
+
+    it("skips release types that are not albums", async () => {
+      mockLoadArtistWeights.mockResolvedValue(plexArtists);
+      mockGetArtistTopTags.mockResolvedValue(tags);
+      mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
+      mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
+      mockResolveReleaseGroupInfo.mockImplementation((mbid: string) =>
+        Promise.resolve({
+          id: `rg-${mbid}`,
+          firstReleaseDate: "1997-06-16",
+          primaryType: "Album",
+          secondaryTypes: mbid === "alb-1" ? ["Compilation"] : [],
+        })
+      );
+
+      const results = await getPromotedAlbums(userId, false, 2);
+
+      expect(results.map((r) => r.album.mbid)).toEqual(["rg-alb-2"]);
+    });
+
+    it("returns nothing when every candidate is a live album or compilation", async () => {
+      mockLoadArtistWeights.mockResolvedValue(plexArtists);
+      mockGetArtistTopTags.mockResolvedValue(tags);
+      mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
+      mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
+      mockResolveReleaseGroupInfo.mockImplementation((mbid: string) =>
+        Promise.resolve({
+          id: `rg-${mbid}`,
+          firstReleaseDate: "1997-06-16",
+          primaryType: "Album",
+          secondaryTypes: ["Live"],
+        })
+      );
+
+      expect(await getOne(userId)).toBeNull();
     });
   });
 
@@ -866,7 +927,8 @@ describe("getPromotedAlbums", () => {
       expect(altTag).toBeDefined();
       expect(altTag!.fromArtists).toContain("Radiohead");
       expect(altTag!.fromArtists).toContain("Bjork");
-      expect(altTag!.weight).toBe(100 * 100 + 100 * 50);
+      const share = 100 / (100 + 80);
+      expect(altTag!.weight).toBeCloseTo(share * 100 + share * 50);
     });
 
     it("picked artists have tagContributions populated", async () => {
