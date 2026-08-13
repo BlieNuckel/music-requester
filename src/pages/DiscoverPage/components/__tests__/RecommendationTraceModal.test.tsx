@@ -240,4 +240,37 @@ describe("RecommendationTraceModal", () => {
       expect(screen.queryByTestId("artist-spread")).not.toBeInTheDocument();
     });
   });
+
+  describe("rating boost", () => {
+    it("shows the rating multiplier and the breadth that refuted the spread", () => {
+      renderModal({
+        plexArtists: [
+          {
+            name: "Deep Cut Fan",
+            viewCount: 50,
+            picked: true,
+            tagContributions: [],
+            distinctTracksPlayed: 2,
+            topTrackShare: 0.9,
+            distributionFactor: 1,
+            ratingBreadth: 1,
+            ratingMultiplier: 1.5,
+          },
+        ],
+      });
+
+      expect(screen.getByTestId("artist-rating")).toHaveTextContent(
+        "×1.50 rating"
+      );
+      expect(screen.getByTestId("artist-spread")).toHaveAttribute(
+        "title",
+        "2 track(s) played; top track is 90% of plays; 100% of rating evidence sits off that track"
+      );
+    });
+
+    it("omits the rating multiplier for artists with nothing rated", () => {
+      renderModal();
+      expect(screen.queryByTestId("artist-rating")).not.toBeInTheDocument();
+    });
+  });
 });

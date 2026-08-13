@@ -63,7 +63,9 @@ export type PlexRatedItemMetadata = {
   title: string;
   userRating?: number;
   parentTitle?: string;
+  parentRatingKey?: string;
   grandparentTitle?: string;
+  grandparentRatingKey?: string;
 };
 
 export type PlexRatedItemsResponse = {
@@ -78,6 +80,10 @@ export type PlexRatedItem = {
   kind: "album" | "track";
   title: string;
   artist: string;
+  /** The album a rated track belongs to; absent on album ratings, which are the album. */
+  albumKey?: string;
+  /** `grandparentRatingKey` for a track, `parentRatingKey` for an album. */
+  artistKey?: string;
   /** Plex scale 0–10 (half-star = 1 unit). */
   rating: number;
 };

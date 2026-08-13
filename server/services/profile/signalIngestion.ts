@@ -14,6 +14,13 @@ export type PlexRatingPayload = {
   kind: PlexRatedItem["kind"];
   title: string;
   artist: string;
+  /**
+   * Parent keys, so a rating joins onto the play series by key rather than by artist name.
+   * Absent on events written before the fields existed, and on album ratings for `albumKey`
+   * (the rating's own `ratingKey` is the album); those fall back to the name join.
+   */
+  albumKey?: string;
+  artistKey?: string;
   /** Plex scale 0–10; `0` is the sentinel for an un-rated (un-starred) item. */
   rating: number;
 };
@@ -55,6 +62,8 @@ export type ArtistPlayRollup = {
   playCount: number;
   distinctTracksPlayed: number;
   topTrackPlayCount: number;
+  /** `ratingKey` of the most-played track, so a rating can be tested against it. */
+  topTrackKey: string;
 };
 
 export type AlbumPlayRollup = {
@@ -145,11 +154,27 @@ export function latestRatings(
 }
 
 /**
+ * Whether a stored payload predates the parent-key fields while the live item carries
+ * them. The rating itself is unchanged, so nothing else would ever rewrite the event —
+ * and until one is written the rating can only join onto the plays series by name.
+ */
+function needsKeyBackfill(
+  prior: PlexRatingPayload,
+  item: PlexRatedItem
+): boolean {
+  return (
+    (item.artistKey !== undefined && prior.artistKey === undefined) ||
+    (item.albumKey !== undefined && prior.albumKey === undefined)
+  );
+}
+
+/**
  * Change events for the current rated set vs. the latest known ratings: a row for
- * each new or changed rating. Items dropping out of the rated set (un-ratings) are
- * handled separately by {@link detectUnratings} + {@link recordUnratings}, which
- * confirm each disappearance against live Plex before recording a clear — so a
- * transient empty/filtered response can't emit mass bogus clears.
+ * each new or changed rating, plus a one-time rewrite of events stored without the
+ * parent keys. Items dropping out of the rated set (un-ratings) are handled separately
+ * by {@link detectUnratings} + {@link recordUnratings}, which confirm each disappearance
+ * against live Plex before recording a clear — so a transient empty/filtered response
+ * can't emit mass bogus clears.
  */
 export function diffRatings(
   previous: Map<string, PlexRatingPayload>,
@@ -158,12 +183,18 @@ export function diffRatings(
   const changes: PlexRatingPayload[] = [];
   for (const item of current) {
     const prior = previous.get(item.ratingKey);
-    if (!prior || prior.rating !== item.rating) {
+    if (
+      !prior ||
+      prior.rating !== item.rating ||
+      needsKeyBackfill(prior, item)
+    ) {
       changes.push({
         ratingKey: item.ratingKey,
         kind: item.kind,
         title: item.title,
         artist: item.artist,
+        albumKey: item.albumKey,
+        artistKey: item.artistKey,
         rating: item.rating,
       });
     }
@@ -345,12 +376,16 @@ export function rollupToArtists(
         playCount: plays,
         distinctTracksPlayed: plays > 0 ? 1 : 0,
         topTrackPlayCount: plays,
+        topTrackKey: track.ratingKey,
       });
       continue;
     }
     existing.playCount += plays;
     if (plays > 0) existing.distinctTracksPlayed += 1;
-    if (plays > existing.topTrackPlayCount) existing.topTrackPlayCount = plays;
+    if (plays > existing.topTrackPlayCount) {
+      existing.topTrackPlayCount = plays;
+      existing.topTrackKey = track.ratingKey;
+    }
     if (!existing.name) existing.name = track.artistName;
   }
   return Array.from(byArtist.values());

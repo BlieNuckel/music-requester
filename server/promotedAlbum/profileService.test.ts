@@ -223,7 +223,7 @@ describe("regenerateProfile", () => {
     ]);
   });
 
-  it("persists the play-distribution stats carried by the weight set", async () => {
+  it("persists the play-distribution and rating stats carried by the weight set", async () => {
     mockLoadArtistWeights.mockResolvedValue([
       {
         name: "Radiohead",
@@ -231,6 +231,8 @@ describe("regenerateProfile", () => {
         distinctTracksPlayed: 4,
         topTrackShare: 0.4,
         distributionFactor: 0.8,
+        ratingBreadth: 0.6,
+        ratingMultiplier: 1.4,
       },
     ]);
     mockGetArtistTopTags.mockResolvedValue(tags);
@@ -242,12 +244,15 @@ describe("regenerateProfile", () => {
       distinctTracksPlayed: 4,
       topTrackShare: 0.4,
       distributionFactor: 0.8,
+      ratingBreadth: 0.6,
+      ratingMultiplier: 1.4,
     });
 
     const stored = parseDerivedProfile(
       (await getUserProfile(userId))!.profile_json
     );
     expect(stored.artistTags[0].distributionFactor).toBe(0.8);
+    expect(stored.artistTags[0].ratingMultiplier).toBe(1.4);
   });
 
   it("builds and persists the similar-artist graph from the top artists", async () => {
