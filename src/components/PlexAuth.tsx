@@ -156,6 +156,10 @@ export default function PlexAuth({
     return () => {
       cancelled = true;
     };
+    // fetchState.status is read as a run-once guard, not as an input. Listing it
+    // would re-run this effect the moment `load` sets "fetching", and the re-run's
+    // cleanup would cancel the very fetch that set it. fetchAccount is module-level
+    // and so already stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasPlexToken]);
 

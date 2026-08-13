@@ -14,9 +14,9 @@ export default function ImportReview({
   return (
     <div className="space-y-3">
       <div className="max-h-80 overflow-y-auto space-y-1">
-        {items.map((item: ManualImportItem, i: number) => (
+        {items.map((item: ManualImportItem) => (
           <div
-            key={i}
+            key={item.path}
             className="p-2 bg-amber-50 dark:bg-gray-700/50 rounded-lg text-sm border-2 border-black shadow-cartoon-sm"
           >
             <div className="flex items-center gap-2">
