@@ -693,4 +693,102 @@ describe("ingestion (with DB)", () => {
     expect(await getSignalEvents(1, "plex_rating")).toHaveLength(1);
     expect(mockGetItemRating).not.toHaveBeenCalled();
   });
+
+  it("writes a batch of rating changes in order, newest state last", async () => {
+    mockGetRatedItems.mockReset();
+    const items = Array.from({ length: 30 }, (_, i) => ({
+      ...ratedTrack,
+      ratingKey: String(i),
+      title: `t${i}`,
+      rating: 5,
+    }));
+    mockGetRatedItems.mockResolvedValueOnce(items);
+    expect(await ingestUserRatings(1, "tok")).toBe(30);
+
+    mockGetRatedItems.mockResolvedValueOnce(
+      items.map((item) => ({ ...item, rating: 8 }))
+    );
+    expect(await ingestUserRatings(1, "tok")).toBe(30);
+
+    const events = await getSignalEvents(1, "plex_rating");
+    expect(events).toHaveLength(60);
+
+    // The fold must land on the second batch, which shares a recorded_at with the first.
+    const folded = latestRatings(events);
+    expect(folded.size).toBe(30);
+    expect([...folded.values()].every((r) => r.rating === 8)).toBe(true);
+  });
+
+  it("records only the un-ratings Plex confirms when several are checked at once", async () => {
+    mockGetRatedItems.mockReset();
+    mockGetItemRating.mockReset();
+    const items = Array.from({ length: 12 }, (_, i) => ({
+      ...ratedTrack,
+      ratingKey: String(i),
+      title: `t${i}`,
+    }));
+    mockGetRatedItems.mockResolvedValueOnce(items);
+    await ingestUserRatings(1, "tok");
+
+    // Everything disappears; Plex confirms half of them as genuinely un-starred.
+    mockGetRatedItems.mockResolvedValueOnce([items[0]]);
+    mockGetItemRating.mockImplementation((_token: string, key: string) =>
+      Promise.resolve(Number(key) % 2 === 0 ? 0 : 7)
+    );
+
+    expect(await ingestUserRatings(1, "tok")).toBe(5);
+    expect(mockGetItemRating).toHaveBeenCalledTimes(11);
+
+    const cleared = [...latestRatings(await getSignalEvents(1, "plex_rating"))]
+      .filter(([, payload]) => payload.rating === 0)
+      .map(([key]) => key)
+      .sort((a, b) => Number(a) - Number(b));
+    expect(cleared).toEqual(["2", "4", "6", "8", "10"]);
+  });
+
+  it("skips a candidate whose confirmation read throws", async () => {
+    mockGetRatedItems.mockReset();
+    mockGetItemRating.mockReset();
+    const items = [
+      { ...ratedTrack, ratingKey: "1", title: "t1" },
+      { ...ratedTrack, ratingKey: "2", title: "t2" },
+      { ...ratedTrack, ratingKey: "3", title: "t3" },
+    ];
+    mockGetRatedItems.mockResolvedValueOnce(items);
+    await ingestUserRatings(1, "tok");
+
+    // "3" stays rated so the sweep isn't skipped as a transient-empty read.
+    mockGetRatedItems.mockResolvedValueOnce([items[2]]);
+    mockGetItemRating.mockImplementation((_token: string, key: string) =>
+      key === "1" ? Promise.reject(new Error("plex down")) : Promise.resolve(0)
+    );
+
+    expect(await ingestUserRatings(1, "tok")).toBe(1);
+    const folded = latestRatings(await getSignalEvents(1, "plex_rating"));
+    expect(folded.get("1")?.rating).toBe(10);
+    expect(folded.get("2")?.rating).toBe(0);
+  });
+});
+
+describe("fold parse failures", () => {
+  it("skips an unparsable payload mid-series and keeps folding the rest", () => {
+    const corrupt = {
+      ...ratingEvent(ratedTrack, "2026-01-02T00:00:00.000Z"),
+      payload: "{bad",
+    } as UserSignalEvent;
+
+    const folded = latestRatings([
+      ratingEvent(
+        { ...ratedTrack, ratingKey: "1" },
+        "2026-01-01T00:00:00.000Z"
+      ),
+      corrupt,
+      ratingEvent(
+        { ...ratedTrack, ratingKey: "3" },
+        "2026-01-03T00:00:00.000Z"
+      ),
+    ]);
+
+    expect([...folded.keys()].sort()).toEqual(["1", "3"]);
+  });
 });
