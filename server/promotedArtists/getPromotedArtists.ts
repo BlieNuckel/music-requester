@@ -5,6 +5,7 @@ import { lidarrGet } from "../api/lidarr/get";
 import type { LidarrArtist } from "../api/lidarr/types";
 import { getConfigValue } from "../config";
 import { weightedRandomPick, shuffle } from "../utils/random";
+import { createTtlMap } from "../utils/ttlMap";
 import { isPlaceholderArtist } from "../utils/artistFilter";
 import { findUserById } from "../auth/users";
 import {
@@ -23,14 +24,13 @@ type SimilarArtist = {
   imageUrl: string;
 };
 
-type CacheEntry = { result: PromotedArtistsResult; cachedAt: number };
-
 type LibraryLookup = (name: string, mbid: string) => boolean;
 
 const RESULT_COUNT = 6;
 const RECENT_SHOWN_LIMIT = 18;
 
-const resultCache = new Map<number, CacheEntry>();
+/** Short-lived per-user result cache; entries expire and are swept on write. */
+const resultCache = createTtlMap<number, PromotedArtistsResult>();
 
 export function clearPromotedArtistsCache() {
   resultCache.clear();
@@ -105,14 +105,8 @@ export async function getPromotedArtists(
   const config = getConfigValue("promotedAlbum");
   const cacheDurationMs = config.cacheDurationMinutes * 60 * 1000;
 
-  const cached = resultCache.get(userId);
-  if (
-    !forceRefresh &&
-    cached &&
-    Date.now() - cached.cachedAt < cacheDurationMs
-  ) {
-    return cached.result;
-  }
+  const cached = forceRefresh ? undefined : resultCache.get(userId);
+  if (cached) return cached;
 
   const user = await findUserById(userId);
   const plexToken = user?.plexToken;
@@ -172,7 +166,7 @@ export async function getPromotedArtists(
     recentArtists
   );
   await updateExplorationHistory(userId, { artists: nextArtists });
-  resultCache.set(userId, { result, cachedAt: Date.now() });
+  resultCache.set(userId, result, cacheDurationMs);
 
   return result;
 }

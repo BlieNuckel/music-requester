@@ -10,6 +10,7 @@ import {
 } from "../../shared/albumLibrary";
 import type { LibraryPreference, PromotedAlbumConfig } from "../config";
 import { weightedRandomPick, shuffle } from "../utils/random";
+import { createTtlMap } from "../utils/ttlMap";
 import { isPlaceholderArtist } from "../utils/artistFilter";
 import { findUserById } from "../auth/users";
 import { updateExplorationHistory } from "../db/userProfile";
@@ -32,8 +33,6 @@ export type { PromotedAlbumResult, PromotedAlbumEntry } from "./types";
 
 type WeightedTag = { name: string; weight: number };
 
-type CacheEntry = { results: PromotedAlbumEntry[]; cachedAt: number };
-
 type LibraryLookups = {
   artistInLibrary: (mbid: string) => boolean;
   albumLibrary: (mbid: string) => AlbumLibraryInfo | null;
@@ -48,7 +47,7 @@ const PICK_ATTEMPT_SLACK = 3;
 const RECENT_SHOWN_LIMIT = 25;
 
 /** Short-lived final-result cache (layer 2) — keeps album selection off MusicBrainz on every load. */
-const resultCache = new Map<number, CacheEntry>();
+const resultCache = createTtlMap<number, PromotedAlbumEntry[]>();
 
 export function clearPromotedAlbumCache() {
   resultCache.clear();
@@ -428,14 +427,9 @@ export async function getPromotedAlbums(
   const config = getConfigValue("promotedAlbum");
   const resultTtlMs = config.cacheDurationMinutes * 60 * 1000;
 
-  const cached = resultCache.get(userId);
-  if (
-    !forceRefresh &&
-    cached &&
-    cached.results.length >= count &&
-    Date.now() - cached.cachedAt < resultTtlMs
-  ) {
-    return cached.results.slice(0, count);
+  const cached = forceRefresh ? undefined : resultCache.get(userId);
+  if (cached && cached.length >= count) {
+    return cached.slice(0, count);
   }
 
   const user = await findUserById(userId);
@@ -465,7 +459,7 @@ export async function getPromotedAlbums(
   await updateExplorationHistory(userId, { albums: nextAlbums });
 
   const results = picks.map((p) => p.result);
-  resultCache.set(userId, { results, cachedAt: Date.now() });
+  resultCache.set(userId, results, resultTtlMs);
 
   return results;
 }
