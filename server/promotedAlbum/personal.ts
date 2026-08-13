@@ -9,8 +9,8 @@ import type {
 import { isAllowedReleaseType } from "../services/discover/typeFilter";
 import { isPlaceholderArtist } from "../utils/artistFilter";
 import { weightedRandomPick, shuffle, type Rng } from "../utils/random";
+import { normalizeAlbumKey } from "../utils/albumKey";
 import { jaccard } from "./explore";
-import { normalizeAlbumKey } from "./knownAlbums";
 import { preferenceRule } from "./preference";
 import type { PreferenceRule } from "./preference";
 import type {

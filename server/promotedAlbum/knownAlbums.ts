@@ -3,6 +3,7 @@ import {
   reconstructTrackPlayCounts,
   rollupToAlbums,
 } from "../services/profile/signalIngestion";
+import { normalizeAlbumKey } from "../utils/albumKey";
 
 /**
  * Plays an album needs before it counts as one the user already knows. A stray play or two
@@ -13,27 +14,6 @@ const KNOWN_ALBUM_MIN_PLAYS = 5;
 
 /** Cap on stored keys, so a huge library can't turn the profile document into a payload. */
 const KNOWN_ALBUM_LIMIT = 500;
-
-/**
- * Normalized `artist::album` key. The play series is keyed by Plex ids and the candidate
- * albums by MusicBrainz ids, so the only join between them is the text — lowercased, stripped
- * of diacritics and punctuation, whitespace collapsed. Deliberately conservative: an edition
- * suffix Plex has and MusicBrainz doesn't simply fails to match, and a missed match only
- * means one album isn't excluded, never that a wrong one is.
- */
-export function normalizeAlbumKey(artist: string, title: string): string {
-  return `${normalizeTitle(artist)}::${normalizeTitle(title)}`;
-}
-
-function normalizeTitle(value: string): string {
-  return value
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 /**
  * The albums this user has actually listened through, as normalized keys, most-played first.

@@ -5,6 +5,7 @@ import useReleaseGroupLabel from "@/hooks/useReleaseGroupLabel";
 import useArtistReleaseGroups from "@/hooks/useArtistReleaseGroups";
 import useLibraryAlbums from "@/hooks/useLibraryAlbums";
 import useWantedAlbums from "@/hooks/useWantedAlbums";
+import useSimilarAlbums from "@/hooks/useSimilarAlbums";
 import ReleaseSectionGrid from "@/pages/ArtistPage/components/ReleaseSectionGrid";
 import AlbumHeader from "./components/AlbumHeader";
 import AlbumTracklist from "./components/AlbumTracklist";
@@ -19,6 +20,8 @@ export default function AlbumPage() {
   );
   const { isAlbumInLibrary, getAlbumLibrary } = useLibraryAlbums();
   const { isAlbumWanted } = useWantedAlbums();
+  const { albums: similarAlbums, loading: similarLoading } =
+    useSimilarAlbums(mbid);
 
   const otherReleases = useMemo(
     () => releaseGroups.filter((rg) => rg.id !== album?.mbid),
@@ -57,6 +60,15 @@ export default function AlbumPage() {
           title="More from this artist"
           items={otherReleases}
           loading={moreLoading}
+          getAlbumLibrary={getAlbumLibrary}
+        />
+      )}
+
+      {(similarLoading || similarAlbums.length > 0) && (
+        <ReleaseSectionGrid
+          title="Similar albums"
+          items={similarAlbums}
+          loading={similarLoading}
           getAlbumLibrary={getAlbumLibrary}
         />
       )}

@@ -26,6 +26,7 @@ import purchasesRoutes from "./routes/purchases";
 import wantedRoutes from "./routes/wanted";
 import followedRoutes from "./routes/followed";
 import discoverRoutes from "./routes/discover";
+import similarAlbumsRoutes from "./routes/similarAlbums";
 import notificationsRoutes from "./routes/notifications";
 import { initializeNotifications } from "./services/notifications";
 import { startFollowedArtistPoller } from "./services/followed/poller";
@@ -73,6 +74,7 @@ app.use("/api/purchases", purchasesRoutes);
 app.use("/api/wanted", wantedRoutes);
 app.use("/api/followed", followedRoutes);
 app.use("/api/discover", requireAuth, discoverRoutes);
+app.use("/api/similar-albums", requireAuth, similarAlbumsRoutes);
 app.use("/api/notifications", notificationsRoutes);
 
 if (process.env.NODE_ENV === "production") {

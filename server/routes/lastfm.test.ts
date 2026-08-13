@@ -4,6 +4,7 @@ const mockGetSimilarArtists = vi.fn();
 const mockGetArtistTopTags = vi.fn();
 const mockGetTopArtistsByTag = vi.fn();
 const mockGetTopAlbumsByTag = vi.fn();
+const mockGetAlbumTopTags = vi.fn();
 const mockEnrichArtistsWithImages = vi.fn();
 const mockEnrichArtistSectionsWithImages = vi.fn();
 const mockEnrichAlbumsWithArtwork = vi.fn();
@@ -16,6 +17,7 @@ vi.mock("../api/lastfm/artists", () => ({
 
 vi.mock("../api/lastfm/albums", () => ({
   getTopAlbumsByTag: (...args: unknown[]) => mockGetTopAlbumsByTag(...args),
+  getAlbumTopTags: (...args: unknown[]) => mockGetAlbumTopTags(...args),
 }));
 
 vi.mock("../services/lastfm", () => ({
@@ -232,5 +234,28 @@ describe("GET /tag/albums", () => {
 
     await request(app).get("/tag/albums?tag=rock&page=5");
     expect(mockGetTopAlbumsByTag).toHaveBeenCalledWith("rock", "5");
+  });
+});
+
+describe("GET /album/tags", () => {
+  it("returns 400 when artist or album param is missing", async () => {
+    const missingBoth = await request(app).get("/album/tags");
+    expect(missingBoth.status).toBe(400);
+
+    const missingAlbum = await request(app).get("/album/tags?artist=Slowdive");
+    expect(missingAlbum.status).toBe(400);
+    expect(missingAlbum.body.error).toContain("album");
+  });
+
+  it("returns the album's top tags", async () => {
+    const tags = [{ name: "shoegaze", count: 100 }];
+    mockGetAlbumTopTags.mockResolvedValue(tags);
+
+    const res = await request(app).get(
+      "/album/tags?artist=Slowdive&album=Souvlaki"
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ tags });
+    expect(mockGetAlbumTopTags).toHaveBeenCalledWith("Slowdive", "Souvlaki");
   });
 });

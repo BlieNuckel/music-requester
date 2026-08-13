@@ -5,7 +5,7 @@ import {
   getArtistTopTags,
   getTopArtistsByTag,
 } from "../api/lastfm/artists";
-import { getTopAlbumsByTag } from "../api/lastfm/albums";
+import { getTopAlbumsByTag, getAlbumTopTags } from "../api/lastfm/albums";
 import {
   enrichArtistsWithImages,
   enrichArtistSectionsWithImages,
@@ -37,6 +37,18 @@ router.get("/artist/tags", async (req: Request, res: Response) => {
   }
 
   const tags = await getArtistTopTags(artist);
+  res.json({ tags });
+});
+
+router.get("/album/tags", async (req: Request, res: Response) => {
+  const { artist, album } = req.query;
+  if (typeof artist !== "string" || typeof album !== "string") {
+    return res
+      .status(400)
+      .json({ error: "artist and album query parameters are required" });
+  }
+
+  const tags = await getAlbumTopTags(artist, album);
   res.json({ tags });
 });
 

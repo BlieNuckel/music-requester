@@ -17,7 +17,14 @@ let mockReleaseGroupsState: {
   error: string | null;
 };
 
+let mockSimilarAlbumsState: {
+  albums: ReleaseGroup[];
+  loading: boolean;
+  error: string | null;
+};
+
 let receivedArtistMbid: string | null | undefined;
+let receivedSimilarMbid: string | null | undefined;
 
 vi.mock("@/hooks/useReleaseGroupDetails", () => ({
   default: () => mockState,
@@ -31,6 +38,13 @@ vi.mock("@/hooks/useArtistReleaseGroups", () => ({
   default: (artistMbid: string | null | undefined) => {
     receivedArtistMbid = artistMbid;
     return mockReleaseGroupsState;
+  },
+}));
+
+vi.mock("@/hooks/useSimilarAlbums", () => ({
+  default: (mbid: string | null | undefined) => {
+    receivedSimilarMbid = mbid;
+    return mockSimilarAlbumsState;
   },
 }));
 
@@ -92,7 +106,9 @@ vi.mock("@/pages/ArtistPage/components/ReleaseSectionGrid", () => ({
     loading?: boolean;
   }) => (
     <div
-      data-testid="more-from-artist"
+      data-testid={
+        title === "Similar albums" ? "similar-albums" : "more-from-artist"
+      }
       data-count={items.length}
       data-loading={loading}
     >
@@ -142,7 +158,9 @@ beforeEach(() => {
     loading: false,
     error: null,
   };
+  mockSimilarAlbumsState = { albums: [], loading: false, error: null };
   receivedArtistMbid = undefined;
+  receivedSimilarMbid = undefined;
 });
 
 describe("AlbumPage", () => {
@@ -236,5 +254,41 @@ describe("AlbumPage", () => {
     renderPage();
 
     expect(screen.queryByTestId("more-from-artist")).not.toBeInTheDocument();
+  });
+
+  it("looks up similar albums by the route MBID", () => {
+    mockState.album = makeAlbum();
+    renderPage();
+
+    expect(receivedSimilarMbid).toBe("rg-1");
+  });
+
+  it("renders similar albums", () => {
+    mockState.album = makeAlbum();
+    mockSimilarAlbumsState.albums = [makeRg("rg-9", "Loveless")];
+    renderPage();
+
+    const grid = screen.getByTestId("similar-albums");
+    expect(grid).toHaveAttribute("data-count", "1");
+    expect(screen.getByText("Loveless")).toBeInTheDocument();
+  });
+
+  it("shows the similar-albums section while it is still loading", () => {
+    mockState.album = makeAlbum();
+    mockSimilarAlbumsState.loading = true;
+    renderPage();
+
+    expect(screen.getByTestId("similar-albums")).toHaveAttribute(
+      "data-loading",
+      "true"
+    );
+  });
+
+  it("hides similar albums when the endpoint returns nothing", () => {
+    mockState.album = makeAlbum();
+    mockSimilarAlbumsState.albums = [];
+    renderPage();
+
+    expect(screen.queryByTestId("similar-albums")).not.toBeInTheDocument();
   });
 });
