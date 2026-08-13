@@ -58,3 +58,20 @@ export type LastfmAlbumTopTagsResponse = {
   message?: string;
   toptags?: { tag: LastfmTag[] };
 };
+
+export type LastfmArtistAlbum = {
+  name: string;
+  mbid: string;
+  playcount?: number;
+  artist?: { name: string; mbid: string };
+  image?: Array<{ "#text": string; size: string }>;
+};
+
+export type LastfmArtistTopAlbumsResponse = {
+  error?: number;
+  message?: string;
+  topalbums?: {
+    album: LastfmArtistAlbum[];
+    "@attr"?: { artist: string };
+  };
+};

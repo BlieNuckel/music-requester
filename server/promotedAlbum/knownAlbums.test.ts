@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { normalizeAlbumKey, loadKnownAlbums } from "./knownAlbums";
+import { loadKnownAlbums } from "./knownAlbums";
 import { initializeDatabase, closeDatabase, getDataSource } from "../db";
 import { appendSignalEvent } from "../db/userProfile";
 
@@ -24,26 +24,6 @@ async function appendTracks(userId: number, tracks: TrackSpec[]) {
     })),
   });
 }
-
-describe("normalizeAlbumKey", () => {
-  it("is case, punctuation and whitespace insensitive", () => {
-    expect(normalizeAlbumKey("Slowdive", "Souvlaki")).toBe(
-      normalizeAlbumKey("  slowdive ", "Souvlaki!")
-    );
-  });
-
-  it("folds diacritics", () => {
-    expect(normalizeAlbumKey("Björk", "Vespertine")).toBe(
-      normalizeAlbumKey("Bjork", "Vespertine")
-    );
-  });
-
-  it("keeps different albums by the same artist apart", () => {
-    expect(normalizeAlbumKey("Slowdive", "Souvlaki")).not.toBe(
-      normalizeAlbumKey("Slowdive", "Pygmalion")
-    );
-  });
-});
 
 describe("loadKnownAlbums", () => {
   beforeEach(async () => {

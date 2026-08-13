@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getTopAlbumsByTag } from "./albums";
+import {
+  getTopAlbumsByTag,
+  getAlbumTopTags,
+  getArtistTopAlbums,
+} from "./albums";
 
 vi.mock("./config", () => ({
   buildUrl: vi.fn(() => "https://lastfm.test/api"),
@@ -97,5 +101,117 @@ describe("getTopAlbumsByTag", () => {
       artistMbid: "",
       imageUrl: "",
     });
+  });
+
+  it("prefers the extralarge image", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({
+        albums: {
+          album: [
+            {
+              name: "Album",
+              mbid: "album-1",
+              artist: { name: "Artist", mbid: "artist-1" },
+              image: [
+                { "#text": "large.jpg", size: "large" },
+                { "#text": "xl.jpg", size: "extralarge" },
+              ],
+            },
+          ],
+        },
+      })
+    );
+
+    const result = await getTopAlbumsByTag("rock");
+    expect(result.albums[0].imageUrl).toBe("xl.jpg");
+  });
+});
+
+describe("getAlbumTopTags", () => {
+  it("maps tags with numeric counts", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({
+        toptags: {
+          tag: [
+            { name: "shoegaze", count: 100 },
+            { name: "dream pop", count: "42" },
+          ],
+        },
+      })
+    );
+
+    const result = await getAlbumTopTags("Slowdive", "Souvlaki");
+    expect(result).toEqual([
+      { name: "shoegaze", count: 100 },
+      { name: "dream pop", count: 42 },
+    ]);
+  });
+
+  it("returns empty array when the album has no tags", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ toptags: {} }));
+
+    expect(await getAlbumTopTags("Artist", "Album")).toEqual([]);
+  });
+
+  it("throws on API error response", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ error: 6, message: "Album not found" })
+    );
+
+    await expect(getAlbumTopTags("Nobody", "Nothing")).rejects.toThrow(
+      "Album not found"
+    );
+  });
+});
+
+describe("getArtistTopAlbums", () => {
+  it("maps albums and falls back to the requested artist name", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({
+        topalbums: {
+          album: [
+            {
+              name: "Loveless",
+              mbid: "album-1",
+              artist: { name: "My Bloody Valentine", mbid: "artist-1" },
+              image: [{ "#text": "xl.jpg", size: "extralarge" }],
+            },
+            { name: "Isn't Anything", mbid: "" },
+          ],
+        },
+      })
+    );
+
+    const result = await getArtistTopAlbums("My Bloody Valentine");
+    expect(result).toEqual([
+      {
+        name: "Loveless",
+        mbid: "album-1",
+        artistName: "My Bloody Valentine",
+        artistMbid: "artist-1",
+        imageUrl: "xl.jpg",
+      },
+      {
+        name: "Isn't Anything",
+        mbid: "",
+        artistName: "My Bloody Valentine",
+        artistMbid: "",
+        imageUrl: "",
+      },
+    ]);
+  });
+
+  it("returns empty array when the artist has no albums", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ topalbums: {} }));
+
+    expect(await getArtistTopAlbums("Obscure")).toEqual([]);
+  });
+
+  it("throws with default message when API error has no message", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ error: 6 }));
+
+    await expect(getArtistTopAlbums("bad")).rejects.toThrow(
+      "Last.fm API error"
+    );
   });
 });
