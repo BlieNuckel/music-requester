@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, act } from "@testing-library/react";
 import { SettingsContextProvider } from "../SettingsContext";
 import { useSettings } from "../useSettings";
 import {
@@ -47,7 +47,11 @@ function TestConsumer() {
     <div>
       <span data-testid="loading">{String(ctx.isLoading)}</span>
       <span data-testid="connected">{String(ctx.isConnected)}</span>
-      <span data-testid="url">{ctx.settings.lidarrUrl}</span>
+      <span data-testid="url">{ctx.settings.lidarrUrl || "none"}</span>
+      <span data-testid="quality">
+        {String(ctx.settings.lidarrQualityProfileId)}
+      </span>
+      <span data-testid="error">{ctx.loadError ?? "none"}</span>
     </div>
   );
 }
@@ -99,7 +103,10 @@ describe("SettingsContextProvider", () => {
     await waitFor(() => {
       expect(screen.getByTestId("loading")).toHaveTextContent("false");
     });
-    expect(fetch).toHaveBeenCalledWith("/api/settings/status");
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/settings/status",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
     expect(screen.getByTestId("url")).toHaveTextContent("configured");
   });
 
@@ -151,5 +158,104 @@ describe("SettingsContextProvider", () => {
       expect(screen.getByTestId("loading")).toHaveTextContent("false");
     });
     expect(screen.getByTestId("connected")).toHaveTextContent("false");
+  });
+
+  it("reports a network failure as a load error", async () => {
+    vi.mocked(fetch).mockRejectedValueOnce(new Error("Network error"));
+
+    renderWithAuth();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("error")).toHaveTextContent("Network error");
+    });
+  });
+
+  it("reports a non-ok response as a load error rather than an empty install", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response("nope", { status: 500 })
+    );
+
+    renderWithAuth();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("error")).toHaveTextContent(
+        "Failed to load settings (500)"
+      );
+    });
+    expect(screen.getByTestId("url")).toHaveTextContent("none");
+  });
+
+  it("keeps a saved profile id of 0 instead of substituting the default", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ lidarrQualityProfileId: 0 }), {
+        status: 200,
+      })
+    );
+
+    renderWithAuth();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("loading")).toHaveTextContent("false");
+    });
+    expect(screen.getByTestId("quality")).toHaveTextContent("0");
+  });
+
+  it("discards a superseded status load when the user resolves as admin", async () => {
+    let resolveStatus: (res: Response) => void = () => {};
+    vi.mocked(fetch)
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveStatus = resolve;
+          })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ lidarrUrl: "http://lidarr:8686" }), {
+          status: 200,
+        })
+      );
+
+    // Non-admin first, mirroring `user` landing after `status` on a real login.
+    const { rerender } = render(
+      <AuthContext.Provider
+        value={makeAuthValue({
+          user: {
+            id: 1,
+            username: "admin",
+            userType: "local",
+            permissions: 8,
+            theme: "system",
+            thumb: null,
+            hasPlexToken: false,
+          },
+        })}
+      >
+        <SettingsContextProvider>
+          <TestConsumer />
+        </SettingsContextProvider>
+      </AuthContext.Provider>
+    );
+
+    rerender(
+      <AuthContext.Provider value={makeAuthValue()}>
+        <SettingsContextProvider>
+          <TestConsumer />
+        </SettingsContextProvider>
+      </AuthContext.Provider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("url")).toHaveTextContent("http://lidarr:8686");
+    });
+
+    // The abandoned status load lands last; it must not clobber the real settings.
+    await act(async () => {
+      resolveStatus(
+        new Response(JSON.stringify({ configured: true }), { status: 200 })
+      );
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId("url")).toHaveTextContent("http://lidarr:8686");
   });
 });

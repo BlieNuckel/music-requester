@@ -56,6 +56,7 @@ function renderOnboarding(overrides: Partial<SettingsContextValue> = {}) {
     },
     isConnected: false,
     isLoading: false,
+    loadError: null,
     saveSettings: mockSaveSettings,
     savePartialSettings: vi.fn(),
     testConnection: mockTestConnection,

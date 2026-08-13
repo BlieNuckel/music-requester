@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import type { ReactNode } from "react";
 import {
   ThemeContext,
@@ -64,12 +64,15 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     [status, updatePreferences]
   );
 
-  const value: ThemeContextValue = {
-    theme,
-    actualTheme,
-    setTheme,
-    isLoading: false,
-  };
+  const value: ThemeContextValue = useMemo(
+    () => ({
+      theme,
+      actualTheme,
+      setTheme,
+      isLoading: false,
+    }),
+    [theme, actualTheme, setTheme]
+  );
 
   return (
     <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>

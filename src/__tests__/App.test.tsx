@@ -25,6 +25,7 @@ const connectedContext: SettingsContextValue = {
   },
   isConnected: true,
   isLoading: false,
+  loadError: null,
   saveSettings: vi.fn(),
   savePartialSettings: vi.fn(),
   testConnection: vi.fn(),

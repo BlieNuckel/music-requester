@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import type { ReactNode } from "react";
 import {
   AuthContext,
@@ -185,18 +185,32 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, []);
 
-  const value: AuthContextValue = {
-    status,
-    user,
-    login,
-    plexLogin,
-    linkPlex,
-    logout,
-    setup,
-    plexSetup,
-    updatePreferences,
-    refreshUser,
-  };
+  const value: AuthContextValue = useMemo(
+    () => ({
+      status,
+      user,
+      login,
+      plexLogin,
+      linkPlex,
+      logout,
+      setup,
+      plexSetup,
+      updatePreferences,
+      refreshUser,
+    }),
+    [
+      status,
+      user,
+      login,
+      plexLogin,
+      linkPlex,
+      logout,
+      setup,
+      plexSetup,
+      updatePreferences,
+      refreshUser,
+    ]
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

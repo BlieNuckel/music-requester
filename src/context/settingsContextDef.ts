@@ -67,6 +67,8 @@ export interface SettingsContextValue {
   settings: AppSettings;
   isConnected: boolean;
   isLoading: boolean;
+  /** Why the last settings load failed, or null. Distinguishes a failed load from an unconfigured install. */
+  loadError: string | null;
   saveSettings: (newSettings: AppSettings) => Promise<void>;
   savePartialSettings: (partial: Partial<AppSettings>) => Promise<void>;
   testConnection: (testSettings: AppSettings) => Promise<{
