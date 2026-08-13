@@ -48,6 +48,8 @@ export type DerivedProfile = {
     availableTracks?: number;
   }[];
   similarGraph: SimilarGraphSeed[];
+  /** Normalized `artist::album` keys the user already listens to — see `knownAlbums.ts`. */
+  knownAlbums: string[];
   explorationHistory: { albums: string[]; artists: string[] };
 };
 

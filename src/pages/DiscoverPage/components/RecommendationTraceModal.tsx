@@ -2,6 +2,7 @@ import type {
   RecommendationTrace,
   WithinTasteTrace,
   ExploreTrace,
+  PersonalTrace,
   TraceArtistEntry,
   TraceSelectionReason,
   TraceSimilarArtist,
@@ -273,13 +274,19 @@ function AlbumPoolStage({ pool }: { pool: WithinTasteTrace["albumPool"] }) {
   );
 }
 
-function SeedStage({ trace }: { trace: ExploreTrace }) {
+function SeedStage({
+  seedArtist,
+  seedGenres,
+}: {
+  seedArtist: string;
+  seedGenres: string[];
+}) {
   return (
     <StageCard title="Seed From Your Listening">
       <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-        {trace.seedArtist}
+        {seedArtist}
       </p>
-      <GenreChips genres={trace.seedGenres} />
+      <GenreChips genres={seedGenres} />
     </StageCard>
   );
 }
@@ -331,6 +338,23 @@ function GenreShiftStage({ trace }: { trace: ExploreTrace }) {
   return (
     <StageCard title={`Genre Shift → ${trace.chosenArtist}`}>
       <GenreChips genres={trace.chosenGenres} highlight={newGenres} />
+    </StageCard>
+  );
+}
+
+function SharedGenresStage({ trace }: { trace: PersonalTrace }) {
+  const shared = new Set(trace.sharedGenres);
+  return (
+    <StageCard title={`Shared Ground → ${trace.chosenArtist}`}>
+      <GenreChips genres={trace.chosenGenres} highlight={shared} />
+      {trace.widened && (
+        <p
+          data-testid="personal-widened"
+          className="mt-2 text-[11px] text-gray-500 dark:text-gray-400 italic"
+        >
+          No close-enough neighbour, so the whole graph was considered.
+        </p>
+      )}
     </StageCard>
   );
 }
@@ -416,7 +440,7 @@ function ExploreFlow({
 }) {
   return (
     <div className="flex flex-col">
-      <SeedStage trace={trace} />
+      <SeedStage seedArtist={trace.seedArtist} seedGenres={trace.seedGenres} />
       <FlowConnector />
       <SimilarArtistsStage candidates={trace.candidates} />
       <FlowConnector />
@@ -429,6 +453,69 @@ function ExploreFlow({
       />
     </div>
   );
+}
+
+function PersonalFlow({
+  trace,
+  albumName,
+  artistName,
+}: {
+  trace: PersonalTrace;
+  albumName: string;
+  artistName: string;
+}) {
+  return (
+    <div className="flex flex-col">
+      <SeedStage seedArtist={trace.seedArtist} seedGenres={trace.seedGenres} />
+      <FlowConnector />
+      <SimilarArtistsStage candidates={trace.candidates} />
+      <FlowConnector />
+      <SharedGenresStage trace={trace} />
+      <FlowConnector />
+      <ResultStage
+        albumName={albumName}
+        artistName={artistName}
+        selectionReason={trace.selectionReason}
+      />
+    </div>
+  );
+}
+
+function TraceFlow({
+  trace,
+  albumName,
+  artistName,
+}: {
+  trace: RecommendationTrace;
+  albumName: string;
+  artistName: string;
+}) {
+  switch (trace.kind) {
+    case "within_taste":
+      return (
+        <WithinTasteFlow
+          trace={trace}
+          albumName={albumName}
+          artistName={artistName}
+        />
+      );
+    case "personal":
+      return (
+        <PersonalFlow
+          trace={trace}
+          albumName={albumName}
+          artistName={artistName}
+        />
+      );
+    case "explore":
+      return (
+        <ExploreFlow
+          trace={trace}
+          albumName={albumName}
+          artistName={artistName}
+        />
+      );
+  }
 }
 
 export default function RecommendationTraceModal({
@@ -445,19 +532,11 @@ export default function RecommendationTraceModal({
           How this was recommended
         </h3>
 
-        {trace.kind === "within_taste" ? (
-          <WithinTasteFlow
-            trace={trace}
-            albumName={albumName}
-            artistName={artistName}
-          />
-        ) : (
-          <ExploreFlow
-            trace={trace}
-            albumName={albumName}
-            artistName={artistName}
-          />
-        )}
+        <TraceFlow
+          trace={trace}
+          albumName={albumName}
+          artistName={artistName}
+        />
 
         <button
           onClick={onClose}

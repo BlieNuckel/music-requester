@@ -22,6 +22,18 @@ interface PromotedAlbumCardProps {
   data: PromotedAlbumData;
 }
 
+/** The one-line "why you're seeing this", which differs per recommendation source. */
+function promotionReason(data: PromotedAlbumData): string {
+  switch (data.mode) {
+    case "within_taste":
+      return `Because you listen to ${data.tag}`;
+    case "personal":
+      return `Next to ${data.seedArtist} in your listening`;
+    case "explore":
+      return `Fans of ${data.seedArtist} also love this`;
+  }
+}
+
 export default function PromotedAlbumCard({ data }: PromotedAlbumCardProps) {
   const [coverError, setCoverError] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -121,9 +133,7 @@ export default function PromotedAlbumCard({ data }: PromotedAlbumCardProps) {
                 onClick={() => setIsTraceOpen(true)}
                 className="inline-block px-2 py-0.5 bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 text-xs font-medium rounded-full border border-violet-200 dark:border-violet-700 hover:bg-violet-200 dark:hover:bg-violet-900/50 transition-colors cursor-pointer"
               >
-                {data.mode === "within_taste"
-                  ? `Because you listen to ${data.tag}`
-                  : `Fans of ${data.seedArtist} also love this`}
+                {promotionReason(data)}
               </button>
               {data.mode === "explore" && data.newGenres.length > 0 && (
                 <span className="inline-block px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-xs font-medium rounded-full border border-emerald-200 dark:border-emerald-700">

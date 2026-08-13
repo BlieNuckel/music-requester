@@ -79,7 +79,26 @@ export type ExploreTrace = {
   selectionReason: TraceSelectionReason;
 };
 
-export type RecommendationTrace = WithinTasteTrace | ExploreTrace;
+/**
+ * How a recommendation drawn from the user's own similar-artist graph was reached: which of
+ * their artists seeded it, which neighbours that seed offered, and which one the album came
+ * from. Same stages as the explore trace, opposite side of the genre-overlap line.
+ */
+export type PersonalTrace = {
+  kind: "personal";
+  seedArtist: string;
+  seedGenres: string[];
+  candidates: TraceSimilarArtist[];
+  chosenArtist: string;
+  chosenGenres: string[];
+  sharedGenres: string[];
+  /** True when no neighbour was close enough and the pool fell back to the whole graph. */
+  widened: boolean;
+  selectionReason: TraceSelectionReason;
+};
+
+export type RecommendationTrace =
+  WithinTasteTrace | ExploreTrace | PersonalTrace;
 
 export type PromotedAlbumInfo = {
   name: string;
@@ -109,7 +128,23 @@ export type ExploreResult = {
   trace: ExploreTrace;
 };
 
-export type PromotedAlbumEntry = WithinTasteResult | ExploreResult;
+/**
+ * A within-taste recommendation sourced from the user's own listening graph rather than from
+ * a genre's global album chart. Carries the seeding artist instead of a tag, because that is
+ * what actually produced it.
+ */
+export type PersonalResult = {
+  mode: "personal";
+  album: PromotedAlbumInfo;
+  seedArtist: string;
+  sharedGenres: string[];
+  inLibrary: boolean;
+  library: AlbumLibraryInfo | null;
+  trace: PersonalTrace;
+};
+
+export type PromotedAlbumEntry =
+  WithinTasteResult | ExploreResult | PersonalResult;
 
 /** A built recommendation plus the key used for cross-shuffle anti-repeat. */
 export type BuiltAlbum = {

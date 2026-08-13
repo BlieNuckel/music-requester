@@ -172,6 +172,42 @@ const albumData: PromotedAlbumData = {
   },
 };
 
+const personalData: PromotedAlbumData = {
+  mode: "personal",
+  library: null,
+  album: {
+    name: "Nowhere",
+    mbid: "rg-near-1",
+    artistName: "Near Band",
+    artistMbid: "mbid-near",
+    coverUrl: "https://coverartarchive.org/release-group/rg-near-1/front-500",
+    year: "1990",
+  },
+  seedArtist: "Slowdive",
+  sharedGenres: ["shoegaze"],
+  inLibrary: false,
+  trace: {
+    kind: "personal",
+    seedArtist: "Slowdive",
+    seedGenres: ["shoegaze", "dream pop"],
+    candidates: [
+      {
+        name: "Near Band",
+        score: 0.9,
+        genres: ["shoegaze", "noise pop"],
+        genreOverlap: 0.5,
+        isDifferentGenre: false,
+        chosen: true,
+      },
+    ],
+    chosenArtist: "Near Band",
+    chosenGenres: ["shoegaze", "noise pop"],
+    sharedGenres: ["shoegaze"],
+    widened: false,
+    selectionReason: "preferred_non_library",
+  },
+};
+
 const exploreData: PromotedAlbumData = {
   mode: "explore",
   library: null,
@@ -340,6 +376,24 @@ describe("PromotedAlbumCard", () => {
     it("clicking the explore chip opens the trace modal", () => {
       renderCard(exploreData);
       fireEvent.click(screen.getByText("Fans of Radiohead also love this"));
+      expect(screen.getByTestId("trace-modal")).toBeInTheDocument();
+    });
+  });
+
+  describe("personal mode", () => {
+    it("names the artist it sits next to instead of a tag", () => {
+      renderCard(personalData);
+      expect(
+        screen.getByText("Next to Slowdive in your listening")
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/Because you listen to/)
+      ).not.toBeInTheDocument();
+    });
+
+    it("clicking the chip opens the trace modal", () => {
+      renderCard(personalData);
+      fireEvent.click(screen.getByText("Next to Slowdive in your listening"));
       expect(screen.getByTestId("trace-modal")).toBeInTheDocument();
     });
   });

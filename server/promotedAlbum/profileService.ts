@@ -1,5 +1,6 @@
 import { loadArtistWeights, type ArtistWeight } from "./artistWeights";
 import { buildSimilarGraph } from "./explore";
+import { loadKnownAlbums } from "./knownAlbums";
 import { getArtistTopTags } from "../api/lastfm/artists";
 import { getConfigValue } from "../config";
 import type { PromotedAlbumConfig } from "../config";
@@ -188,6 +189,7 @@ export async function regenerateProfile(
     genreVector,
     artistTags,
     similarGraph,
+    knownAlbums: await loadKnownAlbums(userId),
     explorationHistory,
   };
 

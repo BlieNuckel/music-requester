@@ -19,6 +19,9 @@ import { getMonitoredAlbums } from "../services/lidarr/albums";
 import { isAllowedReleaseType } from "../services/discover/typeFilter";
 import { createLogger } from "../logger";
 import { buildExploreResult } from "./explore";
+import { buildPersonalResult } from "./personal";
+import { preferenceRule, orderByPreference } from "./preference";
+import type { PreferenceRule } from "./preference";
 import {
   loadProfileForRequest,
   normalizedTagWeights,
@@ -86,13 +89,6 @@ type AlbumSelection = {
 };
 
 type GetRgInfo = (mbid: string) => Promise<ReleaseGroupInfo | null>;
-
-/** Which candidates a `libraryPreference` favours, and how each outcome is traced. */
-type PreferenceRule = {
-  isPreferred: (album: CandidateAlbum) => boolean;
-  preferredReason: TraceSelectionReason;
-  fallbackReason: TraceSelectionReason;
-};
 
 type SelectionWalk = PreferenceRule & {
   candidates: CandidateAlbum[];
@@ -191,11 +187,8 @@ function sampleArtists(
  * *after* resolving each candidate is what used to walk a whole 100-album pool through
  * paced MusicBrainz lookups whenever the pool was mostly library artists.
  */
-function orderByPreference(walk: SelectionWalk): CandidateAlbum[] {
-  return [
-    ...walk.candidates.filter((a) => walk.isPreferred(a)),
-    ...walk.candidates.filter((a) => !walk.isPreferred(a)),
-  ];
+function orderCandidates(walk: SelectionWalk): CandidateAlbum[] {
+  return orderByPreference(walk.candidates, (a) => a.artistMbid, walk);
 }
 
 /**
@@ -212,7 +205,7 @@ function orderByPreference(walk: SelectionWalk): CandidateAlbum[] {
 async function walkCandidates(
   walk: SelectionWalk
 ): Promise<AlbumSelection | null> {
-  for (const album of orderByPreference(walk)) {
+  for (const album of orderCandidates(walk)) {
     if (walk.budget.remaining <= 0) {
       log.debug("Resolution budget spent; giving up on this pick");
       return null;
@@ -230,39 +223,13 @@ async function walkCandidates(
       album,
       rgMbid: rgInfo.id,
       year: rgInfo.firstReleaseDate.slice(0, 4),
-      reason: walk.isPreferred(album)
+      reason: walk.isPreferred(album.artistMbid)
         ? walk.preferredReason
         : walk.fallbackReason,
     };
   }
 
   return null;
-}
-
-function preferenceRule(
-  libraryPreference: LibraryPreference,
-  artistInLibrary: (mbid: string) => boolean
-): PreferenceRule {
-  switch (libraryPreference) {
-    case "prefer_new":
-      return {
-        isPreferred: (a) => !artistInLibrary(a.artistMbid),
-        preferredReason: "preferred_non_library",
-        fallbackReason: "fallback_in_library",
-      };
-    case "prefer_library":
-      return {
-        isPreferred: (a) => artistInLibrary(a.artistMbid),
-        preferredReason: "preferred_library",
-        fallbackReason: "fallback_non_library",
-      };
-    case "no_preference":
-      return {
-        isPreferred: () => true,
-        preferredReason: "no_preference",
-        fallbackReason: "no_preference",
-      };
-  }
 }
 
 /**
@@ -438,7 +405,28 @@ function buildExplore(
   });
 }
 
-/** One recommendation: explore first when the coin says so, within-taste otherwise. */
+function buildPersonal(
+  ctx: PickContext,
+  recentlyShown: Set<string>
+): Promise<BuiltAlbum | null> {
+  return buildPersonalResult({
+    similarGraph: ctx.profile.similarGraph,
+    knownAlbums: new Set(ctx.profile.knownAlbums),
+    config: ctx.config,
+    recentlyShown,
+    artistInLibrary: ctx.library.artistInLibrary,
+    albumLibrary: ctx.library.albumLibrary,
+    budget: ctx.budget,
+    rng: ctx.rng,
+  });
+}
+
+/**
+ * One recommendation: explore first when the coin says so, then the user's own graph, and
+ * the genre's global album chart only when neither produced anything. The tag path is the
+ * fallback rather than the default because it knows nothing about this user past one tag
+ * string — but it is also the only source that works before a graph exists, so it stays.
+ */
 async function buildOnePick(
   ctx: PickContext,
   excluded: Set<string>
@@ -447,6 +435,10 @@ async function buildOnePick(
     const explored = await buildExplore(ctx, excluded);
     if (explored) return explored;
   }
+
+  const personal = await buildPersonal(ctx, excluded);
+  if (personal) return personal;
+
   return buildWithinTasteFromProfile(ctx, excluded);
 }
 

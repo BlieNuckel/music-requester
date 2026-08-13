@@ -67,8 +67,12 @@ function buildGenreSet(
   return set;
 }
 
-/** Jaccard similarity of two genre sets (0 = disjoint, 1 = identical). */
-function jaccard(a: Set<string>, b: Set<string>): number {
+/**
+ * Jaccard similarity of two genre sets (0 = disjoint, 1 = identical). Exported because the
+ * personal source reads the same measure from the other side of the threshold — one
+ * definition is what makes the two modes partition the graph instead of overlapping.
+ */
+export function jaccard(a: Set<string>, b: Set<string>): number {
   if (a.size === 0 || b.size === 0) return 0;
   let intersection = 0;
   for (const x of a) if (b.has(x)) intersection += 1;

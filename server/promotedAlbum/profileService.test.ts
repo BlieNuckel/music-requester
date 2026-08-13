@@ -28,6 +28,7 @@ import {
   loadProfileForRequest,
 } from "./profileService";
 import { initializeDatabase, closeDatabase, getDataSource } from "../db";
+import { appendSignalEvent } from "../db/userProfile";
 import { getUserProfile, updateExplorationHistory } from "../db/userProfile";
 import { parseDerivedProfile } from "../db/userProfile";
 
@@ -254,6 +255,30 @@ describe("regenerateProfile", () => {
     );
     expect(stored.artistTags[0].distributionFactor).toBe(0.8);
     expect(stored.artistTags[0].ratingMultiplier).toBe(1.4);
+  });
+
+  it("persists the albums the user already listens to", async () => {
+    await appendSignalEvent(userId, "plex_track_plays", {
+      tracks: [
+        {
+          ratingKey: "1",
+          title: "Alison",
+          artistKey: "ak",
+          artistName: "Slowdive",
+          albumKey: "alb-1",
+          albumTitle: "Souvlaki",
+          playCount: 12,
+        },
+      ],
+    });
+
+    const profile = await regenerateProfile(userId, "token");
+
+    expect(profile!.knownAlbums).toEqual(["slowdive::souvlaki"]);
+    const stored = parseDerivedProfile(
+      (await getUserProfile(userId))!.profile_json
+    );
+    expect(stored.knownAlbums).toEqual(["slowdive::souvlaki"]);
   });
 
   it("builds and persists the similar-artist graph from the top artists", async () => {
