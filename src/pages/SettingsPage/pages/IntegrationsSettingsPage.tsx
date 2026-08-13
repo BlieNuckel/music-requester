@@ -68,6 +68,9 @@ export default function IntegrationsSettingsPage() {
     useState<SlskdTestResult | null>(null);
   const [autoSetupModalOpen, setAutoSetupModalOpen] = useState(false);
 
+  // Mount-only: the Lidarr option lists are refreshed explicitly after a successful
+  // connection test. loadLidarrOptionValues comes from context and is rebuilt on every
+  // provider render, so listing it here would refetch in a loop.
   useEffect(() => {
     loadLidarrOptionValues();
     // eslint-disable-next-line react-hooks/exhaustive-deps
