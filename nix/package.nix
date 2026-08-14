@@ -1,7 +1,7 @@
 {
   lib,
   stdenv,
-  nodejs,
+  nodejs_22,
   pnpm,
   fetchPnpmDeps,
   pnpmConfigHook,
@@ -10,6 +10,15 @@
   makeWrapper,
 }:
 
+let
+  # Pinned to 22, not pkgs.nodejs: on Node 23+ node::ObjectWrap's destructor
+  # calls RemoveEnvironmentCleanupHook, which aborts the process when it runs
+  # without an entered v8 context. better-sqlite3's Statement is an ObjectWrap
+  # and TypeORM prepares one per query, so a GC of those statements outside JS
+  # execution kills the server (SIGABRT, no JS error). Node 22's ObjectWrap
+  # destructor touches no cleanup hooks. Matches the Dockerfile's node:22.
+  nodejs = nodejs_22;
+in
 stdenv.mkDerivation (finalAttrs: {
   pname = "tunearr";
   version = "0.1.0";
