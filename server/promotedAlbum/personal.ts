@@ -1,4 +1,5 @@
 import { fetchReleaseGroupsForArtist } from "../api/musicbrainz/releaseGroups";
+import type { MbPriority } from "../api/musicbrainz/queue";
 import type { MusicBrainzReleaseGroup } from "../api/musicbrainz/types";
 import type { PromotedAlbumConfig } from "../config";
 import type { AlbumLibraryInfo } from "../../shared/albumLibrary";
@@ -32,6 +33,8 @@ export type PersonalContext = {
   /** Shared with the other sources, so one carousel build has a single MusicBrainz allowance. */
   budget?: ResolutionBudget;
   rng?: Rng;
+  /** Warmer builds take the background lane so nobody's page load queues behind them. */
+  priority?: MbPriority;
 };
 
 /** One neighbour of the user's listening, with what the walk and the trace both need. */
@@ -174,7 +177,8 @@ async function pickAlbumFor(
   rng: Rng
 ): Promise<MusicBrainzReleaseGroup | null> {
   const releaseGroups = await fetchReleaseGroupsForArtist(
-    chosen.candidate.artistMbid
+    chosen.candidate.artistMbid,
+    ctx.priority ?? "interactive"
   );
   const eligible = eligibleAlbums(
     releaseGroups,

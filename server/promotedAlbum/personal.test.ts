@@ -263,7 +263,10 @@ describe("buildPersonalResult", () => {
       year: "2001",
     });
     expect(result.sharedGenres).toEqual(["shoegaze", "dream pop"]);
-    expect(mockFetchReleaseGroupsForArtist).toHaveBeenCalledWith("mbid-near");
+    expect(mockFetchReleaseGroupsForArtist).toHaveBeenCalledWith(
+      "mbid-near",
+      "interactive"
+    );
   });
 
   it("never consults the global tag charts", async () => {

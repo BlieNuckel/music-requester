@@ -1,6 +1,7 @@
 import { getSimilarArtists } from "../api/listenbrainz/similarArtists";
 import { getArtistMbidByName } from "../api/musicbrainz/artists";
 import { fetchReleaseGroupsForArtist } from "../api/musicbrainz/releaseGroups";
+import type { MbPriority } from "../api/musicbrainz/queue";
 import { getArtistTopTags } from "../api/lastfm/artists";
 import type { MusicBrainzReleaseGroup } from "../api/musicbrainz/types";
 import type { PromotedAlbumConfig } from "../config";
@@ -31,6 +32,8 @@ type ExploreContext = {
   /** Shared with within-taste, so one carousel build has a single MusicBrainz allowance. */
   budget?: ResolutionBudget;
   rng?: Rng;
+  /** Warmer builds take the background lane so nobody's page load queues behind them. */
+  priority?: MbPriority;
 };
 
 type EvaluatedCandidate = {
@@ -165,9 +168,10 @@ function evaluateSeed(
 async function pickAlbumFromArtist(
   artistMbid: string,
   recentlyShown: Set<string>,
-  rng: Rng
+  rng: Rng,
+  priority: MbPriority
 ): Promise<MusicBrainzReleaseGroup | null> {
-  const releaseGroups = await fetchReleaseGroupsForArtist(artistMbid);
+  const releaseGroups = await fetchReleaseGroupsForArtist(artistMbid, priority);
   const albums = releaseGroups.filter(
     (rg) => rg["primary-type"] === "Album" && rg["first-release-date"] && rg.id
   );
@@ -293,7 +297,8 @@ export async function buildExploreResult(
     const album = await pickAlbumFromArtist(
       chosen.candidate.artistMbid,
       recentlyShown,
-      rng
+      rng,
+      ctx.priority ?? "interactive"
     );
     if (album) {
       return assembleResult(

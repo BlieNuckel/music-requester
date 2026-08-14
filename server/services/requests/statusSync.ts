@@ -1,7 +1,7 @@
 import type { Request } from "../../db/index";
 import type { LidarrLifecycleStatus } from "../../db/index";
 import { findRequestsAwaitingStatus, saveRequests } from "../../db/requests";
-import { fetchLidarrData, classifyRequest } from "./lidarrEnrichment";
+import { refreshLidarrData, classifyRequest } from "./lidarrEnrichment";
 import { mockEnrichRequestsWithLidarr } from "../../dev/mockLidarrEnrichment";
 import { createLogger } from "../../logger";
 import { notifyRequestStatus } from "../notifications";
@@ -18,7 +18,7 @@ async function resolveStatuses(
     return mocks.map((m) => m?.status ?? null);
   }
 
-  const { queueMap, importedMap, wantedMap } = await fetchLidarrData();
+  const { queueMap, importedMap, wantedMap } = await refreshLidarrData();
   return albumMbids.map(
     (mbid) => classifyRequest(mbid, queueMap, importedMap, wantedMap).status
   );

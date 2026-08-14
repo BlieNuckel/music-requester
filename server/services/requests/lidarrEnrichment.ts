@@ -8,6 +8,8 @@ import type {
 } from "../../api/lidarr/types";
 import { buildIndexerMap } from "../lidarr/history";
 import { buildLastEventMap } from "../lidarr/wanted";
+import { LIDARR_STATUS_TTL_MS } from "../lidarr/cacheTtl";
+import { createSnapshotCache } from "../../utils/snapshotCache";
 import { createLogger } from "../../logger";
 
 type LidarrLifecycleStatus = "downloading" | "wanted" | "imported";
@@ -33,6 +35,12 @@ type ImportedEntry = {
 type WantedEntry = {
   lastEvent: { eventType: number; date: string } | null;
   lidarrAlbumId: number;
+};
+
+type LidarrDataSnapshot = {
+  queueMap: Map<string, QueueEntry>;
+  importedMap: Map<string, ImportedEntry>;
+  wantedMap: Map<string, WantedEntry>;
 };
 
 const log = createLogger("lidarr-enrichment");
@@ -139,7 +147,7 @@ export function classifyRequest(
   };
 }
 
-export async function fetchLidarrData() {
+async function loadLidarrData(): Promise<LidarrDataSnapshot> {
   const historyBaseQuery = {
     pageSize: 200,
     sortKey: "date",
@@ -195,6 +203,30 @@ export async function fetchLidarrData() {
   const wantedMap = buildWantedMap(wantedResult.data.records, lastEventMap);
 
   return { queueMap, importedMap, wantedMap };
+}
+
+const snapshot = createSnapshotCache({
+  load: loadLidarrData,
+  ttlMs: LIDARR_STATUS_TTL_MS,
+});
+
+/**
+ * The queue/wanted/history snapshot behind every lifecycle status. Five
+ * paginated Lidarr calls, so it is shared across the requests list, the
+ * Discover shelf and the status poller rather than refetched per caller.
+ * Callers must treat the returned maps as read-only — they are shared.
+ */
+export function fetchLidarrData(): Promise<LidarrDataSnapshot> {
+  return snapshot.get();
+}
+
+/** Reload the snapshot regardless of age, leaving it warm for interactive reads. */
+export function refreshLidarrData(): Promise<LidarrDataSnapshot> {
+  return snapshot.refresh();
+}
+
+export function invalidateLidarrData(): void {
+  snapshot.invalidate();
 }
 
 export async function enrichRequestsWithLidarr(

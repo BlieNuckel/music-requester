@@ -65,4 +65,27 @@ describe("createTtlMap", () => {
 
     expect(map.size()).toBe(0);
   });
+
+  it("reports when a live entry expires", () => {
+    const map = createTtlMap<string, number>();
+    map.set("a", 1, 1000, 0);
+
+    expect(map.expiresAt("a", 500)).toBe(1000);
+  });
+
+  it("reports no expiry for an absent or expired key", () => {
+    const map = createTtlMap<string, number>();
+    map.set("a", 1, 1000, 0);
+
+    expect(map.expiresAt("a", 1000)).toBeUndefined();
+    expect(map.expiresAt("missing", 0)).toBeUndefined();
+  });
+
+  it("lists only the keys still live", () => {
+    const map = createTtlMap<string, number>();
+    map.set("short", 1, 1000, 0);
+    map.set("long", 2, 5000, 0);
+
+    expect(map.keys(2000)).toEqual(["long"]);
+  });
 });

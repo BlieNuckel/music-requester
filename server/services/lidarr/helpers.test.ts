@@ -6,6 +6,7 @@ import {
   removeAlbum,
   waitForArtistRefresh,
 } from "./helpers";
+import { getArtistList, invalidateArtistList } from "./artists";
 import type { LidarrArtist, LidarrAlbum } from "../../api/lidarr/types";
 
 vi.mock("../../config", () => ({
@@ -41,6 +42,7 @@ const mockLidarrPut = vi.mocked(lidarrPut);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  invalidateArtistList();
 });
 
 const mockArtist: LidarrArtist = {
@@ -331,6 +333,55 @@ describe("removeAlbum", () => {
     await expect(removeAlbum("album-mbid-1", "artist-mbid-1")).rejects.toThrow(
       "Failed to unmonitor album"
     );
+  });
+});
+
+describe("library cache invalidation", () => {
+  function countArtistFetches(): number {
+    return mockLidarrGet.mock.calls.filter(([path]) => path === "/artist")
+      .length;
+  }
+
+  it("drops the cached artist list once an album is unmonitored", async () => {
+    mockLidarrGet.mockImplementation((path: string) =>
+      Promise.resolve({
+        status: 200,
+        ok: true,
+        data: path === "/album" ? [mockAlbum] : [mockArtist],
+      })
+    );
+    mockLidarrPut.mockResolvedValue({ ok: true, status: 200, data: null });
+
+    await getArtistList();
+    await getArtistList();
+    expect(countArtistFetches()).toBe(1);
+
+    await removeAlbum("album-mbid-1", "artist-mbid-1");
+    await getArtistList();
+
+    expect(countArtistFetches()).toBe(3);
+  });
+
+  it("drops the cached artist list once an artist is added", async () => {
+    mockLidarrGet.mockImplementation((path: string) =>
+      Promise.resolve({
+        status: 200,
+        ok: true,
+        data: path === "/artist" ? [] : [mockArtist],
+      })
+    );
+    mockLidarrPost.mockResolvedValue({
+      status: 201,
+      data: mockArtist,
+      ok: true,
+    });
+
+    await getArtistList();
+    await getOrAddArtist("artist-mbid-1");
+    const beforeReload = countArtistFetches();
+    await getArtistList();
+
+    expect(countArtistFetches()).toBe(beforeReload + 1);
   });
 });
 
