@@ -18,6 +18,13 @@ let
   # execution kills the server (SIGABRT, no JS error). Node 22's ObjectWrap
   # destructor touches no cleanup hooks. Matches the Dockerfile's node:22.
   nodejs = nodejs_22;
+
+  # nixpkgs wraps node-gyp with `--set npm_config_nodedir ${pkgs.nodejs}`, and
+  # node-gyp applies npm_config_* env vars *after* argv, so that wrapper beats
+  # any --nodedir we pass. Left as-is it compiles better-sqlite3 against Node
+  # 24 headers, and the addon then fails to dlopen under our Node 22 runtime
+  # (undefined v8 symbol). Override the header source at its actual origin.
+  nodeGyp = node-gyp.override { inherit nodejs; };
 in
 stdenv.mkDerivation (finalAttrs: {
   pname = "tunearr";
@@ -44,7 +51,7 @@ stdenv.mkDerivation (finalAttrs: {
     nodejs
     pnpm
     pnpmConfigHook
-    node-gyp # not on PATH under pnpm (unlike npm); needed to compile better-sqlite3
+    nodeGyp # not on PATH under pnpm (unlike npm); needed to compile better-sqlite3
     python3 # node-gyp toolchain
     makeWrapper
   ];
@@ -75,6 +82,15 @@ stdenv.mkDerivation (finalAttrs: {
     runHook preBuild
     pnpm run build
     runHook postBuild
+  '';
+
+  # A native addon built against the wrong node headers only fails at dlopen,
+  # i.e. on the deployed service. Load it here so the build fails instead.
+  doCheck = true;
+  checkPhase = ''
+    runHook preCheck
+    ${nodejs}/bin/node -e 'new (require("better-sqlite3"))(":memory:").close()'
+    runHook postCheck
   '';
 
   # The server runs the TypeScript sources directly via tsx (matching the
