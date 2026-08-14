@@ -33,6 +33,7 @@ import { startFollowedArtistPoller } from "./services/followed/poller";
 import { startRequestStatusPoller } from "./services/requests/statusPoller";
 import { startProfileRegenPoller } from "./services/profile/regenPoller";
 import { startSignalIngestionPoller } from "./services/profile/signalPoller";
+import { startSpotlightWarmer } from "./promotedAlbum/warmer";
 import { getConfig } from "./config";
 
 const log = createLogger("Server");
@@ -113,6 +114,10 @@ const profileRegenIntervalMs =
 startProfileRegenPoller(profileRegenIntervalMs);
 
 startSignalIngestionPoller();
+
+const spotlightWarmIntervalMs =
+  getConfig().promotedAlbum.cacheDurationMinutes * 60 * 1000;
+startSpotlightWarmer(spotlightWarmIntervalMs);
 
 app.listen(PORT, () => {
   log.info(`Listening on port ${PORT}`);

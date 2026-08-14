@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockFind = vi.fn();
 const mockSave = vi.fn();
-const mockFetchLidarrData = vi.fn();
+const mockRefreshLidarrData = vi.fn();
 const mockMockEnrich = vi.fn();
 const mockNotifyStatus = vi.fn();
 
@@ -23,7 +23,7 @@ vi.mock("./lidarrEnrichment", async () => {
     );
   return {
     ...actual,
-    fetchLidarrData: (...args: unknown[]) => mockFetchLidarrData(...args),
+    refreshLidarrData: (...args: unknown[]) => mockRefreshLidarrData(...args),
   };
 });
 
@@ -56,7 +56,7 @@ describe("syncRequestStatuses", () => {
       { id: 1, album_mbid: "mbid-down", lidarr_status: null },
       { id: 2, album_mbid: "mbid-wanted", lidarr_status: null },
     ]);
-    mockFetchLidarrData.mockResolvedValue({
+    mockRefreshLidarrData.mockResolvedValue({
       queueMap: new Map([
         ["mbid-down", { downloadProgress: 40, quality: "FLAC" }],
       ]),
@@ -83,7 +83,7 @@ describe("syncRequestStatuses", () => {
     mockFind.mockResolvedValue([
       { id: 1, album_mbid: "mbid-down", lidarr_status: "downloading" },
     ]);
-    mockFetchLidarrData.mockResolvedValue({
+    mockRefreshLidarrData.mockResolvedValue({
       queueMap: new Map([
         ["mbid-down", { downloadProgress: 40, quality: "FLAC" }],
       ]),
@@ -100,7 +100,7 @@ describe("syncRequestStatuses", () => {
     mockFind.mockResolvedValue([
       { id: 1, album_mbid: "mbid-1", lidarr_status: "downloading" },
     ]);
-    mockFetchLidarrData.mockRejectedValue(new Error("lidarr down"));
+    mockRefreshLidarrData.mockRejectedValue(new Error("lidarr down"));
 
     await syncRequestStatuses();
 
@@ -111,7 +111,7 @@ describe("syncRequestStatuses", () => {
     mockFind.mockResolvedValue([
       { id: 1, album_mbid: "mbid-gone", lidarr_status: "downloading" },
     ]);
-    mockFetchLidarrData.mockResolvedValue(emptyMaps());
+    mockRefreshLidarrData.mockResolvedValue(emptyMaps());
 
     await syncRequestStatuses();
 
@@ -127,7 +127,7 @@ describe("syncRequestStatuses", () => {
 
     const whereArg = mockFind.mock.calls[0][0] as { where: unknown };
     expect(whereArg.where).toBeDefined();
-    expect(mockFetchLidarrData).not.toHaveBeenCalled();
+    expect(mockRefreshLidarrData).not.toHaveBeenCalled();
     expect(mockSave).not.toHaveBeenCalled();
   });
 
@@ -140,7 +140,7 @@ describe("syncRequestStatuses", () => {
 
     await syncRequestStatuses();
 
-    expect(mockFetchLidarrData).not.toHaveBeenCalled();
+    expect(mockRefreshLidarrData).not.toHaveBeenCalled();
     const saved = mockSave.mock.calls[0][0] as { lidarr_status: string }[];
     expect(saved[0].lidarr_status).toBe("imported");
   });
@@ -155,7 +155,7 @@ describe("notifications", () => {
       user_id: 3,
     };
     mockFind.mockResolvedValue([request]);
-    mockFetchLidarrData.mockResolvedValue({
+    mockRefreshLidarrData.mockResolvedValue({
       queueMap: new Map(),
       importedMap: new Map([["mbid-1", { id: 1 }]]),
       wantedMap: new Map(),
@@ -175,7 +175,7 @@ describe("notifications", () => {
         user_id: 3,
       },
     ]);
-    mockFetchLidarrData.mockResolvedValue({
+    mockRefreshLidarrData.mockResolvedValue({
       queueMap: new Map([["mbid-1", { id: 1 }]]),
       importedMap: new Map(),
       wantedMap: new Map(),
@@ -190,7 +190,7 @@ describe("notifications", () => {
     mockFind.mockResolvedValue([
       { id: 1, album_mbid: "mbid-1", lidarr_status: null, user_id: 3 },
     ]);
-    mockFetchLidarrData.mockRejectedValue(new Error("connection refused"));
+    mockRefreshLidarrData.mockRejectedValue(new Error("connection refused"));
 
     await syncRequestStatuses();
 

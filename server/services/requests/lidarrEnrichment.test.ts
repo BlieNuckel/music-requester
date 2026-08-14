@@ -17,11 +17,13 @@ import {
   buildWantedMap,
   classifyRequest,
   enrichRequestsWithLidarr,
+  invalidateLidarrData,
 } from "./lidarrEnrichment";
 import { buildLastEventMap } from "../lidarr/wanted";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  invalidateLidarrData();
 });
 
 describe("buildQueueMap", () => {
@@ -333,5 +335,37 @@ describe("enrichRequestsWithLidarr", () => {
     expect(results).toHaveLength(2);
     expect(results[0]).toBeNull();
     expect(results[1]).toBeNull();
+  });
+
+  it("reuses one Lidarr snapshot across calls", async () => {
+    mockLidarrGet.mockResolvedValue(mockPaginatedResponse([]));
+
+    await enrichRequestsWithLidarr(["mbid-1"]);
+    const callsAfterFirst = mockLidarrGet.mock.calls.length;
+    await enrichRequestsWithLidarr(["mbid-2"]);
+
+    expect(mockLidarrGet).toHaveBeenCalledTimes(callsAfterFirst);
+  });
+
+  it("refetches the snapshot after invalidation", async () => {
+    mockLidarrGet.mockResolvedValue(mockPaginatedResponse([]));
+
+    await enrichRequestsWithLidarr(["mbid-1"]);
+    const callsAfterFirst = mockLidarrGet.mock.calls.length;
+    invalidateLidarrData();
+    await enrichRequestsWithLidarr(["mbid-1"]);
+
+    expect(mockLidarrGet).toHaveBeenCalledTimes(callsAfterFirst * 2);
+  });
+
+  it("does not cache a snapshot that failed to load", async () => {
+    mockLidarrGet.mockRejectedValueOnce(new Error("Connection refused"));
+
+    const failed = await enrichRequestsWithLidarr(["mbid-1"]);
+    mockLidarrGet.mockResolvedValue(mockPaginatedResponse([]));
+    const recovered = await enrichRequestsWithLidarr(["mbid-1"]);
+
+    expect(failed[0]).toBeNull();
+    expect(recovered[0]?.status).toBeNull();
   });
 });

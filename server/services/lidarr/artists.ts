@@ -1,5 +1,7 @@
 import { lidarrGet } from "../../api/lidarr/get";
 import type { LidarrArtist } from "../../api/lidarr/types";
+import { LIBRARY_SNAPSHOT_TTL_MS } from "./cacheTtl";
+import { createSnapshotCache } from "../../utils/snapshotCache";
 
 type ArtistListItem = { id: number; name: string; foreignArtistId: string };
 
@@ -7,7 +9,7 @@ type ArtistListResult =
   | { ok: false; error: string; status: number }
   | { ok: true; data: ArtistListItem[] };
 
-export async function getArtistList(): Promise<ArtistListResult> {
+async function loadArtistList(): Promise<ArtistListResult> {
   const result = await lidarrGet<LidarrArtist[]>("/artist");
 
   if (!result.ok) {
@@ -26,4 +28,24 @@ export async function getArtistList(): Promise<ArtistListResult> {
       foreignArtistId: a.foreignArtistId,
     })),
   };
+}
+
+const snapshot = createSnapshotCache({
+  load: loadArtistList,
+  ttlMs: LIBRARY_SNAPSHOT_TTL_MS,
+  shouldCache: (result: ArtistListResult) => result.ok,
+});
+
+/**
+ * The Lidarr artist list, cached because several read paths (Discover, the
+ * spotlight, the artist picker) each pull the whole library on every request.
+ * Library mutations call {@link invalidateArtistList}, so the TTL only has to
+ * cover changes made in Lidarr itself.
+ */
+export function getArtistList(): Promise<ArtistListResult> {
+  return snapshot.get();
+}
+
+export function invalidateArtistList(): void {
+  snapshot.invalidate();
 }

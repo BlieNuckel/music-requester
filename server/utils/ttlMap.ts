@@ -5,6 +5,10 @@ export type TtlMap<K, V> = {
   get(key: K, now?: number): V | undefined;
   /** Store `value` under `key` for `ttlMs`, sweeping anything that has since expired. */
   set(key: K, value: V, ttlMs: number, now?: number): void;
+  /** When `key` expires, or undefined when it is absent or already expired. */
+  expiresAt(key: K, now?: number): number | undefined;
+  /** Every key still live at `now`, in insertion order. */
+  keys(now?: number): K[];
   delete(key: K): boolean;
   clear(): void;
   /** Live entry count, for tests and diagnostics. Counts expired-but-unswept entries. */
@@ -39,6 +43,15 @@ export function createTtlMap<K, V>(): TtlMap<K, V> {
     set(key, value, ttlMs, now = Date.now()) {
       sweep(now);
       entries.set(key, { value, expiresAt: now + ttlMs });
+    },
+    expiresAt(key, now = Date.now()) {
+      const entry = entries.get(key);
+      if (!entry || entry.expiresAt <= now) return undefined;
+      return entry.expiresAt;
+    },
+    keys(now = Date.now()) {
+      sweep(now);
+      return Array.from(entries.keys());
     },
     delete(key) {
       return entries.delete(key);

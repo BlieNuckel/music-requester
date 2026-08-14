@@ -1,7 +1,7 @@
 import { getTopAlbumsByTag } from "../api/lastfm/albums";
-import { lidarrGet } from "../api/lidarr/get";
-import type { LidarrAlbum, LidarrArtist } from "../api/lidarr/types";
+import type { LidarrAlbum } from "../api/lidarr/types";
 import { resolveReleaseGroupInfo } from "../api/musicbrainz/releaseGroups";
+import type { MbPriority } from "../api/musicbrainz/queue";
 import type { ReleaseGroupInfo } from "../api/musicbrainz/types";
 import { getConfigValue } from "../config";
 import {
@@ -16,6 +16,7 @@ import { findUserById } from "../auth/users";
 import { updateExplorationHistory } from "../db/userProfile";
 import type { DerivedProfile } from "../db/entity/UserProfile";
 import { getMonitoredAlbums } from "../services/lidarr/albums";
+import { getArtistList } from "../services/lidarr/artists";
 import { isAllowedReleaseType } from "../services/discover/typeFilter";
 import { createLogger } from "../logger";
 import { buildExploreResult } from "./explore";
@@ -71,6 +72,7 @@ type PickContext = {
   library: LibraryLookups;
   budget: ResolutionBudget;
   rng: Rng;
+  priority: MbPriority;
 };
 
 /** One Last.fm tag-chart album, before it has been resolved to a release group. */
@@ -98,6 +100,13 @@ type SelectionWalk = PreferenceRule & {
 };
 
 /**
+ * Who asked for a carousel. A warmer build is nobody waiting on it, so it takes the
+ * background MusicBrainz lane and does not count as the user visiting Discover —
+ * otherwise warming would keep renewing its own reason to run.
+ */
+export type PromotedAlbumSource = "request" | "warmer";
+
+/**
  * Injected clock and randomness. Both default to the globals; tests pass their own so
  * the selection rules (how often we explore, how deep we page) can be asserted directly
  * instead of stubbing `Math.random` for every decision at once.
@@ -105,6 +114,7 @@ type SelectionWalk = PreferenceRule & {
 export type PromotedAlbumDeps = {
   rng?: Rng;
   now?: () => number;
+  source?: PromotedAlbumSource;
 };
 
 /** How many recommendations the spotlight carousel presents. */
@@ -120,11 +130,36 @@ const RESOLUTION_BUDGET = 30;
 
 const log = createLogger("promoted-album");
 
+/**
+ * How long after a real Discover load a user still counts as worth pre-warming.
+ * Deliberately much tighter than the profile regen window: a profile is expensive
+ * and describes a taste that outlives a week of absence, while a carousel is cheap
+ * to rebuild and only worth having ready for someone likely to look at it today.
+ */
+const WARM_ACTIVITY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 /** Short-lived final-result cache (layer 2) — keeps album selection off MusicBrainz on every load. */
 const resultCache = createTtlMap<number, PromotedAlbumEntry[]>();
 
+/** Last time each user loaded the carousel themselves; warmer builds never register here. */
+const lastRequestedAt = createTtlMap<number, number>();
+
 export function clearPromotedAlbumCache() {
   resultCache.clear();
+  lastRequestedAt.clear();
+}
+
+/** Users who loaded the carousel recently enough that keeping it warm is worth the quota. */
+export function listWarmableUsers(now: number = Date.now()): number[] {
+  return lastRequestedAt.keys(now);
+}
+
+/** When a user's cached carousel expires, or undefined when they have none. */
+export function promotedAlbumCacheExpiry(
+  userId: number,
+  now: number = Date.now()
+): number | undefined {
+  return resultCache.expiresAt(userId, now);
 }
 
 function buildTraceFromProfile(inputs: TraceInputs): WithinTasteTrace {
@@ -314,7 +349,7 @@ async function buildWithinTasteFromProfile(
     shuffle(allAlbums, rng),
     ctx.library.artistInLibrary,
     config.libraryPreference,
-    resolveReleaseGroupInfo,
+    (mbid) => resolveReleaseGroupInfo(mbid, ctx.priority),
     recentlyShown,
     ctx.budget
   );
@@ -364,7 +399,7 @@ async function loadLibraryMbids(): Promise<LibraryLookups> {
     // Lidarr keeps a row for every album in a tracked artist's discography, so
     // only the monitored ones say anything about what this library holds or wants.
     const [artistResult, albumResult] = await Promise.all([
-      lidarrGet<LidarrArtist[]>("/artist"),
+      getArtistList(),
       getMonitoredAlbums(),
     ]);
     if (artistResult.ok) {
@@ -402,6 +437,7 @@ function buildExplore(
     albumLibrary: ctx.library.albumLibrary,
     budget: ctx.budget,
     rng: ctx.rng,
+    priority: ctx.priority,
   });
 }
 
@@ -418,6 +454,7 @@ function buildPersonal(
     albumLibrary: ctx.library.albumLibrary,
     budget: ctx.budget,
     rng: ctx.rng,
+    priority: ctx.priority,
   });
 }
 
@@ -511,9 +548,14 @@ export async function getPromotedAlbums(
 ): Promise<PromotedAlbumsResult> {
   const rng = deps.rng ?? Math.random;
   const now = deps.now ?? Date.now;
+  const source = deps.source ?? "request";
 
   const config = getConfigValue("promotedAlbum");
   const resultTtlMs = config.cacheDurationMinutes * 60 * 1000;
+
+  if (source === "request") {
+    lastRequestedAt.set(userId, now(), WARM_ACTIVITY_WINDOW_MS, now());
+  }
 
   const cached = forceRefresh ? undefined : resultCache.get(userId, now());
   if (cached && cached.length >= count) {
@@ -535,6 +577,7 @@ export async function getPromotedAlbums(
     library: await loadLibraryMbids(),
     budget: { remaining: RESOLUTION_BUDGET },
     rng,
+    priority: source === "warmer" ? "background" : "interactive",
   };
 
   const picks = await buildPicks(ctx, new Set(recentAlbums), count);

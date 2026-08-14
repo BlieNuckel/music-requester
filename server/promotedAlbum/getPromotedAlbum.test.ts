@@ -49,9 +49,13 @@ vi.mock("../config", () => ({
 import {
   getPromotedAlbums,
   clearPromotedAlbumCache,
+  listWarmableUsers,
+  promotedAlbumCacheExpiry,
   type PromotedAlbumDeps,
 } from "./getPromotedAlbum";
 import { loadFreshProfile } from "./profileService";
+import { invalidateArtistList } from "../services/lidarr/artists";
+import { invalidateMonitoredAlbums } from "../services/lidarr/albums";
 import { findUserById } from "../auth/users";
 import { initializeDatabase, closeDatabase, getDataSource } from "../db";
 import type { WithinTasteResult, ExploreResult, PersonalResult } from "./types";
@@ -178,6 +182,8 @@ let userId: number;
 beforeEach(async () => {
   vi.clearAllMocks();
   clearPromotedAlbumCache();
+  invalidateArtistList();
+  invalidateMonitoredAlbums();
   vi.spyOn(Math, "random").mockReturnValue(0.1);
   mockGetConfigValue.mockReturnValue(defaultPromotedAlbumConfig);
   mockResolveReleaseGroupInfo.mockImplementation((mbid: string) =>
@@ -589,6 +595,53 @@ describe("getPromotedAlbums", () => {
     await getOne(userId, true);
     expect(mockLoadArtistWeights).not.toHaveBeenCalled();
     expect(mockGetTopAlbumsByTag).toHaveBeenCalled();
+  });
+
+  describe("warm builds", () => {
+    beforeEach(() => {
+      mockLoadArtistWeights.mockResolvedValue(plexArtists);
+      mockGetArtistTopTags.mockResolvedValue(tags);
+      mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
+      mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
+    });
+
+    it("counts a real load as activity worth warming later", async () => {
+      await getOne(userId);
+
+      expect(listWarmableUsers()).toContain(userId);
+    });
+
+    it("does not let a warm build renew its own reason to run", async () => {
+      await getAlbums(userId, true, 1, { source: "warmer" });
+
+      expect(listWarmableUsers()).not.toContain(userId);
+    });
+
+    it("resolves on the background lane so live page loads keep priority", async () => {
+      await getAlbums(userId, true, 1, { source: "warmer" });
+
+      expect(mockResolveReleaseGroupInfo).toHaveBeenCalledWith(
+        expect.any(String),
+        "background"
+      );
+    });
+
+    it("resolves a real load on the interactive lane", async () => {
+      await getOne(userId);
+
+      expect(mockResolveReleaseGroupInfo).toHaveBeenCalledWith(
+        expect.any(String),
+        "interactive"
+      );
+    });
+
+    it("exposes when a cached carousel expires, and nothing once cleared", async () => {
+      await getOne(userId);
+      expect(promotedAlbumCacheExpiry(userId)).toBeGreaterThan(Date.now());
+
+      clearPromotedAlbumCache();
+      expect(promotedAlbumCacheExpiry(userId)).toBeUndefined();
+    });
   });
 
   it("falls back gracefully when Lidarr is unavailable", async () => {

@@ -9,6 +9,7 @@ import {
   extractLidarrError,
 } from "../../api/lidarr/types";
 import { AsyncLock } from "../../api/asyncLock";
+import { invalidateLidarrCaches } from "./invalidate";
 import { createLogger } from "../../logger";
 
 const log = createLogger("lidarr-helpers");
@@ -86,6 +87,7 @@ const addAlbumToLidarr = async (albumMbid: string, artist: LidarrArtist) => {
     throw new Error(`Failed to add album: ${errorMsg}`);
   }
 
+  invalidateLidarrCaches();
   return addAlbumResult.data;
 };
 
@@ -120,6 +122,7 @@ const addArtistToLidarr = async (artistMbid: string) => {
 
   await waitForArtistRefresh();
 
+  invalidateLidarrCaches();
   return addArtistResult.data;
 };
 
@@ -197,6 +200,7 @@ export const removeAlbum = async (albumMbid: string, artistMbid: string) => {
     throw new Error("Failed to unmonitor album");
   }
 
+  invalidateLidarrCaches();
   return {
     artistInLibrary: true,
     albumInLibrary: true,

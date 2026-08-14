@@ -7,6 +7,7 @@ import {
   getOrAddArtist,
   getOrAddAlbum,
 } from "../lidarr/helpers";
+import { invalidateLidarrCaches } from "../lidarr/invalidate";
 
 type FulfillResult =
   | { status: "success"; artistName: string; albumTitle: string }
@@ -48,6 +49,7 @@ export async function fulfillRequest(
     albumIds: [album.id],
   });
 
+  invalidateLidarrCaches();
   clearPromotedAlbumCache();
   clearPromotedArtistsCache();
 
