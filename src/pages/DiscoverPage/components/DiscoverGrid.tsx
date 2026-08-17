@@ -25,7 +25,7 @@ export default function DiscoverGrid({ definitions }: DiscoverGridProps) {
   );
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-6 lg:auto-rows-[var(--bento-row-height)] gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-6 gap-6">
       {resolveLayout(definitions, statuses).map(({ definition, hidden }) => (
         <SectionSlot
           key={definition.id}
