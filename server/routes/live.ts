@@ -1,0 +1,106 @@
+import express, { type Request, type Response } from "express";
+import { requireAuth } from "../middleware/requireAuth";
+import { ApiError } from "../middleware/ApiError";
+import { findAllForUser, markViewed, setUserResponse } from "../db/liveEvents";
+import type { HydratedLiveEvent } from "../db/liveEvents";
+import type { LiveEventResponse } from "../db/index";
+import { selectNotice } from "../services/liveEvents/notice";
+import type { NoticeCandidate } from "../services/liveEvents/notice";
+
+const router = express.Router();
+
+const RESPONSES: LiveEventResponse[] = ["going", "dismissed"];
+
+function serializeEvent(event: HydratedLiveEvent) {
+  return {
+    id: event.id,
+    eventKey: event.event_key,
+    name: event.name,
+    eventDate: event.event_date,
+    previousStartDate: event.previous_start_date,
+    status: event.event_status,
+    statusChangedAt: event.status_changed_at,
+    venueName: event.venue_name,
+    venueCity: event.venue_city,
+    venueCountry: event.venue_country,
+    ticketUrl: event.ticket_url,
+    imageUrl: event.image_url,
+    distanceKm: event.distanceKm,
+    performers: event.performers.map((performer) => ({
+      jambaseId: performer.artist_jambase_id,
+      name: performer.artist_name,
+      isHeadliner: performer.is_headliner,
+    })),
+    response: event.state?.response ?? null,
+    viewedAt: event.state?.viewed_at ?? null,
+  };
+}
+
+function serializeNotice(candidate: NoticeCandidate) {
+  return {
+    ...serializeEvent(candidate.event),
+    tier: candidate.tier,
+    reason: candidate.reason,
+    distanceKm: candidate.distanceKm,
+  };
+}
+
+function parseEventId(raw: string | string[] | undefined): number {
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id < 1) {
+    throw new ApiError(400, "Invalid event id");
+  }
+  return id;
+}
+
+router.use(requireAuth);
+
+router.get("/notice", async (req: Request, res: Response) => {
+  const { notice, additionalCount } = await selectNotice(req.user!.id);
+  res.json({
+    notice: notice ? serializeNotice(notice) : null,
+    additionalCount,
+  });
+});
+
+router.get("/events", async (req: Request, res: Response) => {
+  const past = req.query.past === "true";
+  const response = req.query.response as LiveEventResponse | undefined;
+
+  if (response !== undefined && !RESPONSES.includes(response)) {
+    throw new ApiError(400, "Invalid response filter");
+  }
+
+  const events = await findAllForUser(req.user!.id, {
+    past,
+    now: new Date().toISOString().slice(0, 10),
+    ...(response === undefined ? {} : { response }),
+  });
+
+  res.json({ events: events.map(serializeEvent) });
+});
+
+router.post("/events/:id/response", async (req: Request, res: Response) => {
+  const eventId = parseEventId(req.params.id);
+  const { response } = req.body as { response?: LiveEventResponse | null };
+
+  if (response !== null && !RESPONSES.includes(response as LiveEventResponse)) {
+    throw new ApiError(400, "response must be 'going', 'dismissed', or null");
+  }
+
+  await setUserResponse(
+    req.user!.id,
+    eventId,
+    response ?? null,
+    new Date().toISOString()
+  );
+  res.json({ ok: true });
+});
+
+router.post("/events/:id/viewed", async (req: Request, res: Response) => {
+  const eventId = parseEventId(req.params.id);
+  await markViewed(req.user!.id, eventId, new Date().toISOString());
+  res.json({ ok: true });
+});
+
+export default router;
