@@ -18,10 +18,11 @@ import WantedList from "./components/WantedList";
 import PurchaseList from "./components/PurchaseList";
 import SpendingSummary from "./components/SpendingSummary";
 import FollowingList from "./components/FollowingList";
+import LiveList from "./components/LiveList";
 import Skeleton from "@/components/Skeleton";
 import RefreshButton from "@/components/RefreshButton";
 
-type LibraryTab = "purchases" | "wanted" | "following" | "requests";
+type LibraryTab = "purchases" | "wanted" | "following" | "live" | "requests";
 
 function buildLibraryTabs(unseenCount: number): SettingsRoute[] {
   return [
@@ -47,6 +48,11 @@ function buildLibraryTabs(unseenCount: number): SettingsRoute[] {
       regex: /^\/library\/following/,
     },
     {
+      text: "Live",
+      route: "/library/live",
+      regex: /^\/library\/live/,
+    },
+    {
       text: "Requests",
       route: "/library/requests",
       regex: /^\/library\/requests/,
@@ -70,8 +76,13 @@ export default function LibraryPage() {
   const isPurchasesTab = /^\/library\/purchases/.test(location.pathname);
   const isWantedTab = /^\/library\/wanted/.test(location.pathname);
   const isFollowingTab = /^\/library\/following/.test(location.pathname);
+  const isLiveTab = /^\/library\/live/.test(location.pathname);
   const isSubTab =
-    isRequestsTab || isWantedTab || isPurchasesTab || isFollowingTab;
+    isRequestsTab ||
+    isWantedTab ||
+    isPurchasesTab ||
+    isFollowingTab ||
+    isLiveTab;
 
   useEffect(() => {
     if (isFollowingTab && unseenCount > 0) {
@@ -197,6 +208,8 @@ export default function LibraryPage() {
       )}
 
       {isFollowingTab && <FollowingList />}
+
+      {isLiveTab && <LiveList />}
 
       {isRequestsTab && (
         <div className="flex flex-col gap-6">

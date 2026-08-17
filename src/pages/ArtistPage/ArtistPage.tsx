@@ -5,10 +5,12 @@ import useArtistReleaseGroups from "@/hooks/useArtistReleaseGroups";
 import useLibraryAlbums from "@/hooks/useLibraryAlbums";
 import useLibraryArtists from "@/hooks/useLibraryArtists";
 import useSimilarArtists from "@/hooks/useSimilarArtists";
+import useArtistLiveDates from "@/hooks/useArtistLiveDates";
 import { groupArtistReleases } from "@/utils/groupArtistReleases";
 import ArtistHeader from "./components/ArtistHeader";
 import ArtistDiscography from "./components/ArtistDiscography";
 import SimilarArtists from "./components/SimilarArtists";
+import ArtistLiveDates from "./components/ArtistLiveDates";
 import ArtistPageSkeleton from "./components/ArtistPageSkeleton";
 
 export default function ArtistPage() {
@@ -23,6 +25,7 @@ export default function ArtistPage() {
   const { isArtistInLibrary } = useLibraryArtists();
   const { artists: similarArtists, loading: similarLoading } =
     useSimilarArtists(artist?.name, mbid);
+  const { dates: liveDates } = useArtistLiveDates(mbid);
 
   const sections = useMemo(
     () => (mbid ? groupArtistReleases(releaseGroups, mbid) : []),
@@ -50,6 +53,8 @@ export default function ArtistPage() {
         artist={artist}
         inLibrary={isArtistInLibrary(mbid ?? "", artist.name)}
       />
+
+      <ArtistLiveDates dates={liveDates} />
 
       <ArtistDiscography
         sections={sections}

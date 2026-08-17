@@ -18,6 +18,7 @@ import {
   markNotified,
   setJambaseArtistId,
   findUnresolvedFollowedArtists,
+  findJambaseIdForArtistMbid,
   listFollowedJambaseIds,
   listLiveRegionsUnion,
   getUserLivePreferences,
@@ -839,5 +840,32 @@ describe("listLiveRegionsUnion", () => {
   it("is empty when nobody has configured regions", async () => {
     await createUser("a");
     expect(await listLiveRegionsUnion()).toEqual([]);
+  });
+});
+
+describe("findJambaseIdForArtistMbid", () => {
+  it("bridges an MBID to the JamBase id somebody already resolved", async () => {
+    const userId = await createUser("lasse");
+    await follow(userId, "mbid-yves", "Yves Tumor", "jambase:1");
+
+    expect(await findJambaseIdForArtistMbid("mbid-yves")).toBe("jambase:1");
+  });
+
+  it("returns null for an artist nobody follows", async () => {
+    expect(await findJambaseIdForArtistMbid("mbid-nobody")).toBeNull();
+  });
+
+  it("ignores a follow that has not been resolved yet", async () => {
+    const userId = await createUser("lasse");
+    await follow(userId, "mbid-yves", "Yves Tumor", null);
+
+    expect(await findJambaseIdForArtistMbid("mbid-yves")).toBeNull();
+  });
+
+  it("finds it through any user's follow, not just the caller's", async () => {
+    const other = await createUser("someone-else");
+    await follow(other, "mbid-yves", "Yves Tumor", "jambase:1");
+
+    expect(await findJambaseIdForArtistMbid("mbid-yves")).toBe("jambase:1");
   });
 });

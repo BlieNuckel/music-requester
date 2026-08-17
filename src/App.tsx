@@ -43,6 +43,7 @@ function App() {
               <Route path="wanted" element={null} />
               <Route path="requests" element={null} />
               <Route path="following" element={null} />
+              <Route path="live" element={null} />
             </Route>
             <Route path="/settings" element={<SettingsLayout />}>
               <Route

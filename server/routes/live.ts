@@ -1,7 +1,13 @@
 import express, { type Request, type Response } from "express";
 import { requireAuth } from "../middleware/requireAuth";
 import { ApiError } from "../middleware/ApiError";
-import { findAllForUser, markViewed, setUserResponse } from "../db/liveEvents";
+import {
+  findAllForUser,
+  findEventsForArtist,
+  findJambaseIdForArtistMbid,
+  markViewed,
+  setUserResponse,
+} from "../db/liveEvents";
 import type { HydratedLiveEvent } from "../db/liveEvents";
 import type { LiveEventResponse } from "../db/index";
 import { selectNotice } from "../services/liveEvents/notice";
@@ -88,6 +94,26 @@ router.get("/events", async (req: Request, res: Response) => {
     past,
     now: new Date().toISOString().slice(0, 10),
     ...(response === undefined ? {} : { response }),
+  });
+
+  res.json({ events: events.map(serializeEvent) });
+});
+
+router.get("/artist/:mbid", async (req: Request, res: Response) => {
+  const jambaseArtistId = await findJambaseIdForArtistMbid(
+    String(req.params.mbid)
+  );
+
+  // Only artists somebody follows have ever been resolved, so an unfollowed
+  // artist has no dates rather than an error.
+  if (!jambaseArtistId) {
+    res.json({ events: [] });
+    return;
+  }
+
+  const events = await findEventsForArtist(req.user!.id, jambaseArtistId, {
+    now: new Date().toISOString().slice(0, 10),
+    includePast: req.query.includePast === "true",
   });
 
   res.json({ events: events.map(serializeEvent) });

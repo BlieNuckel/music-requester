@@ -4,6 +4,8 @@ const mockSelectNotice = vi.fn();
 const mockFindAllForUser = vi.fn();
 const mockSetUserResponse = vi.fn();
 const mockMarkViewed = vi.fn();
+const mockFindEventsForArtist = vi.fn();
+const mockFindJambaseId = vi.fn();
 
 vi.mock("../services/liveEvents/notice", () => ({
   selectNotice: (...args: unknown[]) => mockSelectNotice(...args),
@@ -13,6 +15,9 @@ vi.mock("../db/liveEvents", () => ({
   findAllForUser: (...args: unknown[]) => mockFindAllForUser(...args),
   setUserResponse: (...args: unknown[]) => mockSetUserResponse(...args),
   markViewed: (...args: unknown[]) => mockMarkViewed(...args),
+  findEventsForArtist: (...args: unknown[]) => mockFindEventsForArtist(...args),
+  findJambaseIdForArtistMbid: (...args: unknown[]) =>
+    mockFindJambaseId(...args),
 }));
 
 vi.mock("../middleware/requireAuth", () => ({
@@ -75,6 +80,8 @@ beforeEach(() => {
   mockFindAllForUser.mockResolvedValue([]);
   mockSetUserResponse.mockResolvedValue({});
   mockMarkViewed.mockResolvedValue({});
+  mockFindEventsForArtist.mockResolvedValue([]);
+  mockFindJambaseId.mockResolvedValue(null);
 });
 
 describe("GET /notice", () => {
@@ -246,5 +253,43 @@ describe("POST /events/:id/viewed", () => {
   it("rejects a bad id", async () => {
     const res = await request(app).post("/events/0/viewed");
     expect(res.status).toBe(400);
+  });
+});
+
+describe("GET /artist/:mbid", () => {
+  it("returns the artist's dates once they have been resolved", async () => {
+    mockFindJambaseId.mockResolvedValue("jambase:1");
+    mockFindEventsForArtist.mockResolvedValue([storedEvent()]);
+
+    const res = await request(app).get("/artist/mbid-yves");
+
+    expect(res.status).toBe(200);
+    expect(res.body.events).toHaveLength(1);
+    expect(mockFindEventsForArtist).toHaveBeenCalledWith(
+      7,
+      "jambase:1",
+      expect.objectContaining({ includePast: false })
+    );
+  });
+
+  it("returns an empty list rather than an error for an unresolved artist", async () => {
+    mockFindJambaseId.mockResolvedValue(null);
+
+    const res = await request(app).get("/artist/mbid-unknown");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ events: [] });
+    expect(mockFindEventsForArtist).not.toHaveBeenCalled();
+  });
+
+  it("passes includePast through", async () => {
+    mockFindJambaseId.mockResolvedValue("jambase:1");
+    await request(app).get("/artist/mbid-yves?includePast=true");
+
+    expect(mockFindEventsForArtist).toHaveBeenCalledWith(
+      7,
+      "jambase:1",
+      expect.objectContaining({ includePast: true })
+    );
   });
 });
