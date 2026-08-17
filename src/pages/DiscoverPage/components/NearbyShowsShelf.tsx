@@ -28,7 +28,7 @@ export default function NearbyShowsShelf({ shows }: NearbyShowsShelfProps) {
     <div className="h-full flex flex-col">
       <SectionHeader title="Nearby" />
 
-      <div className="flex-1 bg-white dark:bg-gray-800 rounded-xl border-2 border-black shadow-cartoon-md p-4">
+      <div className="flex-1 min-h-0 overflow-y-auto overlay-scrollbar bg-white dark:bg-gray-800 rounded-xl border-2 border-black shadow-cartoon-md p-4">
         <ul className="flex flex-col gap-3">
           {shows.map((show) => (
             <li key={show.eventKey} className="flex flex-col gap-0.5">

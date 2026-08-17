@@ -8,6 +8,14 @@
   --shadow-cartoon-lg: 6px 6px 0 0 black;
   --shadow-cartoon-pressed: 1px 1px 0 0 black;
   --shadow-cartoon-md-flip: -4px 4px 0 0 black;
+
+  /*
+   * One row unit of the Discover bento grid. Without a fixed height, row-span
+   * only means "cover N content-sized rows", so a tall tile inflates its row
+   * and every sibling stretches with it. Sized so the spotlight's two rows plus
+   * one gap clear its 20rem carousel and 1.75rem header.
+   */
+  --bento-row-height: 10.25rem;
 }
 
 .overlay-scrollbar {
