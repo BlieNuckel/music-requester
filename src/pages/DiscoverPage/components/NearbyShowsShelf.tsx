@@ -6,7 +6,7 @@ interface NearbyShowsShelfProps {
   shows: NearbyShow[];
 }
 
-/** As many entries as fit the tile's three rows without scrolling. Rest on /library/live. */
+/** As many entries as fit the tile's four rows without scrolling. Rest on /library/live. */
 const MAX_VISIBLE = 4;
 
 const DATE_FORMAT: Intl.DateTimeFormatOptions = {

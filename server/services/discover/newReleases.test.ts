@@ -41,7 +41,7 @@ vi.mock("../../logger", () => ({
   createLogger: () => ({ info: vi.fn(), error: vi.fn(), warn: vi.fn() }),
 }));
 
-import { getNewReleases } from "./newReleases";
+import { TARGET_ITEM_COUNT, getNewReleases } from "./newReleases";
 import { VARIOUS_ARTISTS_MBID } from "../../utils/artistFilter";
 
 const NOW = Date.parse("2026-07-09T12:00:00.000Z");
@@ -269,20 +269,20 @@ describe("getNewReleases", () => {
     expect(result.items[0].releaseGroupMbid).toBeNull();
   });
 
-  it("widens the window until six items exist and reports it", async () => {
+  it("widens the window until the target is filled and reports it", async () => {
     mockGetArtistList.mockResolvedValue({
       ok: true,
       data: [{ id: 1, name: "A", foreignArtistId: "mbid-library" }],
     });
     mockGetCachedFeed.mockResolvedValue([
-      ...[1, 2, 3].map((i) =>
+      ...Array.from({ length: 6 }, (_, i) =>
         feedRelease({
           releaseGroupMbid: `rg-recent-${i}`,
           releaseName: `Recent ${i}`,
-          releaseDate: daysAgo(i),
+          releaseDate: daysAgo(i + 1),
         })
       ),
-      ...[1, 2, 3].map((i) =>
+      ...Array.from({ length: 6 }, (_, i) =>
         feedRelease({
           releaseGroupMbid: `rg-older-${i}`,
           releaseName: `Older ${i}`,
@@ -293,27 +293,27 @@ describe("getNewReleases", () => {
 
     const result = await getNewReleases(1, NOW);
     expect(result.windowDays).toBe(60);
-    expect(result.items).toHaveLength(6);
+    expect(result.items).toHaveLength(TARGET_ITEM_COUNT);
   });
 
-  it("keeps a 30-day window when it already has six items", async () => {
+  it("keeps a 30-day window when the target is already met", async () => {
     mockGetArtistList.mockResolvedValue({
       ok: true,
       data: [{ id: 1, name: "A", foreignArtistId: "mbid-library" }],
     });
     mockGetCachedFeed.mockResolvedValue(
-      [1, 2, 3, 4, 5, 6, 7].map((i) =>
+      Array.from({ length: TARGET_ITEM_COUNT + 1 }, (_, i) =>
         feedRelease({
           releaseGroupMbid: `rg-${i}`,
           releaseName: `Fresh ${i}`,
-          releaseDate: daysAgo(i),
+          releaseDate: daysAgo(i + 1),
         })
       )
     );
 
     const result = await getNewReleases(1, NOW);
     expect(result.windowDays).toBe(30);
-    expect(result.items).toHaveLength(6);
+    expect(result.items).toHaveLength(TARGET_ITEM_COUNT);
   });
 
   it("excludes unreleased (future-dated) and windowless releases", async () => {
@@ -369,7 +369,7 @@ describe("getNewReleases", () => {
     ]);
   });
 
-  it("caps the shelf at six with unseen-followed priority", async () => {
+  it("caps the shelf at the target with unseen-followed priority", async () => {
     mockGetFollowedReleases.mockResolvedValue([
       followedRow({
         id: 9,
@@ -384,17 +384,17 @@ describe("getNewReleases", () => {
       data: [{ id: 1, name: "A", foreignArtistId: "mbid-library" }],
     });
     mockGetCachedFeed.mockResolvedValue(
-      [1, 2, 3, 4, 5, 6].map((i) =>
+      Array.from({ length: TARGET_ITEM_COUNT + 2 }, (_, i) =>
         feedRelease({
           releaseGroupMbid: `rg-${i}`,
           releaseName: `Fresh ${i}`,
-          releaseDate: daysAgo(i),
+          releaseDate: daysAgo(i + 1),
         })
       )
     );
 
     const result = await getNewReleases(1, NOW);
-    expect(result.items).toHaveLength(6);
+    expect(result.items).toHaveLength(TARGET_ITEM_COUNT);
     expect(result.items[0].releaseGroupMbid).toBe("rg-unseen");
   });
 
