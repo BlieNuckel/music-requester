@@ -7,16 +7,19 @@ import {
   DEFAULT_PROMOTED_ALBUM,
   DEFAULT_PURCHASE_DECISION,
   DEFAULT_SPENDING,
+  DEFAULT_LIVE_EVENTS,
   type LibraryPreference,
   type PromotedAlbumSettings,
   type PurchaseDecisionSettings,
   type SpendingSettings,
+  type LiveEventsSettings,
 } from "../shared/settingsDefaults";
 
 export {
   DEFAULT_PROMOTED_ALBUM,
   DEFAULT_PURCHASE_DECISION,
   DEFAULT_SPENDING,
+  DEFAULT_LIVE_EVENTS,
 } from "../shared/settingsDefaults";
 export type { LibraryPreference } from "../shared/settingsDefaults";
 
@@ -24,6 +27,7 @@ export type { LibraryPreference } from "../shared/settingsDefaults";
 export type PromotedAlbumConfig = PromotedAlbumSettings;
 export type PurchaseDecisionConfig = PurchaseDecisionSettings;
 export type SpendingConfig = SpendingSettings;
+export type LiveEventsConfig = LiveEventsSettings;
 
 const log = createLogger("Config");
 
@@ -68,6 +72,7 @@ export type IConfig = {
   purchaseDecision: PurchaseDecisionConfig;
   spending: SpendingConfig;
   notifications: NotificationsConfig;
+  liveEvents: LiveEventsConfig;
   followedArtistPollIntervalMs: number;
   requestStatusPollIntervalMs: number;
 };
@@ -80,6 +85,7 @@ export type IConfigInput = Omit<
   promotedAlbum?: Partial<PromotedAlbumConfig>;
   purchaseDecision?: Partial<PurchaseDecisionConfig>;
   spending?: Partial<SpendingConfig>;
+  liveEvents?: Partial<LiveEventsConfig>;
   notifications?: Partial<Omit<NotificationsConfig, "webPush">> & {
     webPush?: Partial<WebPushConfig>;
   };
@@ -116,6 +122,7 @@ const DEFAULT_CONFIG: IConfig = {
   purchaseDecision: DEFAULT_PURCHASE_DECISION,
   spending: DEFAULT_SPENDING,
   notifications: DEFAULT_NOTIFICATIONS,
+  liveEvents: DEFAULT_LIVE_EVENTS,
   followedArtistPollIntervalMs: DEFAULT_FOLLOWED_POLL_INTERVAL_MS,
   requestStatusPollIntervalMs: DEFAULT_REQUEST_STATUS_POLL_INTERVAL_MS,
 };
@@ -151,6 +158,10 @@ function mergeWithDefaults(saved: Record<string, unknown>): IConfig {
       ...DEFAULT_SPENDING,
       ...((saved.spending as Record<string, unknown>) ?? {}),
     },
+    liveEvents: {
+      ...DEFAULT_LIVE_EVENTS,
+      ...((saved.liveEvents as Record<string, unknown>) ?? {}),
+    },
     notifications: {
       ...DEFAULT_NOTIFICATIONS,
       ...((saved.notifications as Record<string, unknown>) ?? {}),
@@ -175,6 +186,7 @@ export const getConfig = (): IConfig => {
       purchaseDecision: { ...DEFAULT_PURCHASE_DECISION },
       spending: { ...DEFAULT_SPENDING },
       notifications: { ...DEFAULT_NOTIFICATIONS },
+      liveEvents: { ...DEFAULT_LIVE_EVENTS },
     };
   }
 
@@ -330,6 +342,74 @@ function validateNotificationsConfig(config: NotificationsConfig) {
   }
 }
 
+const ISO2 = /^[A-Z]{2}$/;
+
+/** The Developer tier only returns events up to six months out. */
+const MAX_BANNER_HORIZON_DAYS = 180;
+
+function validateLiveEventsConfig(config: LiveEventsConfig) {
+  if (typeof config.enabled !== "boolean") {
+    throw new Error("liveEvents.enabled must be a boolean");
+  }
+  if (typeof config.apiKey !== "string") {
+    throw new Error("liveEvents.apiKey must be a string");
+  }
+
+  for (const [name, value] of [
+    ["originLat", config.originLat],
+    ["originLon", config.originLon],
+  ] as const) {
+    if (value !== null && typeof value !== "number") {
+      throw new Error(`liveEvents.${name} must be a number or null`);
+    }
+  }
+  if (config.originLat !== null && Math.abs(config.originLat) > 90) {
+    throw new Error("liveEvents.originLat must be between -90 and 90");
+  }
+  if (config.originLon !== null && Math.abs(config.originLon) > 180) {
+    throw new Error("liveEvents.originLon must be between -180 and 180");
+  }
+
+  validatePositiveInt(config.sweepRadiusKm, "liveEvents.sweepRadiusKm");
+  validatePositiveInt(config.shelfHorizonDays, "liveEvents.shelfHorizonDays");
+  validatePositiveInt(config.bannerHorizonDays, "liveEvents.bannerHorizonDays");
+  validatePositiveInt(config.announceDays, "liveEvents.announceDays");
+  validatePositiveInt(config.imminentDaysLocal, "liveEvents.imminentDaysLocal");
+  validatePositiveInt(
+    config.imminentDaysRegional,
+    "liveEvents.imminentDaysRegional"
+  );
+  validatePositiveInt(config.rosterBatchSize, "liveEvents.rosterBatchSize");
+  validatePositiveInt(config.maxPagesPerRun, "liveEvents.maxPagesPerRun");
+  validatePositiveInt(
+    config.sweepIntervalHours,
+    "liveEvents.sweepIntervalHours"
+  );
+  validateRatio(config.shelfMinAffinity, "liveEvents.shelfMinAffinity");
+
+  if (config.bannerHorizonDays > MAX_BANNER_HORIZON_DAYS) {
+    throw new Error(
+      `liveEvents.bannerHorizonDays cannot exceed ${MAX_BANNER_HORIZON_DAYS}; the Developer tier returns nothing further out`
+    );
+  }
+  if (config.rosterBatchSize > 100) {
+    throw new Error("liveEvents.rosterBatchSize cannot exceed 100");
+  }
+  if (!Array.isArray(config.regions)) {
+    throw new Error("liveEvents.regions must be an array");
+  }
+  for (const code of config.regions) {
+    if (typeof code !== "string" || !ISO2.test(code)) {
+      throw new Error(
+        `liveEvents.regions entries must be uppercase ISO 3166-1 alpha-2 codes; got ${String(code)}`
+      );
+    }
+    if (code === "UK") {
+      throw new Error("liveEvents.regions must use GB rather than UK");
+    }
+  }
+}
+
 function validateConfig(mergedConfig: IConfig) {
   if (typeof mergedConfig.lidarrUrl !== "string") {
     throw new Error("lidarrUrl must be a string");
@@ -410,6 +490,10 @@ export const setConfig = (newConfig: Partial<IConfigInput>) => {
         ...(newConfig.notifications?.webPush ?? {}),
       },
     },
+    liveEvents: {
+      ...currentConfig.liveEvents,
+      ...(newConfig.liveEvents ?? {}),
+    },
   };
 
   validateConfig(mergedConfig);
@@ -428,6 +512,10 @@ export const setConfig = (newConfig: Partial<IConfigInput>) => {
 
   if (newConfig.notifications !== undefined) {
     validateNotificationsConfig(mergedConfig.notifications);
+  }
+
+  if (newConfig.liveEvents !== undefined) {
+    validateLiveEventsConfig(mergedConfig.liveEvents);
   }
 
   const db = getRawDb();

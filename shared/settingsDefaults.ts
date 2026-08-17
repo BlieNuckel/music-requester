@@ -91,3 +91,51 @@ export const DEFAULT_SPENDING: SpendingSettings = {
   currency: "USD",
   monthlyLimit: null,
 };
+
+/**
+ * Live events (tour dates). Everything here spends or bounds JamBase quota,
+ * which is why it is server-wide: per-user knobs are filters over already-swept
+ * data and live on the user row instead.
+ */
+export type LiveEventsSettings = {
+  enabled: boolean;
+  apiKey: string;
+  /** Origin for the shelf sweep. Null until an admin sets a location. */
+  originLat: number | null;
+  originLon: number | null;
+  /** Maximum swept radius, not the per-user display radius. */
+  sweepRadiusKm: number;
+  shelfHorizonDays: number;
+  shelfMinAffinity: number;
+  /** Capped at 180 by the Developer tier's 6-month future window. */
+  bannerHorizonDays: number;
+  announceDays: number;
+  /** The imminent window scales with distance: a trip needs more lead time. */
+  imminentDaysLocal: number;
+  imminentDaysRegional: number;
+  /** ISO 3166-1 alpha-2 default for users who have not chosen their own. GB, not UK. */
+  regions: string[];
+  /** JamBase accepts at least 100 pipe-delimited artistIds per call. */
+  rosterBatchSize: number;
+  /** Hard stop per run. Overage bills rather than fails, so this is a cost control. */
+  maxPagesPerRun: number;
+  sweepIntervalHours: number;
+};
+
+export const DEFAULT_LIVE_EVENTS: LiveEventsSettings = {
+  enabled: false,
+  apiKey: "",
+  originLat: null,
+  originLon: null,
+  sweepRadiusKm: 150,
+  shelfHorizonDays: 28,
+  shelfMinAffinity: 0,
+  bannerHorizonDays: 180,
+  announceDays: 14,
+  imminentDaysLocal: 21,
+  imminentDaysRegional: 45,
+  regions: [],
+  rosterBatchSize: 100,
+  maxPagesPerRun: 20,
+  sweepIntervalHours: 24,
+};
