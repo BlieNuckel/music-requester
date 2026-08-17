@@ -6,6 +6,7 @@ const mockIsConfigured = vi.fn();
 const mockResolve = vi.fn();
 const mockSweep = vi.fn();
 const mockGeoSweep = vi.fn();
+const mockNotify = vi.fn();
 
 vi.mock("../../config", () => ({
   getConfig: () => mockGetConfig(),
@@ -27,6 +28,10 @@ vi.mock("./geoSweep", () => ({
   runGeoSweep: () => mockGeoSweep(),
 }));
 
+vi.mock("./notifier", () => ({
+  notifyLiveUpdates: () => mockNotify(),
+}));
+
 const { runLivePollOnce, startLiveEventsPoller, stopLiveEventsPoller } =
   await import("./poller");
 
@@ -42,6 +47,7 @@ beforeEach(() => {
   });
   mockSweep.mockResolvedValue({ ran: true });
   mockGeoSweep.mockResolvedValue({ ran: true });
+  mockNotify.mockResolvedValue({ announced: 0, statusChanges: 0 });
   mockGetConfig.mockReturnValue({
     liveEvents: { ...DEFAULT_LIVE_EVENTS, enabled: true, apiKey: "k" },
   });
@@ -83,6 +89,26 @@ describe("runLivePollOnce", () => {
     await runLivePollOnce();
 
     expect(order).toEqual(["roster", "geo"]);
+  });
+
+  it("notifies only after both sweeps have landed their data", async () => {
+    const order: string[] = [];
+    mockSweep.mockImplementation(async () => {
+      order.push("roster");
+      return { ran: true };
+    });
+    mockGeoSweep.mockImplementation(async () => {
+      order.push("geo");
+      return { ran: true };
+    });
+    mockNotify.mockImplementation(async () => {
+      order.push("notify");
+      return { announced: 0, statusChanges: 0 };
+    });
+
+    await runLivePollOnce();
+
+    expect(order).toEqual(["roster", "geo", "notify"]);
   });
 
   it("caps resolution per tick", async () => {

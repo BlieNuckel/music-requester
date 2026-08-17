@@ -11,7 +11,9 @@ export type NotificationEventId =
   | "request.created"
   | "integration.unreachable"
   | "import.failed"
-  | "live.quotaWarning";
+  | "live.quotaWarning"
+  | "live.nearbyShow"
+  | "live.statusChanged";
 
 export type NotificationEventDefinition = {
   id: NotificationEventId;
@@ -82,6 +84,21 @@ export const NOTIFICATION_EVENTS: readonly NotificationEventDefinition[] = [
     label: "New request submitted",
     description: "A user submitted a request that needs a decision.",
     audience: "admin",
+    defaultEnabled: true,
+  },
+  {
+    id: "live.nearbyShow",
+    label: "Live dates near you",
+    description: "An artist you follow announced a date you could get to.",
+    audience: "user",
+    defaultEnabled: true,
+  },
+  {
+    id: "live.statusChanged",
+    label: "Show cancelled or moved",
+    description:
+      "A show you were told about was cancelled, postponed, or rescheduled.",
+    audience: "user",
     defaultEnabled: true,
   },
   {
