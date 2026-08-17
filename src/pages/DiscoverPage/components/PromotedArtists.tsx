@@ -56,7 +56,7 @@ export default function PromotedArtists({
         }
       />
 
-      <div className="flex-1 bg-white dark:bg-gray-800 rounded-xl border-2 border-black shadow-cartoon-md p-4 flex flex-col">
+      <div className="flex-1 min-h-0 overflow-y-auto overlay-scrollbar bg-white dark:bg-gray-800 rounded-xl border-2 border-black shadow-cartoon-md p-4 flex flex-col">
         <div
           className={`${GRID_CLASSES} flex-1 content-start transition-all duration-300 ${
             isAnimating ? "opacity-0 scale-95" : "opacity-100 scale-100"

@@ -82,8 +82,30 @@ describe("sectionSlotClasses", () => {
     expect(classes).toContain("lg:row-span-2");
   });
 
+  it("maps every row span the registry can use", () => {
+    for (const rows of [1, 2, 3, 4, 5, 6] as const) {
+      expect(
+        sectionSlotClasses(makeDefinition({ span: { cols: 4, rows } }), false)
+      ).toContain(`lg:row-span-${rows}`);
+    }
+  });
+
   it("includes the mobile order class", () => {
     const classes = sectionSlotClasses(makeDefinition(), false);
     expect(classes).toContain("max-lg:[order:var(--order-mobile)]");
+  });
+
+  it("bounds the slot at desktop sizes so a tall tile cannot spill over its neighbour", () => {
+    const classes = sectionSlotClasses(makeDefinition(), false);
+
+    expect(classes).toContain("lg:min-h-0");
+    expect(classes).toContain("lg:overflow-hidden");
+  });
+
+  it("leaves mobile unbounded, where tiles stack and size to their content", () => {
+    const classes = sectionSlotClasses(makeDefinition(), false);
+
+    expect(classes).not.toContain(" overflow-hidden");
+    expect(classes.startsWith("overflow-hidden")).toBe(false);
   });
 });

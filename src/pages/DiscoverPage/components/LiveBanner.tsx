@@ -120,7 +120,7 @@ export default function LiveBanner({
             href={notice.ticketUrl}
             target="_blank"
             rel="noreferrer noopener"
-            className="text-sm font-semibold px-3 py-1.5 rounded-lg border-2 border-black bg-orange-400 text-black shadow-cartoon-sm hover:translate-y-0.5 transition-transform"
+            className="text-sm font-semibold px-3 py-1.5 rounded-lg border-2 border-black bg-orange-400 text-black shadow-cartoon-sm hover:translate-y-[-1px] hover:shadow-cartoon-md active:translate-y-[1px] active:shadow-cartoon-pressed transition-all"
           >
             Tickets
           </a>
@@ -129,7 +129,7 @@ export default function LiveBanner({
         <button
           type="button"
           onClick={() => onRespond(notice.id, "going")}
-          className="text-sm font-semibold px-3 py-1.5 rounded-lg border-2 border-black bg-white dark:bg-gray-700 dark:text-gray-100 shadow-cartoon-sm hover:translate-y-0.5 transition-transform"
+          className="text-sm font-semibold px-3 py-1.5 rounded-lg border-2 border-black bg-white dark:bg-gray-700 dark:text-gray-100 shadow-cartoon-sm hover:translate-y-[-1px] hover:shadow-cartoon-md active:translate-y-[1px] active:shadow-cartoon-pressed transition-all"
         >
           Going
         </button>
@@ -138,7 +138,7 @@ export default function LiveBanner({
           type="button"
           aria-label="Dismiss"
           onClick={() => onRespond(notice.id, "dismissed")}
-          className="text-sm font-bold w-8 h-8 rounded-lg border-2 border-black bg-white dark:bg-gray-700 dark:text-gray-100 shadow-cartoon-sm hover:translate-y-0.5 transition-transform"
+          className="text-sm font-bold w-8 h-8 rounded-lg border-2 border-black bg-white dark:bg-gray-700 dark:text-gray-100 shadow-cartoon-sm hover:translate-y-[-1px] hover:shadow-cartoon-md active:translate-y-[1px] active:shadow-cartoon-pressed transition-all"
         >
           ✕
         </button>

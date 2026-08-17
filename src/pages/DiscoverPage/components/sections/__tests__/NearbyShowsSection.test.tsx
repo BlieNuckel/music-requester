@@ -74,6 +74,36 @@ describe("NearbyShowsSection", () => {
     expect(items[1]).toHaveTextContent("Second");
   });
 
+  it("caps the list to what the tile's rows hold", async () => {
+    mockFetch({
+      events: Array.from({ length: 8 }, (_, i) =>
+        show({
+          eventKey: `e${i}`,
+          performers: [
+            { jambaseId: `${i}`, name: `Artist ${i}`, isHeadliner: true },
+          ],
+        })
+      ),
+    });
+    renderSection();
+
+    expect(await screen.findAllByRole("listitem")).toHaveLength(4);
+    expect(screen.getByRole("link", { name: "See all" })).toHaveAttribute(
+      "href",
+      "/library/live"
+    );
+  });
+
+  it("omits See all when everything already fits", async () => {
+    mockFetch({ events: [show()] });
+    renderSection();
+
+    await screen.findByText("Bar Italia");
+    expect(
+      screen.queryByRole("link", { name: "See all" })
+    ).not.toBeInTheDocument();
+  });
+
   it("badges a followed artist rather than hiding them", async () => {
     mockFetch({ events: [show({ following: true })] });
     renderSection();

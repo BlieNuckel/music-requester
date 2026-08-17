@@ -9,10 +9,11 @@ interface NewReleasesShelfProps {
   loading: boolean;
 }
 
-const SKELETON_COUNT = 6;
+/** Matches TARGET_ITEM_COUNT so the loading state is the shape of the result. */
+const SKELETON_COUNT = 4;
 
 const SHELF_CLASSES =
-  "flex overflow-x-auto snap-x snap-mandatory gap-3 pb-1 lg:pb-0 lg:grid lg:grid-cols-6 lg:gap-4 lg:overflow-visible";
+  "flex overflow-x-auto snap-x snap-mandatory gap-3 pb-1 lg:pb-0 lg:grid lg:grid-cols-4 lg:gap-4 lg:overflow-visible";
 
 const ITEM_CLASSES = "snap-start shrink-0 w-28 lg:w-auto lg:shrink";
 
@@ -38,7 +39,7 @@ export default function NewReleasesShelf({
         }
       />
 
-      <div className="flex-1 bg-white dark:bg-gray-800 rounded-xl border-2 border-black shadow-cartoon-md p-4">
+      <div className="flex-1 min-h-0 overflow-y-auto overlay-scrollbar bg-white dark:bg-gray-800 rounded-xl border-2 border-black shadow-cartoon-md p-4">
         <div className={SHELF_CLASSES}>
           {loading
             ? [...Array(SKELETON_COUNT)].map((_, i) => (

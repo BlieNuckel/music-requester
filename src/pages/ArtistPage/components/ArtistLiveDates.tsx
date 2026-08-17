@@ -61,7 +61,7 @@ export default function ArtistLiveDates({ dates }: ArtistLiveDatesProps) {
                 href={event.ticketUrl}
                 target="_blank"
                 rel="noreferrer noopener"
-                className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg border-2 border-black bg-orange-400 text-black shadow-cartoon-sm"
+                className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg border-2 border-black bg-orange-400 text-black shadow-cartoon-sm hover:translate-y-[-1px] hover:shadow-cartoon-md active:translate-y-[1px] active:shadow-cartoon-pressed transition-all"
               >
                 Tickets
               </a>

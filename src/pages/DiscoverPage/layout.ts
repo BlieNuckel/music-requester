@@ -19,9 +19,20 @@ const COL_SPAN_CLASSES: Record<SectionSpan["cols"], string> = {
 const ROW_SPAN_CLASSES: Record<SectionSpan["rows"], string> = {
   1: "lg:row-span-1",
   2: "lg:row-span-2",
+  3: "lg:row-span-3",
+  4: "lg:row-span-4",
+  5: "lg:row-span-5",
+  6: "lg:row-span-6",
 };
 
 const MOBILE_ORDER_CLASS = "max-lg:[order:var(--order-mobile)]";
+
+/**
+ * A slot is a hard boundary at desktop sizes. Tiles are given a fixed height by
+ * the grid, so anything taller has to be contained rather than allowed to spill
+ * over the tile next to it.
+ */
+const SLOT_BOUNDS_CLASS = "lg:min-h-0 lg:overflow-hidden";
 
 function isSectionHidden(
   definition: SectionDefinition,
@@ -63,5 +74,6 @@ export function sectionSlotClasses(
     COL_SPAN_CLASSES[definition.span.cols],
     ROW_SPAN_CLASSES[definition.span.rows],
     MOBILE_ORDER_CLASS,
+    SLOT_BOUNDS_CLASS,
   ].join(" ");
 }
