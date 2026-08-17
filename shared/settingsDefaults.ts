@@ -120,6 +120,15 @@ export type LiveEventsSettings = {
   /** Hard stop per run. Overage bills rather than fails, so this is a cost control. */
   maxPagesPerRun: number;
   sweepIntervalHours: number;
+  /** How often a non-delta pass runs to catch anything a delta sweep missed. */
+  fullSweepIntervalDays: number;
+  /**
+   * Delta state, not a preference: the watermark a `dateModifiedFrom` sweep
+   * resumes from, and when the last full pass completed. Null means the next run
+   * is a full pass.
+   */
+  rosterWatermark: string | null;
+  rosterFullSweptAt: string | null;
 };
 
 export const DEFAULT_LIVE_EVENTS: LiveEventsSettings = {
@@ -138,4 +147,7 @@ export const DEFAULT_LIVE_EVENTS: LiveEventsSettings = {
   rosterBatchSize: 100,
   maxPagesPerRun: 20,
   sweepIntervalHours: 24,
+  fullSweepIntervalDays: 30,
+  rosterWatermark: null,
+  rosterFullSweptAt: null,
 };

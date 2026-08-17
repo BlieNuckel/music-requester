@@ -80,7 +80,11 @@ export type IConfig = {
 /** Input type for setConfig — nested objects are optional since defaults are deep-merged */
 export type IConfigInput = Omit<
   IConfig,
-  "promotedAlbum" | "purchaseDecision" | "spending" | "notifications"
+  | "promotedAlbum"
+  | "purchaseDecision"
+  | "spending"
+  | "notifications"
+  | "liveEvents"
 > & {
   promotedAlbum?: Partial<PromotedAlbumConfig>;
   purchaseDecision?: Partial<PurchaseDecisionConfig>;
@@ -385,6 +389,19 @@ function validateLiveEventsConfig(config: LiveEventsConfig) {
     config.sweepIntervalHours,
     "liveEvents.sweepIntervalHours"
   );
+  validatePositiveInt(
+    config.fullSweepIntervalDays,
+    "liveEvents.fullSweepIntervalDays"
+  );
+
+  for (const [name, value] of [
+    ["rosterWatermark", config.rosterWatermark],
+    ["rosterFullSweptAt", config.rosterFullSweptAt],
+  ] as const) {
+    if (value !== null && typeof value !== "string") {
+      throw new Error(`liveEvents.${name} must be a string or null`);
+    }
+  }
   validateRatio(config.shelfMinAffinity, "liveEvents.shelfMinAffinity");
 
   if (config.bannerHorizonDays > MAX_BANNER_HORIZON_DAYS) {

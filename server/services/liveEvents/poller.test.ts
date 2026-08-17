@@ -1,0 +1,169 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { DEFAULT_LIVE_EVENTS } from "../../../shared/settingsDefaults";
+
+const mockGetConfig = vi.fn();
+const mockIsConfigured = vi.fn();
+const mockResolve = vi.fn();
+const mockSweep = vi.fn();
+
+vi.mock("../../config", () => ({
+  getConfig: () => mockGetConfig(),
+}));
+
+vi.mock("../../api/jambase/config", () => ({
+  isLiveEventsConfigured: () => mockIsConfigured(),
+}));
+
+vi.mock("./resolution", () => ({
+  resolveFollowedArtists: (...args: unknown[]) => mockResolve(...args),
+}));
+
+vi.mock("./rosterSweep", () => ({
+  runRosterSweep: () => mockSweep(),
+}));
+
+const { runLivePollOnce, startLiveEventsPoller, stopLiveEventsPoller } =
+  await import("./poller");
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.useFakeTimers();
+  mockIsConfigured.mockReturnValue(true);
+  mockResolve.mockResolvedValue({
+    attempted: 0,
+    resolved: 0,
+    missing: 0,
+    failed: 0,
+  });
+  mockSweep.mockResolvedValue({ ran: true });
+  mockGetConfig.mockReturnValue({
+    liveEvents: { ...DEFAULT_LIVE_EVENTS, enabled: true, apiKey: "k" },
+  });
+});
+
+afterEach(() => {
+  stopLiveEventsPoller();
+  vi.useRealTimers();
+});
+
+describe("runLivePollOnce", () => {
+  it("resolves before sweeping, so newly followed artists are included", async () => {
+    const order: string[] = [];
+    mockResolve.mockImplementation(async () => {
+      order.push("resolve");
+      return { attempted: 0, resolved: 0, missing: 0, failed: 0 };
+    });
+    mockSweep.mockImplementation(async () => {
+      order.push("sweep");
+      return { ran: true };
+    });
+
+    await runLivePollOnce();
+
+    expect(order).toEqual(["resolve", "sweep"]);
+  });
+
+  it("caps resolution per tick", async () => {
+    await runLivePollOnce();
+    expect(mockResolve).toHaveBeenCalledWith(25);
+  });
+
+  it("does nothing when unconfigured", async () => {
+    mockIsConfigured.mockReturnValue(false);
+    await runLivePollOnce();
+
+    expect(mockResolve).not.toHaveBeenCalled();
+    expect(mockSweep).not.toHaveBeenCalled();
+  });
+
+  it("does not overlap itself", async () => {
+    let release: () => void = () => {};
+    mockResolve.mockImplementation(
+      () => new Promise<void>((resolve) => (release = resolve))
+    );
+
+    const first = runLivePollOnce();
+    await runLivePollOnce();
+
+    expect(mockResolve).toHaveBeenCalledTimes(1);
+
+    release();
+    await first;
+  });
+
+  it("clears the running flag after a failure", async () => {
+    mockResolve.mockRejectedValueOnce(new Error("boom"));
+    await expect(runLivePollOnce()).rejects.toThrow("boom");
+
+    mockResolve.mockResolvedValue({
+      attempted: 0,
+      resolved: 0,
+      missing: 0,
+      failed: 0,
+    });
+    await runLivePollOnce();
+    expect(mockSweep).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("startLiveEventsPoller", () => {
+  it("waits before the first run rather than firing during boot", async () => {
+    startLiveEventsPoller(60_000);
+    expect(mockResolve).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(mockResolve).toHaveBeenCalledTimes(1);
+  });
+
+  it("reschedules itself after each tick", async () => {
+    startLiveEventsPoller(60_000);
+
+    await vi.advanceTimersByTimeAsync(45_000);
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(mockResolve).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps ticking after a failed run", async () => {
+    mockSweep.mockRejectedValueOnce(new Error("boom"));
+    startLiveEventsPoller(60_000);
+
+    await vi.advanceTimersByTimeAsync(45_000);
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(mockSweep).toHaveBeenCalledTimes(2);
+  });
+
+  it("derives its interval from config when none is given", async () => {
+    mockGetConfig.mockReturnValue({
+      liveEvents: {
+        ...DEFAULT_LIVE_EVENTS,
+        enabled: true,
+        apiKey: "k",
+        sweepIntervalHours: 2,
+      },
+    });
+
+    startLiveEventsPoller();
+    await vi.advanceTimersByTimeAsync(45_000);
+    await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000);
+
+    expect(mockResolve).toHaveBeenCalledTimes(2);
+  });
+
+  it("only schedules one timer", async () => {
+    startLiveEventsPoller(60_000);
+    startLiveEventsPoller(60_000);
+
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(mockResolve).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops cleanly", async () => {
+    startLiveEventsPoller(60_000);
+    stopLiveEventsPoller();
+
+    await vi.advanceTimersByTimeAsync(200_000);
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+});
