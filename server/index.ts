@@ -30,6 +30,7 @@ import similarAlbumsRoutes from "./routes/similarAlbums";
 import notificationsRoutes from "./routes/notifications";
 import { initializeNotifications } from "./services/notifications";
 import { startFollowedArtistPoller } from "./services/followed/poller";
+import { startLiveEventsPoller } from "./services/liveEvents/poller";
 import { startRequestStatusPoller } from "./services/requests/statusPoller";
 import { startProfileRegenPoller } from "./services/profile/regenPoller";
 import { startSignalIngestionPoller } from "./services/profile/signalPoller";
@@ -114,6 +115,8 @@ const profileRegenIntervalMs =
 startProfileRegenPoller(profileRegenIntervalMs);
 
 startSignalIngestionPoller();
+
+startLiveEventsPoller();
 
 const spotlightWarmIntervalMs =
   getConfig().promotedAlbum.cacheDurationMinutes * 60 * 1000;
