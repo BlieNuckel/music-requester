@@ -1,9 +1,17 @@
+import { Link } from "react-router-dom";
 import SectionHeader from "./SectionHeader";
 import type { NearbyShow } from "@/types";
 
 interface NearbyShowsShelfProps {
   shows: NearbyShow[];
 }
+
+/**
+ * The tile is one grid row tall and shares that row with new releases. Grid rows
+ * are content-sized, so rendering the full list here would stretch the row and
+ * drag its neighbour up with it. The rest live on /library/live.
+ */
+const MAX_VISIBLE = 3;
 
 const DATE_FORMAT: Intl.DateTimeFormatOptions = {
   weekday: "short",
@@ -24,13 +32,27 @@ function headliner(show: NearbyShow): string {
 }
 
 export default function NearbyShowsShelf({ shows }: NearbyShowsShelfProps) {
+  const visible = shows.slice(0, MAX_VISIBLE);
+
   return (
     <div className="h-full flex flex-col">
-      <SectionHeader title="Nearby" />
+      <SectionHeader
+        title="Nearby"
+        action={
+          shows.length > MAX_VISIBLE ? (
+            <Link
+              to="/library/live"
+              className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+            >
+              See all
+            </Link>
+          ) : undefined
+        }
+      />
 
       <div className="flex-1 bg-white dark:bg-gray-800 rounded-xl border-2 border-black shadow-cartoon-md p-4">
         <ul className="flex flex-col gap-3">
-          {shows.map((show) => (
+          {visible.map((show) => (
             <li key={show.eventKey} className="flex flex-col gap-0.5">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
