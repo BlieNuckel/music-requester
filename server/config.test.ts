@@ -14,6 +14,7 @@ import {
   getConfigValue,
   initializeConfig,
   DEFAULT_PROMOTED_ALBUM,
+  DEFAULT_LIVE_EVENTS,
   DEFAULT_NOTIFICATIONS,
 } from "./config";
 
@@ -401,5 +402,106 @@ describe("shared settings defaults", () => {
     const { spending } = getConfig();
     expect(spending.monthlyLimit).toBe(25);
     expect(spending.currency).toBe(SHARED_SPENDING.currency);
+  });
+});
+
+describe("liveEvents config", () => {
+  beforeEach(() => {
+    initializeConfig();
+  });
+
+  it("defaults to disabled with no key, so nothing calls JamBase by accident", () => {
+    const { liveEvents } = getConfig();
+    expect(liveEvents).toEqual(DEFAULT_LIVE_EVENTS);
+    expect(liveEvents.enabled).toBe(false);
+    expect(liveEvents.apiKey).toBe("");
+  });
+
+  it("deep-merges a partial patch without wiping siblings", () => {
+    setConfig({ liveEvents: { apiKey: "jbd_test" } as never });
+    const { liveEvents } = getConfig();
+
+    expect(liveEvents.apiKey).toBe("jbd_test");
+    expect(liveEvents.sweepRadiusKm).toBe(DEFAULT_LIVE_EVENTS.sweepRadiusKm);
+    expect(liveEvents.announceDays).toBe(DEFAULT_LIVE_EVENTS.announceDays);
+  });
+
+  it("accepts a null origin, which is the unconfigured state", () => {
+    expect(() =>
+      setConfig({ liveEvents: { originLat: null, originLon: null } as never })
+    ).not.toThrow();
+  });
+
+  it("rejects coordinates outside the possible range", () => {
+    expect(() => setConfig({ liveEvents: { originLat: 91 } as never })).toThrow(
+      "originLat must be between -90 and 90"
+    );
+    expect(() =>
+      setConfig({ liveEvents: { originLon: -181 } as never })
+    ).toThrow("originLon must be between -180 and 180");
+  });
+
+  it("rejects a banner horizon past the tier's six-month window", () => {
+    expect(() =>
+      setConfig({ liveEvents: { bannerHorizonDays: 365 } as never })
+    ).toThrow("bannerHorizonDays cannot exceed 180");
+
+    expect(() =>
+      setConfig({ liveEvents: { bannerHorizonDays: 180 } as never })
+    ).not.toThrow();
+  });
+
+  it("rejects a roster batch larger than the API accepts", () => {
+    expect(() =>
+      setConfig({ liveEvents: { rosterBatchSize: 250 } as never })
+    ).toThrow("rosterBatchSize cannot exceed 100");
+  });
+
+  it("requires uppercase ISO 3166-1 alpha-2 regions", () => {
+    expect(() =>
+      setConfig({ liveEvents: { regions: ["SE", "DK"] } as never })
+    ).not.toThrow();
+
+    expect(() =>
+      setConfig({ liveEvents: { regions: ["se"] } as never })
+    ).toThrow("alpha-2");
+
+    expect(() =>
+      setConfig({ liveEvents: { regions: ["SWE"] } as never })
+    ).toThrow("alpha-2");
+
+    expect(() => setConfig({ liveEvents: { regions: "SE" } as never })).toThrow(
+      "regions must be an array"
+    );
+  });
+
+  it("rejects UK, because geoCountryIso2 expects GB", () => {
+    expect(() =>
+      setConfig({ liveEvents: { regions: ["UK"] } as never })
+    ).toThrow("must use GB rather than UK");
+    expect(() =>
+      setConfig({ liveEvents: { regions: ["GB"] } as never })
+    ).not.toThrow();
+  });
+
+  it("rejects non-positive intervals and radii", () => {
+    expect(() =>
+      setConfig({ liveEvents: { sweepRadiusKm: 0 } as never })
+    ).toThrow();
+    expect(() =>
+      setConfig({ liveEvents: { sweepIntervalHours: -1 } as never })
+    ).toThrow();
+    expect(() =>
+      setConfig({ liveEvents: { maxPagesPerRun: 0 } as never })
+    ).toThrow();
+  });
+
+  it("keeps shelfMinAffinity a ratio", () => {
+    expect(() =>
+      setConfig({ liveEvents: { shelfMinAffinity: 1.5 } as never })
+    ).toThrow();
+    expect(() =>
+      setConfig({ liveEvents: { shelfMinAffinity: 0.4 } as never })
+    ).not.toThrow();
   });
 });
