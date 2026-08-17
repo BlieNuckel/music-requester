@@ -160,3 +160,48 @@ export interface FollowedReleaseItem {
   viewedAt: string | null;
   notifiedAt: string;
 }
+
+export type LiveEventStatus =
+  "scheduled" | "rescheduled" | "postponed" | "cancelled";
+
+export type LiveEventResponse = "going" | "dismissed";
+
+export type LiveDistanceTier = "local" | "regional" | "out-of-scope";
+
+export type LiveNoticeReason =
+  "status-changed" | "just-announced" | "coming-up";
+
+export interface LiveEventPerformerSummary {
+  jambaseId: string;
+  name: string;
+  isHeadliner: boolean;
+}
+
+export interface LiveEventSummary {
+  id: number;
+  eventKey: string;
+  name: string;
+  eventDate: string;
+  previousStartDate: string | null;
+  status: LiveEventStatus;
+  statusChangedAt: string | null;
+  venueName: string | null;
+  venueCity: string | null;
+  venueCountry: string | null;
+  ticketUrl: string | null;
+  imageUrl: string | null;
+  distanceKm: number | null;
+  performers: LiveEventPerformerSummary[];
+  response: LiveEventResponse | null;
+  viewedAt: string | null;
+}
+
+export interface LiveNotice extends LiveEventSummary {
+  tier: LiveDistanceTier;
+  reason: LiveNoticeReason;
+}
+
+export interface LiveNoticeData {
+  notice: LiveNotice | null;
+  additionalCount: number;
+}
