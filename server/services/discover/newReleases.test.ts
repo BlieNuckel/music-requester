@@ -274,15 +274,18 @@ describe("getNewReleases", () => {
       ok: true,
       data: [{ id: 1, name: "A", foreignArtistId: "mbid-library" }],
     });
+    // Half inside the 30-day window and half outside, so reaching the target
+    // requires widening no matter what the target is set to.
+    const recentCount = Math.floor(TARGET_ITEM_COUNT / 2);
     mockGetCachedFeed.mockResolvedValue([
-      ...Array.from({ length: 6 }, (_, i) =>
+      ...Array.from({ length: recentCount }, (_, i) =>
         feedRelease({
           releaseGroupMbid: `rg-recent-${i}`,
           releaseName: `Recent ${i}`,
           releaseDate: daysAgo(i + 1),
         })
       ),
-      ...Array.from({ length: 6 }, (_, i) =>
+      ...Array.from({ length: TARGET_ITEM_COUNT - recentCount }, (_, i) =>
         feedRelease({
           releaseGroupMbid: `rg-older-${i}`,
           releaseName: `Older ${i}`,
