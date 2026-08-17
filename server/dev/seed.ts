@@ -10,6 +10,8 @@ import {
   closeDatabase,
 } from "../db/index";
 import { hashPassword } from "../auth/password";
+import { initializeConfig } from "../config";
+import { seedLiveEvents } from "./seedLiveEvents";
 import { Permission } from "../../shared/permissions";
 
 type SeedUser = {
@@ -432,6 +434,7 @@ async function createSeedPurchase(
 async function seed() {
   console.log("Initializing database...");
   await initializeDatabase();
+  initializeConfig();
 
   const ds = getDataSource();
   const userRepo = ds.getRepository(User);
@@ -528,6 +531,9 @@ async function seed() {
     purchaseCreated++;
   }
 
+  console.log("\nCreating live events...");
+  await seedLiveEvents(admin.id);
+
   console.log(
     `\nDone! Created ${created} requests (skipped ${skipped}), ${wantedCreated} wanted items (skipped ${wantedSkipped}), ${purchaseCreated} purchases (skipped ${purchaseSkipped}).`
   );
@@ -545,6 +551,15 @@ async function seed() {
   }
   console.log("\nTo see mock Lidarr lifecycle states, run the server with:");
   console.log("  MOCK_LIDARR=true pnpm dev");
+  console.log("\nLive events are seeded for the admin account:");
+  console.log(
+    "  Discover      banner (just-announced local show) + nearby shelf"
+  );
+  console.log("  /library/live Upcoming, Going, Dismissed and Past tabs");
+  console.log("  /artist/:mbid live dates on the five followed artists");
+  console.log(
+    "  Nothing calls JamBase: liveEvents stays disabled and keyless in dev."
+  );
 
   await closeDatabase();
 }
