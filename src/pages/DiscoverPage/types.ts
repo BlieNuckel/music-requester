@@ -21,7 +21,7 @@ export type SectionStatusMap = Partial<Record<SectionId, SectionStatus>>;
  */
 export type SectionSpan = {
   cols: 2 | 4 | 6;
-  rows: 1 | 2;
+  rows: 1 | 2 | 3 | 4 | 5 | 6;
 };
 
 /** Props every section component receives from its grid slot. */

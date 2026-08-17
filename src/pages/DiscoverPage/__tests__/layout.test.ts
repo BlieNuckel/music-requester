@@ -82,6 +82,14 @@ describe("sectionSlotClasses", () => {
     expect(classes).toContain("lg:row-span-2");
   });
 
+  it("maps every row span the registry can use", () => {
+    for (const rows of [1, 2, 3, 4, 5, 6] as const) {
+      expect(
+        sectionSlotClasses(makeDefinition({ span: { cols: 4, rows } }), false)
+      ).toContain(`lg:row-span-${rows}`);
+    }
+  });
+
   it("includes the mobile order class", () => {
     const classes = sectionSlotClasses(makeDefinition(), false);
     expect(classes).toContain("max-lg:[order:var(--order-mobile)]");

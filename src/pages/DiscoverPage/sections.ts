@@ -10,8 +10,9 @@ import type { SectionDefinition } from "./types";
  * resize, or reorder sections. Spans target the 6-column desktop grid;
  * mobileOrder controls the single-column stack independently.
  *
- * Grid rows are a fixed height, so a span is a contract: whatever you put in a
- * `rows: 1` tile gets one row unit and no more. See {@link SectionSpan}.
+ * Grid rows are a fixed height, so a span is a contract: a tile gets exactly the
+ * rows it asks for and no more. The unit is small on purpose, so a one-line
+ * widget can be one row while a shelf takes three. See {@link SectionSpan}.
  */
 export const SECTION_DEFINITIONS: readonly SectionDefinition[] = [
   {
@@ -24,7 +25,7 @@ export const SECTION_DEFINITIONS: readonly SectionDefinition[] = [
   },
   {
     id: "spotlight",
-    span: { cols: 4, rows: 2 },
+    span: { cols: 4, rows: 5 },
     desktopOrder: 2,
     mobileOrder: 2,
     whenEmpty: "hide",
@@ -32,7 +33,7 @@ export const SECTION_DEFINITIONS: readonly SectionDefinition[] = [
   },
   {
     id: "artists",
-    span: { cols: 2, rows: 2 },
+    span: { cols: 2, rows: 5 },
     desktopOrder: 3,
     mobileOrder: 4,
     whenEmpty: "hide",
@@ -40,7 +41,7 @@ export const SECTION_DEFINITIONS: readonly SectionDefinition[] = [
   },
   {
     id: "newReleases",
-    span: { cols: 4, rows: 1 },
+    span: { cols: 4, rows: 3 },
     desktopOrder: 4,
     mobileOrder: 3,
     whenEmpty: "hide",
@@ -48,7 +49,7 @@ export const SECTION_DEFINITIONS: readonly SectionDefinition[] = [
   },
   {
     id: "nearbyShows",
-    span: { cols: 2, rows: 1 },
+    span: { cols: 2, rows: 3 },
     desktopOrder: 5,
     mobileOrder: 5,
     whenEmpty: "hide",

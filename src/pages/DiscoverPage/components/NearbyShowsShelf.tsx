@@ -6,8 +6,8 @@ interface NearbyShowsShelfProps {
   shows: NearbyShow[];
 }
 
-/** As many rows as fit one bento row unit without scrolling. Rest on /library/live. */
-const MAX_VISIBLE = 3;
+/** As many entries as fit the tile's three rows without scrolling. Rest on /library/live. */
+const MAX_VISIBLE = 4;
 
 const DATE_FORMAT: Intl.DateTimeFormatOptions = {
   weekday: "short",

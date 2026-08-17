@@ -74,7 +74,7 @@ describe("NearbyShowsSection", () => {
     expect(items[1]).toHaveTextContent("Second");
   });
 
-  it("caps the list so it cannot stretch the grid row it shares", async () => {
+  it("caps the list to what the tile's rows hold", async () => {
     mockFetch({
       events: Array.from({ length: 8 }, (_, i) =>
         show({
@@ -87,7 +87,7 @@ describe("NearbyShowsSection", () => {
     });
     renderSection();
 
-    expect(await screen.findAllByRole("listitem")).toHaveLength(3);
+    expect(await screen.findAllByRole("listitem")).toHaveLength(4);
     expect(screen.getByRole("link", { name: "See all" })).toHaveAttribute(
       "href",
       "/library/live"

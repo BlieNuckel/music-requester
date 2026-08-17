@@ -19,6 +19,10 @@ const COL_SPAN_CLASSES: Record<SectionSpan["cols"], string> = {
 const ROW_SPAN_CLASSES: Record<SectionSpan["rows"], string> = {
   1: "lg:row-span-1",
   2: "lg:row-span-2",
+  3: "lg:row-span-3",
+  4: "lg:row-span-4",
+  5: "lg:row-span-5",
+  6: "lg:row-span-6",
 };
 
 const MOBILE_ORDER_CLASS = "max-lg:[order:var(--order-mobile)]";
