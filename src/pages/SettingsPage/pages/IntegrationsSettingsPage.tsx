@@ -8,6 +8,7 @@ import LastfmSection from "../sections/integrations/LastfmSection";
 import PlexSection from "../sections/integrations/PlexSection";
 import SlskdSection from "../sections/integrations/SlskdSection";
 import ImportSection from "../sections/integrations/ImportSection";
+import LiveEventsSection from "../sections/integrations/LiveEventsSection";
 import AutoSetupModal from "../shared/AutoSetupModal";
 import Skeleton from "@/components/Skeleton";
 import SaveStatusIndicator from "../shared/SaveStatusIndicator";
@@ -215,6 +216,17 @@ export default function IntegrationsSettingsPage() {
         importPath={fields.importPath}
         onImportPathChange={(v) => updateField("importPath", v)}
       />
+
+      {fields.liveEvents && (
+        <LiveEventsSection
+          settings={fields.liveEvents}
+          onChange={(patch) =>
+            updateFields({
+              liveEvents: { ...fields.liveEvents!, ...patch },
+            })
+          }
+        />
+      )}
 
       {testResult && (
         <div

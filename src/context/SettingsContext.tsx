@@ -8,6 +8,7 @@ import {
 import { DEFAULT_PROMOTED_ALBUM } from "./promotedAlbumDefaults";
 import { DEFAULT_PURCHASE_DECISION } from "./purchaseDecisionDefaults";
 import { DEFAULT_SPENDING } from "./spendingDefaults";
+import { DEFAULT_LIVE_EVENTS } from "@shared/settingsDefaults";
 import { useAuth } from "./useAuth";
 import { hasPermission, Permission } from "@shared/permissions";
 
@@ -44,6 +45,7 @@ const EMPTY_SETTINGS: AppSettings = {
   promotedAlbum: DEFAULT_PROMOTED_ALBUM,
   purchaseDecision: DEFAULT_PURCHASE_DECISION,
   spending: DEFAULT_SPENDING,
+  liveEvents: DEFAULT_LIVE_EVENTS,
 };
 
 const EMPTY_OPTIONS: LidarrOptions = {
@@ -81,6 +83,10 @@ function normalizeSettings(data: Record<string, unknown>): AppSettings {
     spending: {
       ...DEFAULT_SPENDING,
       ...((data.spending as object) ?? {}),
+    },
+    liveEvents: {
+      ...DEFAULT_LIVE_EVENTS,
+      ...((data.liveEvents as object) ?? {}),
     },
   };
 }

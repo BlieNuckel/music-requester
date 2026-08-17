@@ -6,6 +6,8 @@ const mockSetUserResponse = vi.fn();
 const mockMarkViewed = vi.fn();
 const mockFindEventsForArtist = vi.fn();
 const mockFindJambaseId = vi.fn();
+const mockReadPreferences = vi.fn();
+const mockWritePreferences = vi.fn();
 
 vi.mock("../services/liveEvents/notice", () => ({
   selectNotice: (...args: unknown[]) => mockSelectNotice(...args),
@@ -18,6 +20,11 @@ vi.mock("../db/liveEvents", () => ({
   findEventsForArtist: (...args: unknown[]) => mockFindEventsForArtist(...args),
   findJambaseIdForArtistMbid: (...args: unknown[]) =>
     mockFindJambaseId(...args),
+}));
+
+vi.mock("../services/liveEvents/preferences", () => ({
+  readLivePreferences: (...args: unknown[]) => mockReadPreferences(...args),
+  writeLivePreferences: (...args: unknown[]) => mockWritePreferences(...args),
 }));
 
 vi.mock("../middleware/requireAuth", () => ({
@@ -82,6 +89,8 @@ beforeEach(() => {
   mockMarkViewed.mockResolvedValue({});
   mockFindEventsForArtist.mockResolvedValue([]);
   mockFindJambaseId.mockResolvedValue(null);
+  mockReadPreferences.mockResolvedValue({ preferences: {}, coverage: {} });
+  mockWritePreferences.mockResolvedValue({ preferences: {}, coverage: {} });
 });
 
 describe("GET /notice", () => {
@@ -274,6 +283,8 @@ describe("GET /artist/:mbid", () => {
 
   it("returns an empty list rather than an error for an unresolved artist", async () => {
     mockFindJambaseId.mockResolvedValue(null);
+    mockReadPreferences.mockResolvedValue({ preferences: {}, coverage: {} });
+    mockWritePreferences.mockResolvedValue({ preferences: {}, coverage: {} });
 
     const res = await request(app).get("/artist/mbid-unknown");
 
@@ -291,5 +302,42 @@ describe("GET /artist/:mbid", () => {
       "jambase:1",
       expect.objectContaining({ includePast: true })
     );
+  });
+});
+
+describe("preferences", () => {
+  it("returns preferences with the coverage disclosure", async () => {
+    mockReadPreferences.mockResolvedValue({
+      preferences: { live_radius_km: 40 },
+      coverage: { sweepRadiusKm: 150 },
+    });
+
+    const res = await request(app).get("/preferences");
+
+    expect(res.status).toBe(200);
+    expect(res.body.coverage.sweepRadiusKm).toBe(150);
+    expect(mockReadPreferences).toHaveBeenCalledWith(7);
+  });
+
+  it("patches only the caller's own preferences", async () => {
+    mockWritePreferences.mockResolvedValue({ preferences: {}, coverage: {} });
+
+    const res = await request(app).patch("/preferences").send({ radiusKm: 40 });
+
+    expect(res.status).toBe(200);
+    expect(mockWritePreferences).toHaveBeenCalledWith(7, { radiusKm: 40 });
+  });
+
+  it("surfaces a rejected patch with its status", async () => {
+    mockWritePreferences.mockRejectedValue(
+      new ApiError(400, "Use GB rather than UK for the United Kingdom")
+    );
+
+    const res = await request(app)
+      .patch("/preferences")
+      .send({ regions: ["UK"] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("GB");
   });
 });
