@@ -10,7 +10,15 @@ export type SectionStatus = "loading" | "ready" | "empty" | "error";
 /** Statuses by section id; sections that have not reported yet are treated as "loading". */
 export type SectionStatusMap = Partial<Record<SectionId, SectionStatus>>;
 
-/** Tile size on the 6-column desktop grid. Mobile is always a single column. */
+/**
+ * Tile size on the 6-column desktop grid. Mobile is always a single column.
+ *
+ * Rows are a fixed height (`--bento-row-height` in index.css), so a span is a
+ * real size rather than a hint: `rows: 1` is one unit, `rows: 2` is two units
+ * plus the gap between them. Design a widget to fit its span and give it
+ * internal scroll if its content can grow; the slot clips at desktop sizes, so
+ * anything taller is contained rather than pushing its neighbours around.
+ */
 export type SectionSpan = {
   cols: 2 | 4 | 6;
   rows: 1 | 2;

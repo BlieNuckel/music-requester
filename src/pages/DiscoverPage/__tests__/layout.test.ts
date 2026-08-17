@@ -86,4 +86,18 @@ describe("sectionSlotClasses", () => {
     const classes = sectionSlotClasses(makeDefinition(), false);
     expect(classes).toContain("max-lg:[order:var(--order-mobile)]");
   });
+
+  it("bounds the slot at desktop sizes so a tall tile cannot spill over its neighbour", () => {
+    const classes = sectionSlotClasses(makeDefinition(), false);
+
+    expect(classes).toContain("lg:min-h-0");
+    expect(classes).toContain("lg:overflow-hidden");
+  });
+
+  it("leaves mobile unbounded, where tiles stack and size to their content", () => {
+    const classes = sectionSlotClasses(makeDefinition(), false);
+
+    expect(classes).not.toContain(" overflow-hidden");
+    expect(classes.startsWith("overflow-hidden")).toBe(false);
+  });
 });

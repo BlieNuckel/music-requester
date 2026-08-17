@@ -38,7 +38,7 @@ export default function NewReleasesShelf({
         }
       />
 
-      <div className="flex-1 bg-white dark:bg-gray-800 rounded-xl border-2 border-black shadow-cartoon-md p-4">
+      <div className="flex-1 min-h-0 overflow-y-auto overlay-scrollbar bg-white dark:bg-gray-800 rounded-xl border-2 border-black shadow-cartoon-md p-4">
         <div className={SHELF_CLASSES}>
           {loading
             ? [...Array(SKELETON_COUNT)].map((_, i) => (

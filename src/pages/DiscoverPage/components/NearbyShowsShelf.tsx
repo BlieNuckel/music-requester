@@ -6,11 +6,7 @@ interface NearbyShowsShelfProps {
   shows: NearbyShow[];
 }
 
-/**
- * The tile is one grid row tall and shares that row with new releases. Grid rows
- * are content-sized, so rendering the full list here would stretch the row and
- * drag its neighbour up with it. The rest live on /library/live.
- */
+/** As many rows as fit one bento row unit without scrolling. Rest on /library/live. */
 const MAX_VISIBLE = 3;
 
 const DATE_FORMAT: Intl.DateTimeFormatOptions = {
@@ -50,7 +46,7 @@ export default function NearbyShowsShelf({ shows }: NearbyShowsShelfProps) {
         }
       />
 
-      <div className="flex-1 bg-white dark:bg-gray-800 rounded-xl border-2 border-black shadow-cartoon-md p-4">
+      <div className="flex-1 min-h-0 overflow-y-auto overlay-scrollbar bg-white dark:bg-gray-800 rounded-xl border-2 border-black shadow-cartoon-md p-4">
         <ul className="flex flex-col gap-3">
           {visible.map((show) => (
             <li key={show.eventKey} className="flex flex-col gap-0.5">

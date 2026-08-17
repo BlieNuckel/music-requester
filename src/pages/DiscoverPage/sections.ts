@@ -9,6 +9,9 @@ import type { SectionDefinition } from "./types";
  * The Discover page section registry — the single place to add, remove,
  * resize, or reorder sections. Spans target the 6-column desktop grid;
  * mobileOrder controls the single-column stack independently.
+ *
+ * Grid rows are a fixed height, so a span is a contract: whatever you put in a
+ * `rows: 1` tile gets one row unit and no more. See {@link SectionSpan}.
  */
 export const SECTION_DEFINITIONS: readonly SectionDefinition[] = [
   {
