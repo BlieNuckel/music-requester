@@ -5,6 +5,7 @@ const mockGetConfig = vi.fn();
 const mockIsConfigured = vi.fn();
 const mockResolve = vi.fn();
 const mockSweep = vi.fn();
+const mockGeoSweep = vi.fn();
 
 vi.mock("../../config", () => ({
   getConfig: () => mockGetConfig(),
@@ -22,6 +23,10 @@ vi.mock("./rosterSweep", () => ({
   runRosterSweep: () => mockSweep(),
 }));
 
+vi.mock("./geoSweep", () => ({
+  runGeoSweep: () => mockGeoSweep(),
+}));
+
 const { runLivePollOnce, startLiveEventsPoller, stopLiveEventsPoller } =
   await import("./poller");
 
@@ -36,6 +41,7 @@ beforeEach(() => {
     failed: 0,
   });
   mockSweep.mockResolvedValue({ ran: true });
+  mockGeoSweep.mockResolvedValue({ ran: true });
   mockGetConfig.mockReturnValue({
     liveEvents: { ...DEFAULT_LIVE_EVENTS, enabled: true, apiKey: "k" },
   });
@@ -61,6 +67,22 @@ describe("runLivePollOnce", () => {
     await runLivePollOnce();
 
     expect(order).toEqual(["resolve", "sweep"]);
+  });
+
+  it("sweeps the roster before the nearby radius", async () => {
+    const order: string[] = [];
+    mockSweep.mockImplementation(async () => {
+      order.push("roster");
+      return { ran: true };
+    });
+    mockGeoSweep.mockImplementation(async () => {
+      order.push("geo");
+      return { ran: true };
+    });
+
+    await runLivePollOnce();
+
+    expect(order).toEqual(["roster", "geo"]);
   });
 
   it("caps resolution per tick", async () => {
