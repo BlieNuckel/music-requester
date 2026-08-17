@@ -585,6 +585,7 @@ describe("LiveEvents migration", () => {
       "artist_name",
       "is_headliner",
       "performance_rank",
+      "genres",
     ]);
 
     const stateCols = (await db.query(

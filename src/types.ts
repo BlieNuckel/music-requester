@@ -205,3 +205,13 @@ export interface LiveNoticeData {
   notice: LiveNotice | null;
   additionalCount: number;
 }
+
+export interface NearbyShow extends LiveEventSummary {
+  affinity: number;
+  matchedGenres: string[];
+  following: boolean;
+}
+
+export interface NearbyShowsData {
+  events: NearbyShow[];
+}

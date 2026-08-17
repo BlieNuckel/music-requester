@@ -29,6 +29,7 @@ import { FollowedReleases1718000000000 } from "./migration/10_FollowedReleases";
 import { NotificationPreferences1719000000000 } from "./migration/11_NotificationPreferences";
 import { PushSubscriptions1720000000000 } from "./migration/12_PushSubscriptions";
 import { LiveEvents1721000000000 } from "./migration/13_LiveEvents";
+import { LiveEventPerformerGenres1722000000000 } from "./migration/14_LiveEventPerformerGenres";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -76,6 +77,7 @@ export function createDataSource(dbPath?: string): DataSource {
       NotificationPreferences1719000000000,
       PushSubscriptions1720000000000,
       LiveEvents1721000000000,
+      LiveEventPerformerGenres1722000000000,
     ],
     synchronize: false,
     migrationsRun: true,

@@ -1,7 +1,8 @@
 import type { ComponentType } from "react";
 
 /** Unique key for a Discover section. Extend this union when adding a section. */
-export type SectionId = "liveBanner" | "spotlight" | "artists" | "newReleases";
+export type SectionId =
+  "liveBanner" | "spotlight" | "artists" | "newReleases" | "nearbyShows";
 
 /** Data lifecycle a section reports to the grid. */
 export type SectionStatus = "loading" | "ready" | "empty" | "error";
