@@ -1,8 +1,16 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { beforeEach } from "vitest";
 import userEvent from "@testing-library/user-event";
 import LiveEventsSection from "../LiveEventsSection";
 import { DEFAULT_LIVE_EVENTS } from "@shared/settingsDefaults";
+
+beforeEach(() => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) })
+  );
+});
 
 function renderSection(overrides = {}) {
   const onChange = vi.fn();

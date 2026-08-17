@@ -12,6 +12,8 @@ export {
   notifyRequestStatus,
 } from "./emit";
 export type { FollowedReleaseNotification } from "./emit";
+export type { QuotaWarningNotification } from "./emit";
+export { notifyQuotaWarning } from "./emit";
 export {
   getEffectivePreferences,
   isEventEnabled,

@@ -17,6 +17,7 @@ import {
   writeLivePreferences,
 } from "../services/liveEvents/preferences";
 import type { LivePreferencesPatch } from "../services/liveEvents/preferences";
+import { getQuotaStatus } from "../services/liveEvents/quota";
 import type { NoticeCandidate } from "../services/liveEvents/notice";
 
 const router = express.Router();
@@ -74,6 +75,10 @@ router.get("/preferences", async (req: Request, res: Response) => {
 router.patch("/preferences", async (req: Request, res: Response) => {
   const patch = req.body as LivePreferencesPatch;
   res.json(await writeLivePreferences(req.user!.id, patch));
+});
+
+router.get("/quota", async (_req: Request, res: Response) => {
+  res.json(await getQuotaStatus());
 });
 
 router.get("/notice", async (req: Request, res: Response) => {

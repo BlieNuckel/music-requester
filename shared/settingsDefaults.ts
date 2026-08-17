@@ -129,6 +129,13 @@ export type LiveEventsSettings = {
    */
   rosterWatermark: string | null;
   rosterFullSweptAt: string | null;
+  /** Plan allowance. Editable because paid tiers differ (Startup is 20,000). */
+  monthlyQuota: number;
+  quotaWarnRatio: number;
+  /** The API bills past the allowance rather than refusing, so we stop instead. */
+  quotaHardStop: boolean;
+  /** Billing periods start on the subscription date, not the 1st. */
+  billingPeriodStartDay: number;
 };
 
 export const DEFAULT_LIVE_EVENTS: LiveEventsSettings = {
@@ -150,4 +157,8 @@ export const DEFAULT_LIVE_EVENTS: LiveEventsSettings = {
   fullSweepIntervalDays: 30,
   rosterWatermark: null,
   rosterFullSweptAt: null,
+  monthlyQuota: 1000,
+  quotaWarnRatio: 0.8,
+  quotaHardStop: true,
+  billingPeriodStartDay: 1,
 };

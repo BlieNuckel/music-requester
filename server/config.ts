@@ -393,6 +393,20 @@ function validateLiveEventsConfig(config: LiveEventsConfig) {
     config.fullSweepIntervalDays,
     "liveEvents.fullSweepIntervalDays"
   );
+  validatePositiveInt(config.monthlyQuota, "liveEvents.monthlyQuota");
+  validateRatio(config.quotaWarnRatio, "liveEvents.quotaWarnRatio");
+  validatePositiveInt(
+    config.billingPeriodStartDay,
+    "liveEvents.billingPeriodStartDay"
+  );
+  if (config.billingPeriodStartDay > 28) {
+    throw new Error(
+      "liveEvents.billingPeriodStartDay must be 28 or lower so every month has one"
+    );
+  }
+  if (typeof config.quotaHardStop !== "boolean") {
+    throw new Error("liveEvents.quotaHardStop must be a boolean");
+  }
 
   for (const [name, value] of [
     ["rosterWatermark", config.rosterWatermark],

@@ -1,4 +1,5 @@
 import type { LiveEventsSettings } from "@/context/settingsContextDef";
+import LiveQuotaStatus from "./LiveQuotaStatus";
 
 interface LiveEventsSectionProps {
   settings: LiveEventsSettings;
@@ -61,6 +62,8 @@ export default function LiveEventsSection({
           Fetch tour dates for followed artists
         </span>
       </label>
+
+      <LiveQuotaStatus enabled={settings.enabled} />
 
       <div>
         <label className={LABEL_CLASSES}>JamBase API key</label>

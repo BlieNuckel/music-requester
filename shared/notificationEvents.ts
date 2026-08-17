@@ -10,7 +10,8 @@ export type NotificationEventId =
   | "discovery.weeklyReady"
   | "request.created"
   | "integration.unreachable"
-  | "import.failed";
+  | "import.failed"
+  | "live.quotaWarning";
 
 export type NotificationEventDefinition = {
   id: NotificationEventId;
@@ -80,6 +81,14 @@ export const NOTIFICATION_EVENTS: readonly NotificationEventDefinition[] = [
     id: "request.created",
     label: "New request submitted",
     description: "A user submitted a request that needs a decision.",
+    audience: "admin",
+    defaultEnabled: true,
+  },
+  {
+    id: "live.quotaWarning",
+    label: "Live events quota",
+    description:
+      "This instance is approaching, or has passed, its monthly live-events API allowance.",
     audience: "admin",
     defaultEnabled: true,
   },

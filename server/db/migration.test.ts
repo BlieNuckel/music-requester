@@ -546,6 +546,31 @@ describe("UserProfile migration", () => {
   });
 });
 
+describe("LiveQuotaUsage migration", () => {
+  it("creates the usage table keyed by billing period", async () => {
+    const db = await initTestDb();
+
+    const columns = (await db.query("PRAGMA table_info(live_quota_usage)")) as {
+      name: string;
+    }[];
+    expect(columns.map((c) => c.name)).toEqual([
+      "id",
+      "period",
+      "calls",
+      "warned_thresholds",
+      "updated_at",
+    ]);
+  });
+
+  it("rejects a duplicate period", async () => {
+    const db = await initTestDb();
+    const insert = `INSERT INTO live_quota_usage ("period", "updated_at") VALUES (?, ?)`;
+
+    await db.query(insert, ["2026-08", "now"]);
+    await expect(db.query(insert, ["2026-08", "now"])).rejects.toThrow();
+  });
+});
+
 describe("LiveEvents migration", () => {
   it("creates live_events, performers, and per-user state", async () => {
     const db = await initTestDb();
