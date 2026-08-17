@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { createDataSource } from "./dataSource";
 import { RenamePlexPlays1717000000000 } from "./migration/9_RenamePlexPlays";
 import { FollowedReleases1718000000000 } from "./migration/10_FollowedReleases";
+import { LiveEvents1721000000000 } from "./migration/13_LiveEvents";
 import type { DataSource } from "typeorm";
 
 let ds: DataSource | null = null;
@@ -44,6 +45,14 @@ describe("InitialSchema migration", () => {
       "plex_username",
       "plex_token",
       "user_type",
+      "live_radius_km",
+      "live_lat",
+      "live_lon",
+      "live_regions",
+      "live_announce_days",
+      "live_imminent_days_local",
+      "live_imminent_days_regional",
+      "live_banner_enabled",
     ]);
   });
 
@@ -190,6 +199,8 @@ describe("FollowedArtists migration", () => {
       "artist_name",
       "last_checked_at",
       "created_at",
+      "jambase_artist_id",
+      "jambase_resolved_at",
     ]);
 
     const releaseCols = (await db.query(
@@ -532,5 +543,113 @@ describe("UserProfile migration", () => {
         [999, "{}", 1, "hash"]
       )
     ).rejects.toThrow();
+  });
+});
+
+describe("LiveEvents migration", () => {
+  it("creates live_events, performers, and per-user state", async () => {
+    const db = await initTestDb();
+
+    const eventCols = (await db.query("PRAGMA table_info(live_events)")) as {
+      name: string;
+    }[];
+    expect(eventCols.map((c) => c.name)).toEqual([
+      "id",
+      "event_key",
+      "name",
+      "event_date",
+      "previous_start_date",
+      "event_status",
+      "status_changed_at",
+      "venue_name",
+      "venue_city",
+      "venue_country",
+      "venue_lat",
+      "venue_lon",
+      "ticket_url",
+      "image_url",
+      "first_seen_at",
+      "last_seen_at",
+      "disappeared_at",
+      "deletion_status",
+      "merged_into",
+    ]);
+
+    const performerCols = (await db.query(
+      "PRAGMA table_info(live_event_performers)"
+    )) as { name: string }[];
+    expect(performerCols.map((c) => c.name)).toEqual([
+      "id",
+      "event_id",
+      "artist_jambase_id",
+      "artist_name",
+      "is_headliner",
+      "performance_rank",
+    ]);
+
+    const stateCols = (await db.query(
+      "PRAGMA table_info(user_live_event_state)"
+    )) as { name: string }[];
+    expect(stateCols.map((c) => c.name)).toEqual([
+      "id",
+      "user_id",
+      "event_id",
+      "response",
+      "responded_at",
+      "viewed_at",
+      "notified_at",
+    ]);
+  });
+
+  it("rejects a duplicate event_key", async () => {
+    const db = await initTestDb();
+    const insert = `INSERT INTO live_events
+      (event_key, name, event_date, first_seen_at, last_seen_at)
+      VALUES (?, ?, ?, ?, ?)`;
+    const args = ["jambase:1", "Show", "2026-09-01", "now", "now"];
+
+    await db.query(insert, args);
+    await expect(db.query(insert, args)).rejects.toThrow();
+  });
+
+  it("enforces foreign keys on performers and per-user state", async () => {
+    const db = await initTestDb();
+
+    await expect(
+      db.query(
+        "INSERT INTO live_event_performers (event_id, artist_jambase_id, artist_name) VALUES (?, ?, ?)",
+        [999, "jambase:1", "Artist"]
+      )
+    ).rejects.toThrow();
+
+    await expect(
+      db.query(
+        "INSERT INTO user_live_event_state (user_id, event_id) VALUES (?, ?)",
+        [999, 999]
+      )
+    ).rejects.toThrow();
+  });
+
+  it("reverts cleanly, dropping the tables and added columns", async () => {
+    const db = await initTestDb();
+
+    const runner = db.createQueryRunner();
+    await new LiveEvents1721000000000().down(runner);
+
+    const tables = (await db.query(
+      `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN
+       ('live_events', 'live_event_performers', 'user_live_event_state')`
+    )) as { name: string }[];
+    expect(tables).toEqual([]);
+
+    const followedCols = (await db.query(
+      "PRAGMA table_info(followed_artists)"
+    )) as { name: string }[];
+    expect(followedCols.map((c) => c.name)).not.toContain("jambase_artist_id");
+
+    const userCols = (await db.query("PRAGMA table_info(users)")) as {
+      name: string;
+    }[];
+    expect(userCols.map((c) => c.name)).not.toContain("live_regions");
   });
 });

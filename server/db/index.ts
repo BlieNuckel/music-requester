@@ -59,3 +59,11 @@ export type { SignalKind } from "./entity/UserSignalEvent";
 export { UserSignalEvent } from "./entity/UserSignalEvent";
 export { NotificationPreference } from "./entity/NotificationPreference";
 export { PushSubscription } from "./entity/PushSubscription";
+export type {
+  LiveEventStatus,
+  LiveEventDeletionStatus,
+} from "./entity/LiveEvent";
+export { LiveEvent } from "./entity/LiveEvent";
+export { LiveEventPerformer } from "./entity/LiveEventPerformer";
+export type { LiveEventResponse } from "./entity/UserLiveEventState";
+export { UserLiveEventState } from "./entity/UserLiveEventState";
