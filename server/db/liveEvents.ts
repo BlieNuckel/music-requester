@@ -18,6 +18,7 @@ export type SweptPerformer = {
   artist_name: string;
   is_headliner: boolean;
   performance_rank: number | null;
+  genres: string[] | null;
 };
 
 export type SweptEvent = {
@@ -136,6 +137,22 @@ export function serializeLiveRegions(codes: string[] | null): string | null {
   return codes === null ? null : JSON.stringify(codes);
 }
 
+export function serializeGenres(genres: string[] | null): string | null {
+  return genres === null || genres.length === 0 ? null : JSON.stringify(genres);
+}
+
+export function parseGenres(json: string | null): string[] {
+  if (!json) return [];
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((genre): genre is string => typeof genre === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 function assignEventFields(row: LiveEvent, event: SweptEvent): void {
   row.name = event.name;
   row.event_date = event.event_date;
@@ -199,7 +216,11 @@ export async function upsertSweptEvents(
         await performerManager.insert(
           event.performers.map((performer) => ({
             event_id: saved.id,
-            ...performer,
+            artist_jambase_id: performer.artist_jambase_id,
+            artist_name: performer.artist_name,
+            is_headliner: performer.is_headliner,
+            performance_rank: performer.performance_rank,
+            genres: serializeGenres(performer.genres),
           }))
         );
       }

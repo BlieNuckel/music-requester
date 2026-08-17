@@ -88,6 +88,7 @@ describe("normalizeEvents", () => {
           artist_name: "Yves Tumor",
           is_headliner: true,
           performance_rank: 1,
+          genres: null,
         },
       ],
     });
@@ -247,5 +248,31 @@ describe("normalizeEvents", () => {
       tombstones: [],
       skipped: 0,
     });
+  });
+});
+
+describe("performer genres", () => {
+  it("carries genre slugs through for shelf affinity", () => {
+    const { events } = normalizeEvents([
+      {
+        ...RAW_EVENT,
+        performer: [
+          {
+            name: "Yves Tumor",
+            identifier: "jambase:1",
+            genre: ["art-pop", "experimental"],
+          },
+        ],
+      },
+    ]);
+
+    expect(events[0].performers[0].genres).toEqual(["art-pop", "experimental"]);
+  });
+
+  it("nulls genres when the performer has none", () => {
+    const { events } = normalizeEvents([
+      { ...RAW_EVENT, performer: [{ name: "A", identifier: "jambase:1" }] },
+    ]);
+    expect(events[0].performers[0].genres).toBeNull();
   });
 });

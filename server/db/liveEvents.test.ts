@@ -37,6 +37,7 @@ function performer(overrides: Partial<SweptPerformer> = {}): SweptPerformer {
     artist_name: "Yves Tumor",
     is_headliner: true,
     performance_rank: 1,
+    genres: ["indie", "art-pop"],
     ...overrides,
   };
 }
