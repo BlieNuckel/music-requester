@@ -13,6 +13,9 @@ import { UserProfile } from "./entity/UserProfile";
 import { UserSignalEvent } from "./entity/UserSignalEvent";
 import { NotificationPreference } from "./entity/NotificationPreference";
 import { PushSubscription } from "./entity/PushSubscription";
+import { LiveEvent } from "./entity/LiveEvent";
+import { LiveEventPerformer } from "./entity/LiveEventPerformer";
+import { UserLiveEventState } from "./entity/UserLiveEventState";
 import { InitialSchema1709000000000 } from "./migration/1_InitialSchema";
 import { ConfigTable1710000000000 } from "./migration/2_ConfigTable";
 import { WantedItems1711000000000 } from "./migration/3_WantedItems";
@@ -25,6 +28,7 @@ import { RenamePlexPlays1717000000000 } from "./migration/9_RenamePlexPlays";
 import { FollowedReleases1718000000000 } from "./migration/10_FollowedReleases";
 import { NotificationPreferences1719000000000 } from "./migration/11_NotificationPreferences";
 import { PushSubscriptions1720000000000 } from "./migration/12_PushSubscriptions";
+import { LiveEvents1721000000000 } from "./migration/13_LiveEvents";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -54,6 +58,9 @@ export function createDataSource(dbPath?: string): DataSource {
       UserSignalEvent,
       NotificationPreference,
       PushSubscription,
+      LiveEvent,
+      LiveEventPerformer,
+      UserLiveEventState,
     ],
     migrations: [
       InitialSchema1709000000000,
@@ -68,6 +75,7 @@ export function createDataSource(dbPath?: string): DataSource {
       FollowedReleases1718000000000,
       NotificationPreferences1719000000000,
       PushSubscriptions1720000000000,
+      LiveEvents1721000000000,
     ],
     synchronize: false,
     migrationsRun: true,
