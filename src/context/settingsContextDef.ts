@@ -1,5 +1,6 @@
 import { createContext } from "react";
 import type {
+  LiveEventsSettings,
   PromotedAlbumSettings,
   PurchaseDecisionSettings,
   SpendingSettings,
@@ -7,6 +8,7 @@ import type {
 
 export type {
   LibraryPreference,
+  LiveEventsSettings,
   PromotedAlbumSettings,
   PurchaseDecisionSettings,
   SpendingSettings,
@@ -28,6 +30,7 @@ export interface AppSettings {
   promotedAlbum?: PromotedAlbumSettings;
   purchaseDecision?: PurchaseDecisionSettings;
   spending?: SpendingSettings;
+  liveEvents?: LiveEventsSettings;
 }
 
 export type LidarrOptions = {

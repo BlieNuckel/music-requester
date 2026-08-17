@@ -215,3 +215,38 @@ export interface NearbyShow extends LiveEventSummary {
 export interface NearbyShowsData {
   events: NearbyShow[];
 }
+
+export interface LiveUserPreferences {
+  live_radius_km: number | null;
+  live_lat: number | null;
+  live_lon: number | null;
+  live_regions: string[] | null;
+  live_announce_days: number | null;
+  live_imminent_days_local: number | null;
+  live_imminent_days_regional: number | null;
+  live_banner_enabled: boolean | null;
+}
+
+export interface LiveCoverage {
+  originLat: number | null;
+  originLon: number | null;
+  sweepRadiusKm: number;
+  regions: string[];
+  configured: boolean;
+}
+
+export interface LivePreferencesData {
+  preferences: LiveUserPreferences;
+  coverage: LiveCoverage;
+}
+
+export interface LivePreferencesPatch {
+  radiusKm?: number | null;
+  lat?: number | null;
+  lon?: number | null;
+  regions?: string[] | null;
+  announceDays?: number | null;
+  imminentDaysLocal?: number | null;
+  imminentDaysRegional?: number | null;
+  bannerEnabled?: boolean | null;
+}

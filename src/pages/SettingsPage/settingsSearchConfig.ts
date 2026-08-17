@@ -26,6 +26,8 @@ export type SettingsSection =
   | "lidarrConnection"
   | "lidarrOptions"
   | "lastfm"
+  | "liveEvents"
+  | "livePreferences"
   | "plex"
   | "slskd"
   | "recommendations"
@@ -84,6 +86,38 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
       "path",
     ],
     permission: Permission.ADMIN,
+  },
+  liveEvents: {
+    label: "Live events",
+    tab: "integrations",
+    keywords: [
+      "live",
+      "events",
+      "tour",
+      "dates",
+      "concerts",
+      "shows",
+      "gigs",
+      "jambase",
+      "radius",
+      "countries",
+    ],
+    permission: Permission.ADMIN,
+  },
+  livePreferences: {
+    label: "Live dates",
+    tab: "general",
+    keywords: [
+      "live",
+      "dates",
+      "tour",
+      "shows",
+      "gigs",
+      "banner",
+      "radius",
+      "countries",
+      "nearby",
+    ],
   },
   lastfm: {
     label: "Last.fm",

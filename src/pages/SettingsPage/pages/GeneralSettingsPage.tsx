@@ -2,6 +2,7 @@ import { useSettings } from "@/context/useSettings";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import AccountSection from "../sections/general/AccountSection";
 import SpendingSection from "../sections/general/SpendingSection";
+import LivePreferencesSection from "../sections/general/LivePreferencesSection";
 import ThemeToggle from "@/components/ThemeToggle";
 import Skeleton from "@/components/Skeleton";
 import SaveStatusIndicator from "../shared/SaveStatusIndicator";
@@ -49,6 +50,8 @@ export default function GeneralSettingsPage() {
         spending={fields.spending}
         onSpendingChange={(v) => updateField("spending", v)}
       />
+
+      <LivePreferencesSection />
     </div>
   );
 }

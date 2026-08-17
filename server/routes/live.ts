@@ -12,6 +12,11 @@ import type { HydratedLiveEvent } from "../db/liveEvents";
 import type { LiveEventResponse } from "../db/index";
 import { selectNotice } from "../services/liveEvents/notice";
 import { getNearbyShows } from "../services/liveEvents/nearby";
+import {
+  readLivePreferences,
+  writeLivePreferences,
+} from "../services/liveEvents/preferences";
+import type { LivePreferencesPatch } from "../services/liveEvents/preferences";
 import type { NoticeCandidate } from "../services/liveEvents/notice";
 
 const router = express.Router();
@@ -61,6 +66,15 @@ function parseEventId(raw: string | string[] | undefined): number {
 }
 
 router.use(requireAuth);
+
+router.get("/preferences", async (req: Request, res: Response) => {
+  res.json(await readLivePreferences(req.user!.id));
+});
+
+router.patch("/preferences", async (req: Request, res: Response) => {
+  const patch = req.body as LivePreferencesPatch;
+  res.json(await writeLivePreferences(req.user!.id, patch));
+});
 
 router.get("/notice", async (req: Request, res: Response) => {
   const { notice, additionalCount } = await selectNotice(req.user!.id);
