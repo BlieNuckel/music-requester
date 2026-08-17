@@ -533,6 +533,24 @@ export async function findUnresolvedFollowedArtists(
     .getMany();
 }
 
+/**
+ * The JamBase id any user has already resolved for this MBID. Artist pages key
+ * off MBIDs, but events key off JamBase ids, and this is the only bridge that
+ * does not involve matching names.
+ */
+export async function findJambaseIdForArtistMbid(
+  artistMbid: string
+): Promise<string | null> {
+  const row = await artistRepo()
+    .createQueryBuilder("fa")
+    .select("fa.jambase_artist_id", "jambase_artist_id")
+    .where("fa.artist_mbid = :artistMbid", { artistMbid })
+    .andWhere("fa.jambase_artist_id IS NOT NULL")
+    .limit(1)
+    .getRawOne<{ jambase_artist_id: string }>();
+  return row?.jambase_artist_id ?? null;
+}
+
 /** Distinct JamBase artist ids across all users, for batched sweeps. */
 export async function listFollowedJambaseIds(): Promise<string[]> {
   const rows = await artistRepo()
