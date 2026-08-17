@@ -41,7 +41,7 @@ export const SECTION_DEFINITIONS: readonly SectionDefinition[] = [
   },
   {
     id: "newReleases",
-    span: { cols: 4, rows: 2 },
+    span: { cols: 4, rows: 3 },
     desktopOrder: 4,
     mobileOrder: 3,
     whenEmpty: "hide",
