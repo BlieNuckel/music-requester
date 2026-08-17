@@ -95,7 +95,7 @@ export default function NewReleaseCard({ item }: NewReleaseCardProps) {
           />
         )}
       </div>
-      <h3 className="mt-2 text-gray-900 dark:text-gray-100 font-medium text-xs truncate">
+      <h3 className="mt-1.5 text-gray-900 dark:text-gray-100 font-medium text-xs truncate">
         {item.title}
       </h3>
       <p className="text-gray-500 dark:text-gray-400 text-[11px] truncate">

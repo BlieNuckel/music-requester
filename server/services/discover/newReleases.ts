@@ -44,8 +44,8 @@ type Candidate = Omit<NewReleaseItem, "lidarrStatus"> & {
 };
 
 export const RELEASE_WINDOWS_DAYS = [30, 60, 90] as const;
-/** One full row of the six-column Discover shelf. */
-export const TARGET_ITEM_COUNT = 6;
+/** One full row of the eight-column Discover shelf. */
+export const TARGET_ITEM_COUNT = 8;
 
 const FOLLOWED_FETCH_LIMIT = 200;
 const DAY_MS = 24 * 60 * 60 * 1000;
