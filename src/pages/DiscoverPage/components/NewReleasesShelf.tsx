@@ -10,10 +10,10 @@ interface NewReleasesShelfProps {
 }
 
 /** Matches TARGET_ITEM_COUNT so the loading state is the shape of the result. */
-const SKELETON_COUNT = 6;
+const SKELETON_COUNT = 4;
 
 const SHELF_CLASSES =
-  "flex overflow-x-auto snap-x snap-mandatory gap-3 pb-1 lg:pb-0 lg:grid lg:grid-cols-6 lg:gap-4 lg:overflow-visible";
+  "flex overflow-x-auto snap-x snap-mandatory gap-3 pb-1 lg:pb-0 lg:grid lg:grid-cols-4 lg:gap-4 lg:overflow-visible";
 
 const ITEM_CLASSES = "snap-start shrink-0 w-28 lg:w-auto lg:shrink";
 

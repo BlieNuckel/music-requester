@@ -44,8 +44,12 @@ type Candidate = Omit<NewReleaseItem, "lidarrStatus"> & {
 };
 
 export const RELEASE_WINDOWS_DAYS = [30, 60, 90] as const;
-/** One full row of the six-column Discover shelf. */
-export const TARGET_ITEM_COUNT = 6;
+/**
+ * One full row of the Discover shelf. Cover art is square and therefore
+ * width-driven, so the column count is what makes a card tall enough to fill
+ * the tile: four wide columns fill it, six narrow ones leave it half empty.
+ */
+export const TARGET_ITEM_COUNT = 4;
 
 const FOLLOWED_FETCH_LIMIT = 200;
 const DAY_MS = 24 * 60 * 60 * 1000;
