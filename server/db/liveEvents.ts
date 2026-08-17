@@ -561,6 +561,16 @@ export async function listFollowedJambaseIds(): Promise<string[]> {
   return rows.map((row) => row.jambase_artist_id);
 }
 
+/** Users who follow at least one resolved artist, i.e. who could be notified. */
+export async function listUsersWithResolvedFollows(): Promise<number[]> {
+  const rows = await artistRepo()
+    .createQueryBuilder("fa")
+    .select("DISTINCT fa.user_id", "user_id")
+    .where("fa.jambase_artist_id IS NOT NULL")
+    .getRawMany<{ user_id: number }>();
+  return rows.map((row) => row.user_id);
+}
+
 /**
  * Union of every user's configured regions. The sweep is shared, so it has to
  * cover the union; per-user narrowing happens at read time.

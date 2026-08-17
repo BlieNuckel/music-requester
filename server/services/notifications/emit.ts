@@ -190,3 +190,48 @@ export function notifyQuotaWarning(
     url: "/settings/integrations",
   });
 }
+
+export type LiveEventNotification = {
+  userId: number;
+  artistName: string;
+  venue: string;
+  eventDate: string;
+  tier: "local" | "regional";
+};
+
+export type LiveStatusNotification = LiveEventNotification & {
+  status: "cancelled" | "postponed" | "rescheduled";
+};
+
+function liveEventBody(notification: LiveEventNotification): string {
+  return `${notification.venue} on ${notification.eventDate}`;
+}
+
+export function notifyLiveEvent(
+  notification: LiveEventNotification
+): Promise<void> {
+  return notifyUser(notification.userId, {
+    eventId: "live.nearbyShow",
+    title:
+      notification.tier === "local"
+        ? `${notification.artistName} is playing near you`
+        : `${notification.artistName} is playing within reach`,
+    body: liveEventBody(notification),
+    url: "/library/live",
+  });
+}
+
+/**
+ * Fires even for someone who already dismissed or bought tickets. They are
+ * exactly the person who needs to know the show is off.
+ */
+export function notifyLiveStatusChange(
+  notification: LiveStatusNotification
+): Promise<void> {
+  return notifyUser(notification.userId, {
+    eventId: "live.statusChanged",
+    title: `${notification.artistName}: show ${notification.status}`,
+    body: liveEventBody(notification),
+    url: "/library/live",
+  });
+}

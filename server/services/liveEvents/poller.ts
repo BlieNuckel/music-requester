@@ -4,6 +4,7 @@ import { createLogger } from "../../logger";
 import { resolveFollowedArtists } from "./resolution";
 import { runRosterSweep } from "./rosterSweep";
 import { runGeoSweep } from "./geoSweep";
+import { notifyLiveUpdates } from "./notifier";
 
 const log = createLogger("live-poller");
 
@@ -31,6 +32,7 @@ export async function runLivePollOnce(): Promise<void> {
     await resolveFollowedArtists(RESOLUTION_LIMIT_PER_TICK);
     await runRosterSweep();
     await runGeoSweep();
+    await notifyLiveUpdates();
   } finally {
     running = false;
   }
