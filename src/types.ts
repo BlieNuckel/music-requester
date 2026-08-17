@@ -250,3 +250,14 @@ export interface LivePreferencesPatch {
   imminentDaysRegional?: number | null;
   bannerEnabled?: boolean | null;
 }
+
+export interface LiveQuotaStatus {
+  period: string;
+  used: number;
+  quota: number;
+  ratio: number;
+  projectedMonthly: number;
+  remainingFollowCapacity: number;
+  batchSize: number;
+  hardStopped: boolean;
+}

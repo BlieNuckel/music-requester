@@ -12,6 +12,7 @@ const log = createLogger("JamBase API");
 const TIMEOUT_MS = 15000;
 
 let recordCall: CallRecorder | null = null;
+let preflightCheck: (() => Promise<void>) | null = null;
 
 /**
  * Quota is counted here rather than in each caller, so a new call site cannot
@@ -19,6 +20,15 @@ let recordCall: CallRecorder | null = null;
  */
 export function setCallRecorder(recorder: CallRecorder | null): void {
   recordCall = recorder;
+}
+
+/**
+ * Runs before every request and may throw to stop it. The quota guard uses it,
+ * because the API bills past the allowance rather than refusing, so nothing
+ * upstream will ever say no on our behalf.
+ */
+export function setPreflightCheck(check: (() => Promise<void>) | null): void {
+  preflightCheck = check;
 }
 
 function classify(status: number): JambaseError {
@@ -63,6 +73,8 @@ export async function jambaseGet<T>(
   params: Record<string, string | number | undefined> = {}
 ): Promise<T> {
   const { baseUrl, headers } = getJambaseConfig();
+  if (preflightCheck) await preflightCheck();
+
   const url = `${baseUrl}${endpoint}${buildQuery(params)}`;
 
   let response: Response;

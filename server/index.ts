@@ -32,6 +32,7 @@ import notificationsRoutes from "./routes/notifications";
 import { initializeNotifications } from "./services/notifications";
 import { startFollowedArtistPoller } from "./services/followed/poller";
 import { startLiveEventsPoller } from "./services/liveEvents/poller";
+import { installQuotaTracking } from "./services/liveEvents/quota";
 import { startRequestStatusPoller } from "./services/requests/statusPoller";
 import { startProfileRegenPoller } from "./services/profile/regenPoller";
 import { startSignalIngestionPoller } from "./services/profile/signalPoller";
@@ -118,6 +119,7 @@ startProfileRegenPoller(profileRegenIntervalMs);
 
 startSignalIngestionPoller();
 
+installQuotaTracking();
 startLiveEventsPoller();
 
 const spotlightWarmIntervalMs =

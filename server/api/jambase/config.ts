@@ -15,6 +15,7 @@ export type JambaseErrorKind =
   | "plan-gated"
   | "unauthorized"
   | "rate-limited"
+  | "quota-exceeded"
   | "transient"
   | "malformed";
 

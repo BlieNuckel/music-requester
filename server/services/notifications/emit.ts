@@ -163,3 +163,30 @@ export function notifyFollowedRelease(
     })
   );
 }
+
+export type QuotaWarningNotification = {
+  used: number;
+  quota: number;
+  ratio: number;
+  hardStopped: boolean;
+};
+
+/**
+ * Fired on threshold crossings only. Usage is a condition rather than a moment,
+ * so emitting it whenever the condition holds would announce it every poll.
+ */
+export function notifyQuotaWarning(
+  warning: QuotaWarningNotification
+): Promise<void> {
+  const percent = Math.round(warning.ratio * 100);
+  const body = warning.hardStopped
+    ? `Live event lookups are paused until the period resets. ${warning.used} of ${warning.quota} calls used.`
+    : `${warning.used} of ${warning.quota} monthly live-event calls used. Past the allowance, calls are billed rather than refused.`;
+
+  return notifyAdmins({
+    eventId: "live.quotaWarning",
+    title: `Live events at ${percent}% of quota`,
+    body,
+    url: "/settings/integrations",
+  });
+}

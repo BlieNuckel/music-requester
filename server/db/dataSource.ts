@@ -16,6 +16,7 @@ import { PushSubscription } from "./entity/PushSubscription";
 import { LiveEvent } from "./entity/LiveEvent";
 import { LiveEventPerformer } from "./entity/LiveEventPerformer";
 import { UserLiveEventState } from "./entity/UserLiveEventState";
+import { LiveQuotaUsage } from "./entity/LiveQuotaUsage";
 import { InitialSchema1709000000000 } from "./migration/1_InitialSchema";
 import { ConfigTable1710000000000 } from "./migration/2_ConfigTable";
 import { WantedItems1711000000000 } from "./migration/3_WantedItems";
@@ -30,6 +31,7 @@ import { NotificationPreferences1719000000000 } from "./migration/11_Notificatio
 import { PushSubscriptions1720000000000 } from "./migration/12_PushSubscriptions";
 import { LiveEvents1721000000000 } from "./migration/13_LiveEvents";
 import { LiveEventPerformerGenres1722000000000 } from "./migration/14_LiveEventPerformerGenres";
+import { LiveQuotaUsage1723000000000 } from "./migration/15_LiveQuotaUsage";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -62,6 +64,7 @@ export function createDataSource(dbPath?: string): DataSource {
       LiveEvent,
       LiveEventPerformer,
       UserLiveEventState,
+      LiveQuotaUsage,
     ],
     migrations: [
       InitialSchema1709000000000,
@@ -78,6 +81,7 @@ export function createDataSource(dbPath?: string): DataSource {
       PushSubscriptions1720000000000,
       LiveEvents1721000000000,
       LiveEventPerformerGenres1722000000000,
+      LiveQuotaUsage1723000000000,
     ],
     synchronize: false,
     migrationsRun: true,
