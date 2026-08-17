@@ -89,7 +89,7 @@ function LiveRow({
           href={event.ticketUrl}
           target="_blank"
           rel="noreferrer noopener"
-          className="shrink-0 text-sm font-semibold px-3 py-1.5 rounded-lg border-2 border-black bg-orange-400 text-black shadow-cartoon-sm"
+          className="shrink-0 text-sm font-semibold px-3 py-1.5 rounded-lg border-2 border-black bg-orange-400 text-black shadow-cartoon-sm hover:translate-y-[-1px] hover:shadow-cartoon-md active:translate-y-[1px] active:shadow-cartoon-pressed transition-all"
         >
           Tickets
         </a>
@@ -111,7 +111,7 @@ export default function LiveList() {
             type="button"
             aria-pressed={filter === option.id}
             onClick={() => setFilter(option.id)}
-            className={`text-sm font-semibold px-3 py-1.5 rounded-lg border-2 border-black shadow-cartoon-sm transition-transform ${
+            className={`text-sm font-semibold px-3 py-1.5 rounded-lg border-2 border-black shadow-cartoon-sm hover:translate-y-[-1px] hover:shadow-cartoon-md active:translate-y-[1px] active:shadow-cartoon-pressed transition-all ${
               filter === option.id
                 ? "bg-orange-400 text-black"
                 : "bg-white dark:bg-gray-700 dark:text-gray-100"
