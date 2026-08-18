@@ -50,7 +50,7 @@ export const SECTION_DEFINITIONS: readonly SectionDefinition[] = [
   },
   {
     id: "nearbyShows",
-    span: { cols: 2, rows: 4 },
+    span: { cols: 2, rows: 5 },
     desktopOrder: 5,
     mobileOrder: 5,
     whenEmpty: "hide",

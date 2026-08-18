@@ -97,6 +97,13 @@ describe("NearbyShowsShelf", () => {
     expect(link).toHaveAttribute("rel", expect.stringContaining("noopener"));
   });
 
+  it("labels both actions in text, not icons alone", () => {
+    renderShelf([show()]);
+
+    expect(screen.getByText("Search")).toBeInTheDocument();
+    expect(screen.getByText("Tickets")).toBeInTheDocument();
+  });
+
   it("omits the ticket link when there is no ticket url", () => {
     renderShelf([show({ ticketUrl: null })]);
     expect(
