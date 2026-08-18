@@ -9,6 +9,8 @@ const mockFindJambaseId = vi.fn();
 const mockReadPreferences = vi.fn();
 const mockWritePreferences = vi.fn();
 const mockSearchPlaces = vi.fn();
+const mockCountLiveTracking = vi.fn();
+const mockGetArtistLiveTracking = vi.fn();
 
 vi.mock("../services/liveEvents/notice", () => ({
   selectNotice: (...args: unknown[]) => mockSelectNotice(...args),
@@ -30,6 +32,12 @@ vi.mock("../services/liveEvents/preferences", () => ({
 
 vi.mock("../api/openMeteo/geocoding", () => ({
   searchPlaces: (...args: unknown[]) => mockSearchPlaces(...args),
+}));
+
+vi.mock("../services/liveEvents/tracking", () => ({
+  countLiveTracking: () => mockCountLiveTracking(),
+  getArtistLiveTracking: (...args: unknown[]) =>
+    mockGetArtistLiveTracking(...args),
 }));
 
 vi.mock("../middleware/requireAuth", () => ({
@@ -94,6 +102,12 @@ beforeEach(() => {
   mockMarkViewed.mockResolvedValue({});
   mockFindEventsForArtist.mockResolvedValue([]);
   mockFindJambaseId.mockResolvedValue(null);
+  mockGetArtistLiveTracking.mockResolvedValue(null);
+  mockCountLiveTracking.mockResolvedValue({
+    tracked: 0,
+    pending: 0,
+    unavailable: 0,
+  });
   mockReadPreferences.mockResolvedValue({ preferences: {}, coverage: {} });
   mockWritePreferences.mockResolvedValue({ preferences: {}, coverage: {} });
 });
@@ -271,6 +285,32 @@ describe("POST /events/:id/viewed", () => {
 });
 
 describe("GET /artist/:mbid", () => {
+  it("reports the tracking state alongside the dates", async () => {
+    mockGetArtistLiveTracking.mockResolvedValue("unavailable");
+
+    const res = await request(app).get("/artist/mbid-1");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ events: [], liveTracking: "unavailable" });
+    expect(mockGetArtistLiveTracking).toHaveBeenCalledWith("mbid-1");
+  });
+
+  it("reports null tracking for an artist nobody follows", async () => {
+    const res = await request(app).get("/artist/mbid-1");
+    expect(res.body.liveTracking).toBeNull();
+  });
+
+  it("keeps the tracking state on a response that does have dates", async () => {
+    mockFindJambaseId.mockResolvedValue("jambase:1");
+    mockGetArtistLiveTracking.mockResolvedValue("tracked");
+    mockFindEventsForArtist.mockResolvedValue([storedEvent()]);
+
+    const res = await request(app).get("/artist/mbid-1");
+
+    expect(res.body.events).toHaveLength(1);
+    expect(res.body.liveTracking).toBe("tracked");
+  });
+
   it("returns the artist's dates once they have been resolved", async () => {
     mockFindJambaseId.mockResolvedValue("jambase:1");
     mockFindEventsForArtist.mockResolvedValue([storedEvent()]);
@@ -294,7 +334,7 @@ describe("GET /artist/:mbid", () => {
     const res = await request(app).get("/artist/mbid-unknown");
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ events: [] });
+    expect(res.body).toEqual({ events: [], liveTracking: null });
     expect(mockFindEventsForArtist).not.toHaveBeenCalled();
   });
 
@@ -376,5 +416,20 @@ describe("GET /geocode", () => {
     expect(res.status).toBe(200);
     expect(mockSearchPlaces).toHaveBeenCalledWith("");
     expect(res.body).toEqual({ places: [] });
+  });
+});
+
+describe("GET /roster", () => {
+  it("returns the counts per resolution state", async () => {
+    mockCountLiveTracking.mockResolvedValue({
+      tracked: 12,
+      pending: 3,
+      unavailable: 1,
+    });
+
+    const res = await request(app).get("/roster");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ tracked: 12, pending: 3, unavailable: 1 });
   });
 });

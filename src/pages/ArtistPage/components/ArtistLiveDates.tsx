@@ -1,13 +1,32 @@
-import type { LiveEventSummary, LiveEventStatus } from "@/types";
+import type {
+  LiveEventSummary,
+  LiveEventStatus,
+  LiveTrackingState,
+} from "@/types";
 
 interface ArtistLiveDatesProps {
   dates: LiveEventSummary[];
+  /** null when nobody follows this artist, so there is nothing to report. */
+  tracking: LiveTrackingState | null;
 }
 
 const STATUS_LABELS: Partial<Record<LiveEventStatus, string>> = {
   cancelled: "Cancelled",
   postponed: "Postponed",
   rescheduled: "Rescheduled",
+};
+
+/**
+ * An empty list means three different things, and conflating them is the whole
+ * problem: "not looked yet", "looked, nothing on sale", and "we will never find
+ * anything for this artist".
+ */
+const EMPTY_MESSAGES: Record<LiveTrackingState, string> = {
+  pending:
+    "Checking for live dates. New follows are looked up a batch at a time, so this can take a day or two.",
+  tracked: "No upcoming dates.",
+  unavailable:
+    "Our live events source has no listing for this artist, so no dates will show up here. It is a gap in the data, not a quiet touring year.",
 };
 
 const DATE_FORMAT: Intl.DateTimeFormatOptions = {
@@ -23,14 +42,30 @@ function formatDate(iso: string): string {
     : date.toLocaleDateString(undefined, DATE_FORMAT);
 }
 
-export default function ArtistLiveDates({ dates }: ArtistLiveDatesProps) {
-  if (dates.length === 0) return null;
+export default function ArtistLiveDates({
+  dates,
+  tracking,
+}: ArtistLiveDatesProps) {
+  // Nobody follows them, so there is no watching to explain.
+  if (dates.length === 0 && tracking === null) return null;
 
   return (
     <section className="mb-8">
       <h2 className="text-gray-500 dark:text-gray-400 text-sm font-semibold uppercase tracking-wide mb-3">
         Live dates
       </h2>
+
+      {dates.length === 0 && tracking !== null && (
+        <p
+          className={`text-sm ${
+            tracking === "unavailable"
+              ? "text-amber-700 dark:text-amber-300"
+              : "text-gray-400 dark:text-gray-500"
+          }`}
+        >
+          {EMPTY_MESSAGES[tracking]}
+        </p>
+      )}
 
       <ul className="flex flex-col gap-2">
         {dates.map((event) => (

@@ -62,6 +62,54 @@ describe("FollowingList", () => {
     expect(screen.getByText(/Last checked/i)).toBeInTheDocument();
   });
 
+  it("flags an artist the live source has no listing for", async () => {
+    mockEndpoints({
+      "/api/followed/releases": [],
+      "/api/followed": [
+        {
+          id: 1,
+          artistMbid: "mbid-1",
+          artistName: "Radiohead",
+          lastCheckedAt: null,
+          createdAt: "2025-04-01",
+          liveTracking: "unavailable",
+        },
+      ],
+    });
+
+    renderWithRouter(<FollowingList />);
+    expect(await screen.findByText("No live listings")).toBeInTheDocument();
+  });
+
+  it("leaves tracked and pending artists unmarked, so the flag means something", async () => {
+    mockEndpoints({
+      "/api/followed/releases": [],
+      "/api/followed": [
+        {
+          id: 1,
+          artistMbid: "mbid-1",
+          artistName: "Radiohead",
+          lastCheckedAt: null,
+          createdAt: "2025-04-01",
+          liveTracking: "tracked",
+        },
+        {
+          id: 2,
+          artistMbid: "mbid-2",
+          artistName: "Boards of Canada",
+          lastCheckedAt: null,
+          createdAt: "2025-04-01",
+          liveTracking: "pending",
+        },
+      ],
+    });
+
+    renderWithRouter(<FollowingList />);
+
+    await screen.findByText("Radiohead");
+    expect(screen.queryByText("No live listings")).not.toBeInTheDocument();
+  });
+
   it("renders the seen-release feed when entries exist", async () => {
     mockEndpoints({
       "/api/followed/releases": [

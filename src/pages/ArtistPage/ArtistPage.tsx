@@ -25,7 +25,7 @@ export default function ArtistPage() {
   const { isArtistInLibrary } = useLibraryArtists();
   const { artists: similarArtists, loading: similarLoading } =
     useSimilarArtists(artist?.name, mbid);
-  const { dates: liveDates } = useArtistLiveDates(mbid);
+  const { dates: liveDates, tracking: liveTracking } = useArtistLiveDates(mbid);
 
   const sections = useMemo(
     () => (mbid ? groupArtistReleases(releaseGroups, mbid) : []),
@@ -54,7 +54,7 @@ export default function ArtistPage() {
         inLibrary={isArtistInLibrary(mbid ?? "", artist.name)}
       />
 
-      <ArtistLiveDates dates={liveDates} />
+      <ArtistLiveDates dates={liveDates} tracking={liveTracking} />
 
       <ArtistDiscography
         sections={sections}

@@ -1,8 +1,12 @@
 import useAsyncData from "./useAsyncData";
 import type { FetchContext } from "./useAsyncData";
-import type { LiveEventSummary } from "@/types";
+import type { LiveEventSummary, LiveTrackingState } from "@/types";
 
-type ArtistLiveDatesResponse = { events: LiveEventSummary[] };
+type ArtistLiveDatesResponse = {
+  events: LiveEventSummary[];
+  /** null when nobody follows this artist, so nothing is being watched at all. */
+  liveTracking: LiveTrackingState | null;
+};
 
 async function fetchArtistLiveDates({
   key,
@@ -19,5 +23,10 @@ export default function useArtistLiveDates(mbid: string | undefined) {
     mbid ? `artist-live-dates:${mbid}` : null,
     fetchArtistLiveDates
   );
-  return { dates: data?.events ?? [], loading, error };
+  return {
+    dates: data?.events ?? [],
+    tracking: data?.liveTracking ?? null,
+    loading,
+    error,
+  };
 }

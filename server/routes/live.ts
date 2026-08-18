@@ -21,6 +21,10 @@ import {
 import type { LivePreferencesPatch } from "../services/liveEvents/preferences";
 import { getQuotaStatus } from "../services/liveEvents/quota";
 import { searchPlaces } from "../api/openMeteo/geocoding";
+import {
+  countLiveTracking,
+  getArtistLiveTracking,
+} from "../services/liveEvents/tracking";
 import type { NoticeCandidate } from "../services/liveEvents/notice";
 
 const router = express.Router();
@@ -97,6 +101,15 @@ router.get(
   }
 );
 
+/** Instance-wide roster health, so ADMIN rather than per-user. */
+router.get(
+  "/roster",
+  requirePermission(Permission.ADMIN),
+  async (_req: Request, res: Response) => {
+    res.json(await countLiveTracking());
+  }
+);
+
 router.get("/notice", async (req: Request, res: Response) => {
   const { notice, additionalCount } = await selectNotice(req.user!.id);
   res.json({
@@ -135,14 +148,17 @@ router.get("/events", async (req: Request, res: Response) => {
 });
 
 router.get("/artist/:mbid", async (req: Request, res: Response) => {
-  const jambaseArtistId = await findJambaseIdForArtistMbid(
-    String(req.params.mbid)
-  );
+  const mbid = String(req.params.mbid);
+  const [jambaseArtistId, liveTracking] = await Promise.all([
+    findJambaseIdForArtistMbid(mbid),
+    getArtistLiveTracking(mbid),
+  ]);
 
   // Only artists somebody follows have ever been resolved, so an unfollowed
-  // artist has no dates rather than an error.
+  // artist has no dates rather than an error. liveTracking says which of those
+  // it is, so an empty list can explain itself.
   if (!jambaseArtistId) {
-    res.json({ events: [] });
+    res.json({ events: [], liveTracking });
     return;
   }
 
@@ -151,7 +167,7 @@ router.get("/artist/:mbid", async (req: Request, res: Response) => {
     includePast: req.query.includePast === "true",
   });
 
-  res.json({ events: events.map(serializeEvent) });
+  res.json({ events: events.map(serializeEvent), liveTracking });
 });
 
 router.post("/events/:id/response", async (req: Request, res: Response) => {

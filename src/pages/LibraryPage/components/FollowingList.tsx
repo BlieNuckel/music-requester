@@ -4,6 +4,7 @@ import useFollowedArtists from "@/hooks/useFollowedArtists";
 import FollowArtistButton from "@/components/FollowArtistButton";
 import Skeleton from "@/components/Skeleton";
 import { SearchIcon } from "@/components/icons";
+import LiveTrackingBadge from "./LiveTrackingBadge";
 import type { FollowedReleaseItem } from "@/types";
 
 function buildSearchHref(release: FollowedReleaseItem): string {
@@ -167,9 +168,12 @@ export default function FollowingList() {
                 className="flex items-center gap-3 rounded-xl border-2 border-black bg-white dark:bg-gray-800 shadow-cartoon-sm px-3 py-2"
               >
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">
-                    {follow.artistName}
-                  </p>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <p className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">
+                      {follow.artistName}
+                    </p>
+                    <LiveTrackingBadge state={follow.liveTracking} />
+                  </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
                     {formatChecked(follow.lastCheckedAt)}
                   </p>

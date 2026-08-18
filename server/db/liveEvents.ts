@@ -82,7 +82,34 @@ export type HydratedLiveEvent = LiveEvent & {
   distanceKm: number | null;
 };
 
+/**
+ * JamBase resolution for one artist, collapsed across everyone following them.
+ * The two nullable columns carry three states; see `deriveLiveTracking`.
+ */
+export type ArtistResolutionSummary = {
+  follows: number;
+  jambase_artist_id: string | null;
+  jambase_resolved_at: string | null;
+};
+
+type RawArtistResolution = {
+  follows: number | string;
+  jambase_artist_id: string | null;
+  jambase_resolved_at: string | null;
+};
+
 const EARTH_RADIUS_KM = 6371;
+
+/** SQLite hands COUNT() back as whatever the driver feels like. */
+function toResolutionSummary(
+  row: RawArtistResolution | undefined
+): ArtistResolutionSummary {
+  return {
+    follows: Number(row?.follows ?? 0),
+    jambase_artist_id: row?.jambase_artist_id ?? null,
+    jambase_resolved_at: row?.jambase_resolved_at ?? null,
+  };
+}
 
 function eventRepo() {
   return getDataSource().getRepository(LiveEvent);
@@ -549,6 +576,41 @@ export async function findJambaseIdForArtistMbid(
     .limit(1)
     .getRawOne<{ jambase_artist_id: string }>();
   return row?.jambase_artist_id ?? null;
+}
+
+/**
+ * One row per distinct followed artist, collapsing the per-user follow rows.
+ * MAX() picks a non-null id if anyone resolved one and a timestamp if anyone got
+ * a definitive answer, which is the state of the artist rather than of one
+ * person's follow. `follows` separates "nobody follows them" from "followed but
+ * not yet attempted", which the null columns cannot.
+ */
+export async function listArtistResolutions(): Promise<
+  ArtistResolutionSummary[]
+> {
+  const rows = await artistRepo()
+    .createQueryBuilder("fa")
+    .select("COUNT(fa.id)", "follows")
+    .addSelect("MAX(fa.jambase_artist_id)", "jambase_artist_id")
+    .addSelect("MAX(fa.jambase_resolved_at)", "jambase_resolved_at")
+    .groupBy("fa.artist_mbid")
+    .getRawMany<RawArtistResolution>();
+  return rows.map(toResolutionSummary);
+}
+
+/** The same collapsed state for one MBID. `follows` is 0 when nobody follows it. */
+export async function findArtistResolution(
+  artistMbid: string
+): Promise<ArtistResolutionSummary> {
+  const row = await artistRepo()
+    .createQueryBuilder("fa")
+    .select("COUNT(fa.id)", "follows")
+    .addSelect("MAX(fa.jambase_artist_id)", "jambase_artist_id")
+    .addSelect("MAX(fa.jambase_resolved_at)", "jambase_resolved_at")
+    .where("fa.artist_mbid = :artistMbid", { artistMbid })
+    .getRawOne<RawArtistResolution>();
+
+  return toResolutionSummary(row);
 }
 
 /** Distinct JamBase artist ids across all users, for batched sweeps. */
