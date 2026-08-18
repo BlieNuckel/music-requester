@@ -122,4 +122,18 @@ describe("filterSections with permissions", () => {
     const result = filterSections("theme", Permission.REQUEST);
     expect(result).toContain("theme");
   });
+
+  it("finds the taste profile inspector by what it is about", () => {
+    for (const query of ["taste", "profile", "signals", "genres"]) {
+      expect(filterSections(query, Permission.ADMIN)).toContain(
+        "tasteProfiles"
+      );
+    }
+  });
+
+  it("keeps the taste profile inspector away from non-admins", () => {
+    expect(filterSections("taste", Permission.REQUEST)).not.toContain(
+      "tasteProfiles"
+    );
+  });
 });

@@ -14,6 +14,7 @@ import RecommendationsSettingsPage from "./pages/SettingsPage/pages/Recommendati
 import PurchaseDecisionSettingsPage from "./pages/SettingsPage/pages/PurchaseDecisionSettingsPage";
 import UsersSettingsPage from "./pages/SettingsPage/pages/UsersSettingsPage";
 import LogsSettingsPage from "./pages/SettingsPage/pages/LogsSettingsPage";
+import TasteProfilesSettingsPage from "./pages/SettingsPage/pages/TasteProfilesSettingsPage";
 import LidarrIntegrationPage from "./pages/SettingsPage/integrations/LidarrIntegrationPage";
 import SoulseekIntegrationPage from "./pages/SettingsPage/integrations/SoulseekIntegrationPage";
 import PlexIntegrationPage from "./pages/SettingsPage/integrations/PlexIntegrationPage";
@@ -82,6 +83,10 @@ function App() {
               />
               <Route path="users" element={<UsersSettingsPage />} />
               <Route path="logs" element={<LogsSettingsPage />} />
+              <Route
+                path="taste-profiles"
+                element={<TasteProfilesSettingsPage />}
+              />
               <Route path="notifications" element={<NotificationsPage />}>
                 <Route
                   index

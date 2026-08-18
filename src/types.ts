@@ -263,6 +263,60 @@ export interface GeocodedPlace {
   population: number | null;
 }
 
+/** Sizes of one user's derived taste profile, for the admin inspector. */
+export interface ProfileDebugCounts {
+  genres: number;
+  artists: number;
+  similarSeeds: number;
+  similarCandidates: number;
+  knownAlbums: number;
+  exploredAlbums: number;
+  exploredArtists: number;
+}
+
+export interface ProfileDebugProfile {
+  generatedAt: string;
+  lastUsedAt: string;
+  schemaVersion: number;
+  currentSchemaVersion: number;
+  configHash: string;
+  currentConfigHash: string;
+  stale: boolean;
+  counts: ProfileDebugCounts;
+  topGenres: { tag: string; weight: number }[];
+  topArtists: { name: string; viewCount: number }[];
+}
+
+export interface ProfileDebugSignal {
+  kind: string;
+  count: number;
+  firstAt: string;
+  lastAt: string;
+}
+
+export interface ProfileDebugRecentSignal {
+  kind: string;
+  recordedAt: string;
+  changed: number;
+}
+
+export interface ProfileDebugPlex {
+  trackedTracks: number;
+  totalPlays: number;
+  artists: number;
+  ratedItems: number;
+}
+
+export interface ProfileDebugEntry {
+  userId: number;
+  username: string;
+  hasPlexToken: boolean;
+  profile: ProfileDebugProfile | null;
+  signals: ProfileDebugSignal[];
+  recentSignals: ProfileDebugRecentSignal[];
+  plex: ProfileDebugPlex;
+}
+
 export interface LivePreferencesPatch {
   radiusKm?: number | null;
   lat?: number | null;

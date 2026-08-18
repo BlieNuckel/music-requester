@@ -261,6 +261,13 @@ export async function getSignalIngestionUsers(): Promise<
   }));
 }
 
+/** Every persisted profile row, for the admin inspector. */
+export async function listUserProfiles(): Promise<UserProfile[]> {
+  return getDataSource()
+    .getRepository(UserProfile)
+    .find({ order: { user_id: "ASC" } });
+}
+
 export async function getSignalEvents(
   userId: number,
   kind?: string

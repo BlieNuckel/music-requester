@@ -7,7 +7,8 @@ export type SettingsTab =
   | "purchaseDecision"
   | "notifications"
   | "admin"
-  | "logs";
+  | "logs"
+  | "tasteProfiles";
 
 export const TAB_LABELS: Record<SettingsTab, string> = {
   general: "General",
@@ -17,6 +18,7 @@ export const TAB_LABELS: Record<SettingsTab, string> = {
   notifications: "Notifications",
   admin: "Users",
   logs: "Logs",
+  tasteProfiles: "Profiles",
 };
 
 export type SettingsSection =
@@ -34,7 +36,8 @@ export type SettingsSection =
   | "purchaseDecision"
   | "users"
   | "myNotifications"
-  | "logs";
+  | "logs"
+  | "tasteProfiles";
 
 type SectionMeta = {
   label: string;
@@ -218,6 +221,22 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
     keywords: ["logs", "log", "debug", "error", "history", "system"],
     permission: Permission.ADMIN,
   },
+  tasteProfiles: {
+    label: "Taste profiles",
+    tab: "tasteProfiles",
+    keywords: [
+      "taste",
+      "profile",
+      "profiles",
+      "signals",
+      "plays",
+      "ratings",
+      "genres",
+      "debug",
+      "plex",
+    ],
+    permission: Permission.ADMIN,
+  },
 };
 
 const TAB_ORDER: SettingsTab[] = [
@@ -227,6 +246,7 @@ const TAB_ORDER: SettingsTab[] = [
   "purchaseDecision",
   "notifications",
   "logs",
+  "tasteProfiles",
   "admin",
 ];
 
