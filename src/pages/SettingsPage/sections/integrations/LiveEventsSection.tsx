@@ -1,6 +1,7 @@
 import type { LiveEventsSettings } from "@/context/settingsContextDef";
 import CountryPicker from "@/components/CountryPicker";
 import LiveQuotaStatus from "./LiveQuotaStatus";
+import OriginLocationFields from "./OriginLocationFields";
 
 interface LiveEventsSectionProps {
   settings: LiveEventsSettings;
@@ -14,12 +15,6 @@ const LABEL_CLASSES =
   "block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1";
 
 const HINT_CLASSES = "text-gray-400 dark:text-gray-500 text-xs mt-1";
-
-function parseCoordinate(raw: string): number | null {
-  if (raw.trim() === "") return null;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : null;
-}
 
 export default function LiveEventsSection({
   settings,
@@ -61,32 +56,11 @@ export default function LiveEventsSection({
         </p>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div>
-          <label className={LABEL_CLASSES}>Origin latitude</label>
-          <input
-            type="number"
-            step="0.0001"
-            value={settings.originLat ?? ""}
-            onChange={(e) =>
-              onChange({ originLat: parseCoordinate(e.target.value) })
-            }
-            className={INPUT_CLASSES}
-          />
-        </div>
-        <div>
-          <label className={LABEL_CLASSES}>Origin longitude</label>
-          <input
-            type="number"
-            step="0.0001"
-            value={settings.originLon ?? ""}
-            onChange={(e) =>
-              onChange({ originLon: parseCoordinate(e.target.value) })
-            }
-            className={INPUT_CLASSES}
-          />
-        </div>
-      </div>
+      <OriginLocationFields
+        originLat={settings.originLat}
+        originLon={settings.originLon}
+        onChange={onChange}
+      />
 
       <div>
         <label className={LABEL_CLASSES}>Sweep radius (km)</label>

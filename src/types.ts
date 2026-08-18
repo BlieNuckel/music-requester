@@ -240,6 +240,17 @@ export interface LivePreferencesData {
   coverage: LiveCoverage;
 }
 
+/** A place the geocoder matched, for filling in the live events origin. */
+export interface GeocodedPlace {
+  name: string;
+  region: string | null;
+  country: string;
+  countryCode: string;
+  latitude: number;
+  longitude: number;
+  population: number | null;
+}
+
 export interface LivePreferencesPatch {
   radiusKm?: number | null;
   lat?: number | null;

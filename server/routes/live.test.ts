@@ -8,6 +8,7 @@ const mockFindEventsForArtist = vi.fn();
 const mockFindJambaseId = vi.fn();
 const mockReadPreferences = vi.fn();
 const mockWritePreferences = vi.fn();
+const mockSearchPlaces = vi.fn();
 
 vi.mock("../services/liveEvents/notice", () => ({
   selectNotice: (...args: unknown[]) => mockSelectNotice(...args),
@@ -25,6 +26,10 @@ vi.mock("../db/liveEvents", () => ({
 vi.mock("../services/liveEvents/preferences", () => ({
   readLivePreferences: (...args: unknown[]) => mockReadPreferences(...args),
   writeLivePreferences: (...args: unknown[]) => mockWritePreferences(...args),
+}));
+
+vi.mock("../api/openMeteo/geocoding", () => ({
+  searchPlaces: (...args: unknown[]) => mockSearchPlaces(...args),
 }));
 
 vi.mock("../middleware/requireAuth", () => ({
@@ -339,5 +344,37 @@ describe("preferences", () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toContain("GB");
+  });
+});
+
+describe("GET /geocode", () => {
+  it("hands back what the geocoder matched", async () => {
+    mockSearchPlaces.mockResolvedValue([
+      {
+        name: "Malmö",
+        region: "Skåne County",
+        country: "Sweden",
+        countryCode: "SE",
+        latitude: 55.6059,
+        longitude: 13.0007,
+        population: 362133,
+      },
+    ]);
+
+    const res = await request(app).get("/geocode?q=Malm%C3%B6");
+
+    expect(res.status).toBe(200);
+    expect(mockSearchPlaces).toHaveBeenCalledWith("Malmö");
+    expect(res.body.places[0].name).toBe("Malmö");
+  });
+
+  it("treats a missing query as an empty one rather than a 500", async () => {
+    mockSearchPlaces.mockResolvedValue([]);
+
+    const res = await request(app).get("/geocode");
+
+    expect(res.status).toBe(200);
+    expect(mockSearchPlaces).toHaveBeenCalledWith("");
+    expect(res.body).toEqual({ places: [] });
   });
 });
