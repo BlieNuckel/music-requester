@@ -169,6 +169,30 @@ describe("getPromotedArtists", () => {
     expect(boc?.match).toBe(0.95);
   });
 
+  it("orders the picked artists from weakest to strongest match", async () => {
+    mockGetSimilarArtists.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === "Aphex Twin"
+          ? [
+              { name: "Bibio", mbid: "bi", match: 0.4, imageUrl: "" },
+              {
+                name: "Boards of Canada",
+                mbid: "boc",
+                match: 0.9,
+                imageUrl: "",
+              },
+              { name: "Tycho", mbid: "ty", match: 0.7, imageUrl: "" },
+              { name: "Clark", mbid: "cl", match: 0.6, imageUrl: "" },
+            ]
+          : []
+      )
+    );
+
+    const result = await getPromotedArtists(userId);
+
+    expect(result!.artists.map((a) => a.match)).toEqual([0.4, 0.6, 0.7, 0.9]);
+  });
+
   it("marks artists in the library", async () => {
     const result = await getPromotedArtists(userId);
     const tycho = result!.artists.find((a) => a.name === "Tycho");
