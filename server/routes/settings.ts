@@ -7,6 +7,10 @@ import {
 } from "../services/pathValidation";
 import { clearPromotedAlbumCache } from "../promotedAlbum/getPromotedAlbum";
 import { clearPromotedArtistsCache } from "../promotedArtists/getPromotedArtists";
+import {
+  onLiveEventsSettingsSaved,
+  snapshotLiveEventsSettings,
+} from "../services/liveEvents/settingsChange";
 import { testLidarrConnection } from "../services/settings";
 import { testSlskdConnection } from "../api/slskd/testConnection";
 import { requireAuth } from "../middleware/requireAuth";
@@ -38,11 +42,19 @@ router.put("/", (req: Request, res: Response) => {
     }
   }
 
+  const liveEventsBefore = partialConfig.liveEvents
+    ? snapshotLiveEventsSettings()
+    : null;
+
   setConfig(partialConfig);
 
   if (partialConfig.promotedAlbum) {
     clearPromotedAlbumCache();
     clearPromotedArtistsCache();
+  }
+
+  if (liveEventsBefore) {
+    onLiveEventsSettingsSaved(liveEventsBefore);
   }
 
   res.json({ success: true });

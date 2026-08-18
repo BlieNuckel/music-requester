@@ -38,11 +38,17 @@ export async function runLivePollOnce(): Promise<void> {
   }
 }
 
-export function startLiveEventsPoller(intervalMs?: number): void {
+function resolveIntervalMs(intervalMs?: number): number {
+  return intervalMs ?? getConfig().liveEvents.sweepIntervalHours * HOUR_MS;
+}
+
+export function startLiveEventsPoller(
+  intervalMs?: number,
+  firstRunDelayMs = FIRST_RUN_DELAY_MS
+): void {
   if (timer) return;
 
-  const resolved =
-    intervalMs ?? getConfig().liveEvents.sweepIntervalHours * HOUR_MS;
+  const resolved = resolveIntervalMs(intervalMs);
 
   const tick = async () => {
     try {
@@ -54,8 +60,20 @@ export function startLiveEventsPoller(intervalMs?: number): void {
     }
   };
 
-  timer = setTimeout(tick, FIRST_RUN_DELAY_MS);
+  timer = setTimeout(tick, firstRunDelayMs);
   log.info(`Live events poller scheduled (interval: ${resolved / 1000}s)`);
+}
+
+/**
+ * Pick up a changed sweep interval, which a running timer cannot do: it captured
+ * the old value when it started. The first tick after a restart is a full
+ * interval away rather than the boot delay, because changing how often sweeps
+ * happen is not a reason to spend one now.
+ */
+export function restartLiveEventsPoller(intervalMs?: number): void {
+  const resolved = resolveIntervalMs(intervalMs);
+  stopLiveEventsPoller();
+  startLiveEventsPoller(resolved, resolved);
 }
 
 export function stopLiveEventsPoller(): void {

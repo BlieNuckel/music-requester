@@ -32,8 +32,12 @@ vi.mock("./notifier", () => ({
   notifyLiveUpdates: () => mockNotify(),
 }));
 
-const { runLivePollOnce, startLiveEventsPoller, stopLiveEventsPoller } =
-  await import("./poller");
+const {
+  runLivePollOnce,
+  startLiveEventsPoller,
+  restartLiveEventsPoller,
+  stopLiveEventsPoller,
+} = await import("./poller");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -213,5 +217,49 @@ describe("startLiveEventsPoller", () => {
 
     await vi.advanceTimersByTimeAsync(200_000);
     expect(mockResolve).not.toHaveBeenCalled();
+  });
+});
+
+describe("restartLiveEventsPoller", () => {
+  it("waits a full interval after a restart rather than the boot delay", async () => {
+    startLiveEventsPoller(60_000);
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(mockResolve).toHaveBeenCalledTimes(1);
+
+    restartLiveEventsPoller(120_000);
+
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(mockResolve).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(75_000);
+    expect(mockResolve).toHaveBeenCalledTimes(2);
+  });
+
+  it("replaces the interval the running timer captured", async () => {
+    startLiveEventsPoller(60 * 60 * 1000);
+    restartLiveEventsPoller(90_000);
+
+    await vi.advanceTimersByTimeAsync(90_000);
+    expect(mockResolve).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(90_000);
+    expect(mockResolve).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads the new interval from config when none is given", async () => {
+    startLiveEventsPoller(60_000);
+    mockGetConfig.mockReturnValue({
+      liveEvents: {
+        ...DEFAULT_LIVE_EVENTS,
+        enabled: true,
+        apiKey: "k",
+        sweepIntervalHours: 1,
+      },
+    });
+
+    restartLiveEventsPoller();
+
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+    expect(mockResolve).toHaveBeenCalledTimes(1);
   });
 });
