@@ -37,21 +37,27 @@ describe("LiveEventsSection", () => {
     );
   });
 
-  it("parses a comma-separated country list", () => {
+  it("takes a whole country list at once, commas and all", () => {
     const onChange = renderSection();
 
-    const input = screen.getByPlaceholderText("SE, DK, DE");
-    fireEvent.change(input, { target: { value: "se, dk , de" } });
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "se, dk , de," },
+    });
 
     expect(onChange).toHaveBeenLastCalledWith({ regions: ["SE", "DK", "DE"] });
   });
 
-  it("rejects UK with an explanation rather than silently failing later", () => {
+  it("shows a chosen country by name, not just its code", () => {
+    renderSection({ regions: ["SE"] });
+    expect(screen.getByText("Sweden")).toBeInTheDocument();
+  });
+
+  it("rejects a saved UK with an explanation rather than failing later", () => {
     renderSection({ regions: ["UK"] });
     expect(screen.getByText(/Use GB rather than UK/)).toBeInTheDocument();
   });
 
-  it("flags a code that is not alpha-2", () => {
+  it("flags a saved code that is not alpha-2", () => {
     renderSection({ regions: ["SWE"] });
     expect(
       screen.getByText(/is not a two-letter country code/)

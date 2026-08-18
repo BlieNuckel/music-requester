@@ -1,5 +1,6 @@
 import { getConfig } from "../../config";
 import { ApiError } from "../../middleware/ApiError";
+import { countryCodeError } from "../../../shared/countries";
 import {
   distanceKm,
   getUserLivePreferences,
@@ -31,8 +32,6 @@ export type LivePreferencesView = {
   coverage: LiveCoverage;
 };
 
-const ISO2 = /^[A-Z]{2}$/;
-
 /**
  * What this instance can see at all. Surfaced to every user because the sweep
  * origin is admin-owned but decides what everybody else is able to find: an
@@ -56,15 +55,8 @@ export function getCoverage(): LiveCoverage {
 
 function validateRegions(regions: string[]): void {
   for (const code of regions) {
-    if (code === "UK") {
-      throw new ApiError(400, "Use GB rather than UK for the United Kingdom");
-    }
-    if (!ISO2.test(code)) {
-      throw new ApiError(
-        400,
-        `"${code}" is not an ISO 3166-1 alpha-2 country code`
-      );
-    }
+    const error = countryCodeError(code);
+    if (error) throw new ApiError(400, error);
   }
 }
 

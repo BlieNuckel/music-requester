@@ -93,7 +93,45 @@ describe("LivePreferencesSection", () => {
     mockFetch(preferencesBody());
     render(<LivePreferencesSection />);
 
-    expect(await screen.findByDisplayValue("SE, DK")).toBeInTheDocument();
+    expect(await screen.findByText("Sweden")).toBeInTheDocument();
+    expect(screen.getByText("Denmark")).toBeInTheDocument();
+  });
+
+  it("saves a country as soon as it is added", async () => {
+    const fetchMock = mockFetch(preferencesBody());
+    render(<LivePreferencesSection />);
+
+    await userEvent.type(await screen.findByRole("combobox"), "norw{Enter}");
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/live/preferences",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ regions: ["SE", "DK", "NO"] }),
+        })
+      )
+    );
+  });
+
+  it("falls back to the instance default once every country is removed", async () => {
+    const fetchMock = mockFetch(preferencesBody());
+    render(<LivePreferencesSection />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Remove Sweden" })
+    );
+    // The section renders nothing while the save refreshes, so wait it out.
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Remove Denmark" })
+    );
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/live/preferences",
+        expect.objectContaining({ body: JSON.stringify({ regions: null }) })
+      )
+    );
   });
 
   it("surfaces a rejected save", async () => {

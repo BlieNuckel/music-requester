@@ -1,4 +1,5 @@
 import { useState } from "react";
+import CountryPicker from "@/components/CountryPicker";
 import useLivePreferences from "@/hooks/useLivePreferences";
 
 const INPUT_CLASSES =
@@ -6,14 +7,6 @@ const INPUT_CLASSES =
 
 const LABEL_CLASSES =
   "block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1";
-
-function parseRegions(raw: string): string[] | null {
-  const codes = raw
-    .split(",")
-    .map((code) => code.trim().toUpperCase())
-    .filter((code) => code.length > 0);
-  return codes.length > 0 ? codes : null;
-}
 
 function coverageText(
   originLat: number | null,
@@ -29,11 +22,18 @@ function coverageText(
 export default function LivePreferencesSection() {
   const { preferences, coverage, loading, error, save } = useLivePreferences();
   const [saveError, setSaveError] = useState<string | null>(null);
+  /** Held locally so adding two countries in a row does not race the refresh. */
+  const [regions, setRegions] = useState<string[] | null>(null);
 
   if (loading || !preferences || !coverage) return null;
 
   const submit = async (patch: Parameters<typeof save>[0]) => {
     setSaveError(await save(patch));
+  };
+
+  const handleRegions = (codes: string[]) => {
+    setRegions(codes);
+    void submit({ regions: codes.length > 0 ? codes : null });
   };
 
   return (
@@ -86,17 +86,12 @@ export default function LivePreferencesSection() {
 
       <div>
         <label className={LABEL_CLASSES}>Countries you would travel to</label>
-        <input
-          type="text"
-          defaultValue={(preferences.live_regions ?? coverage.regions).join(
-            ", "
-          )}
-          placeholder="SE, DK, DE"
-          onBlur={(e) => void submit({ regions: parseRegions(e.target.value) })}
-          className={INPUT_CLASSES}
+        <CountryPicker
+          value={regions ?? preferences.live_regions ?? coverage.regions}
+          onChange={handleRegions}
         />
         <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">
-          Two-letter country codes. Leave empty to follow the instance default.
+          Remove them all to follow the instance default.
         </p>
       </div>
 
