@@ -14,6 +14,11 @@ import { createTtlMap } from "../utils/ttlMap";
 import { isPlaceholderArtist } from "../utils/artistFilter";
 import { findUserById } from "../auth/users";
 import { updateExplorationHistory } from "../db/userProfile";
+import {
+  getPromotedAlbumSnapshot,
+  savePromotedAlbumSnapshot,
+  type StoredCarousel,
+} from "../db/promotedAlbumSnapshot";
 import type { DerivedProfile } from "../db/entity/UserProfile";
 import { getMonitoredAlbums } from "../services/lidarr/albums";
 import { getArtistList } from "../services/lidarr/artists";
@@ -49,6 +54,23 @@ export type PromotedAlbumsResult = {
 };
 
 type WeightedTag = { name: string; weight: number };
+
+/**
+ * A cached carousel plus the batch size the build was aiming for. The two differ whenever
+ * a build came up short, and a later request asking for more than the build ever tried for
+ * has to rebuild rather than be served a batch that was never going to satisfy it.
+ */
+type CachedCarousel = { albums: PromotedAlbumEntry[]; targetCount: number };
+
+/** Everything one build needs, so the fallback path can retry-or-fall-back around it. */
+type BuildRequest = {
+  userId: number;
+  count: number;
+  config: PromotedAlbumConfig;
+  plexToken: string;
+  rng: Rng;
+  source: PromotedAlbumSource;
+};
 
 type LibraryLookups = {
   artistInLibrary: (mbid: string) => boolean;
@@ -138,8 +160,17 @@ const log = createLogger("promoted-album");
  */
 const WARM_ACTIVITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * How long a build that came up short — or one that had to fall back to the stored
+ * carousel — is trusted before another load retries it. Short, because the shortfall is
+ * usually a MusicBrainz wobble rather than a fact about the user; but not zero, because
+ * retrying a failing 30-lookup build on every page load is how one outage becomes a
+ * self-inflicted one.
+ */
+const PARTIAL_RESULT_TTL_MS = 5 * 60 * 1000;
+
 /** Short-lived final-result cache (layer 2) — keeps album selection off MusicBrainz on every load. */
-const resultCache = createTtlMap<number, PromotedAlbumEntry[]>();
+const resultCache = createTtlMap<number, CachedCarousel>();
 
 /** Last time each user loaded the carousel themselves; warmer builds never register here. */
 const lastRequestedAt = createTtlMap<number, number>();
@@ -227,6 +258,24 @@ function orderCandidates(walk: SelectionWalk): CandidateAlbum[] {
 }
 
 /**
+ * Resolve one candidate, treating a failed lookup the same as an unknown release group.
+ * MusicBrainz answers 429/503 under load, and `mbJson` rightly throws on those rather than
+ * caching them as "this album does not exist" — but a build must not die of it. Losing one
+ * candidate costs one slot of a 30-lookup budget; letting the error out costs the carousel.
+ */
+async function resolveOrNull(
+  getRgInfo: GetRgInfo,
+  mbid: string
+): Promise<ReleaseGroupInfo | null> {
+  try {
+    return await getRgInfo(mbid);
+  } catch (error) {
+    log.debug(`Candidate ${mbid} could not be resolved`, error);
+    return null;
+  }
+}
+
+/**
  * Take the first album that resolves to a release group, is a release type worth
  * recommending, and hasn't been shown recently. Candidates are visited in preference order,
  * so the first qualifying one is also the most preferred available and the walk can stop
@@ -247,7 +296,7 @@ async function walkCandidates(
     }
     walk.budget.remaining -= 1;
 
-    const rgInfo = await walk.getRgInfo(album.mbid);
+    const rgInfo = await resolveOrNull(walk.getRgInfo, album.mbid);
     if (!rgInfo) continue;
     if (!isAllowedReleaseType(rgInfo.primaryType, rgInfo.secondaryTypes)) {
       continue;
@@ -482,6 +531,25 @@ async function buildOnePick(
 }
 
 /**
+ * One pick, with its failures contained to itself. Every source behind a pick reaches at
+ * least one external service, so any of them can throw — and an uncaught throw here used
+ * to discard the picks already built alongside it and fail the whole request. A dead pick
+ * costs one attempt out of {@link PICK_ATTEMPT_SLACK} spare ones instead.
+ */
+async function tryOnePick(
+  ctx: PickContext,
+  excluded: Set<string>,
+  explore: boolean
+): Promise<BuiltAlbum | null> {
+  try {
+    return await buildOnePick(ctx, excluded, explore);
+  } catch (error) {
+    log.warn("Pick failed; continuing with the rest of the carousel", error);
+    return null;
+  }
+}
+
+/**
  * How many of this build's picks attempt a genre jump. `explorationRate` used to be a coin
  * re-flipped per pick, which let a five-album carousel come back all jumps or none by chance;
  * as a quota over the build it is the proportion it reads as, and every carousel spans both
@@ -520,7 +588,7 @@ async function buildPicks(
     const explore = exploresLeft > 0;
     if (explore) exploresLeft -= 1;
 
-    const built = await buildOnePick(ctx, excluded, explore);
+    const built = await tryOnePick(ctx, excluded, explore);
     if (!built) continue;
 
     excluded.add(built.rememberKey);
@@ -533,12 +601,155 @@ async function buildPicks(
   return picks;
 }
 
+/** A cached batch big enough to answer this request, or undefined. */
+function cachedCarousel(
+  userId: number,
+  count: number,
+  now: number
+): PromotedAlbumEntry[] | undefined {
+  const entry = resultCache.get(userId, now);
+  if (!entry || entry.targetCount < count) return undefined;
+  return entry.albums.slice(0, count);
+}
+
+/**
+ * How long a batch deserves to be trusted: a full one for the configured duration, a short
+ * one only until {@link PARTIAL_RESULT_TTL_MS} lets a load try again. Without the second
+ * case a build that came up short was re-attempted on every single page load, which is the
+ * most expensive possible response to a temporary shortfall.
+ */
+function carouselTtlMs(
+  albumCount: number,
+  targetCount: number,
+  resultTtlMs: number
+): number {
+  return albumCount >= targetCount
+    ? resultTtlMs
+    : Math.min(resultTtlMs, PARTIAL_RESULT_TTL_MS);
+}
+
+function rememberCarousel(
+  userId: number,
+  albums: PromotedAlbumEntry[],
+  targetCount: number,
+  ttlMs: number,
+  now: number
+): void {
+  resultCache.set(userId, { albums, targetCount }, ttlMs, now);
+}
+
+/**
+ * A stored carousel still inside its lifetime holds exactly what the in-memory entry held
+ * before the process that wrote it exited, so serving it is not staleness — it is the
+ * layer-2 cache surviving a restart. Only a batch that aimed at least as high as this
+ * request qualifies, same rule as the in-memory entry, and a stored batch that came up
+ * short lapses on the same short clock its in-memory twin would have.
+ */
+function snapshotIsFresh(
+  stored: StoredCarousel,
+  count: number,
+  resultTtlMs: number,
+  now: number
+): boolean {
+  const lifetimeMs = carouselTtlMs(
+    stored.albums.length,
+    stored.targetCount,
+    resultTtlMs
+  );
+  return stored.targetCount >= count && now - stored.builtAt < lifetimeMs;
+}
+
+/**
+ * Select a fresh batch. Profile construction never runs inside this call: a cold start walks
+ * every played track in the Plex library and resolves every seed against MusicBrainz at
+ * ~1 req/sec, which is minutes of work. It is started in the background instead, and the
+ * caller shows that the profile is being built rather than an empty page indistinguishable
+ * from "no results".
+ */
+async function buildCarousel(req: BuildRequest): Promise<PromotedAlbumsResult> {
+  const load = await loadProfileForRequest(
+    req.userId,
+    req.plexToken,
+    req.config
+  );
+  if (load.status === "building") return { status: "building", albums: [] };
+  const profile = load.profile;
+
+  const recentAlbums = profile.explorationHistory.albums ?? [];
+  const ctx: PickContext = {
+    profile,
+    config: req.config,
+    library: await loadLibraryMbids(),
+    budget: { remaining: RESOLUTION_BUDGET },
+    rng: req.rng,
+    priority: req.source === "warmer" ? "background" : "interactive",
+  };
+
+  const picks = await buildPicks(ctx, new Set(recentAlbums), req.count);
+  if (picks.length === 0) return { status: "ready", albums: [] };
+
+  const rememberKeys = picks.map((p) => p.rememberKey);
+  const nextAlbums = [
+    ...rememberKeys,
+    ...recentAlbums.filter((m) => !rememberKeys.includes(m)),
+  ].slice(0, RECENT_SHOWN_LIMIT);
+  await updateExplorationHistory(req.userId, { albums: nextAlbums });
+
+  return { status: "ready", albums: picks.map((p) => p.result) };
+}
+
+/**
+ * Build, and keep whatever the last successful build produced when this one cannot deliver.
+ * MusicBrainz refuses often enough under load that a build failing is normal operation,
+ * and the alternative to yesterday's five albums is a Discover page with a hole in it.
+ */
+async function buildOrServeStored(
+  req: BuildRequest,
+  stored: StoredCarousel | null,
+  resultTtlMs: number,
+  now: number
+): Promise<PromotedAlbumsResult> {
+  try {
+    const built = await buildCarousel(req);
+    if (built.status === "building") return built;
+
+    if (built.albums.length > 0) {
+      rememberCarousel(
+        req.userId,
+        built.albums,
+        req.count,
+        carouselTtlMs(built.albums.length, req.count, resultTtlMs),
+        now
+      );
+      await savePromotedAlbumSnapshot(req.userId, built.albums, req.count, now);
+      return built;
+    }
+  } catch (error) {
+    log.error(`Carousel build failed for user ${req.userId}`, error);
+  }
+
+  if (!stored) return { status: "ready", albums: [] };
+
+  log.info(`Serving the stored carousel for user ${req.userId}`);
+  const albums = stored.albums.slice(0, req.count);
+  // Deliberately the short clock even for a complete batch: this one is being served past
+  // its own lifetime, so the next load should try again soon — just not immediately.
+  rememberCarousel(
+    req.userId,
+    albums,
+    req.count,
+    Math.min(resultTtlMs, PARTIAL_RESULT_TTL_MS),
+    now
+  );
+  return { status: "ready", albums };
+}
+
 /**
  * The carousel's recommendations, or `building` when the user has no usable profile yet.
- * Profile construction never runs inside this call: a cold start walks every played track
- * in the Plex library and resolves every seed against MusicBrainz at ~1 req/sec, which is
- * minutes of work. It is started in the background instead, and the caller shows that the
- * profile is being built rather than an empty page indistinguishable from "no results".
+ * Answers from the in-memory batch first, then from the stored one while it is still
+ * inside its TTL, and only then builds — so a restart does not make the next visitor pay
+ * for a rebuild, and a rebuild that fails falls back to the stored batch instead of
+ * returning nothing.
  */
 export async function getPromotedAlbums(
   userId: number,
@@ -547,51 +758,51 @@ export async function getPromotedAlbums(
   deps: PromotedAlbumDeps = {}
 ): Promise<PromotedAlbumsResult> {
   const rng = deps.rng ?? Math.random;
-  const now = deps.now ?? Date.now;
+  const nowFn = deps.now ?? Date.now;
   const source = deps.source ?? "request";
 
   const config = getConfigValue("promotedAlbum");
   const resultTtlMs = config.cacheDurationMinutes * 60 * 1000;
+  const now = nowFn();
 
   if (source === "request") {
-    lastRequestedAt.set(userId, now(), WARM_ACTIVITY_WINDOW_MS, now());
+    lastRequestedAt.set(userId, now, WARM_ACTIVITY_WINDOW_MS, now);
   }
 
-  const cached = forceRefresh ? undefined : resultCache.get(userId, now());
-  if (cached && cached.length >= count) {
-    return { status: "ready", albums: cached.slice(0, count) };
+  if (!forceRefresh) {
+    const cached = cachedCarousel(userId, count, now);
+    if (cached) return { status: "ready", albums: cached };
   }
 
   const user = await findUserById(userId);
   const plexToken = user?.plexToken;
   if (!plexToken) return { status: "ready", albums: [] };
 
-  const load = await loadProfileForRequest(userId, plexToken, config);
-  if (load.status === "building") return { status: "building", albums: [] };
-  const profile = load.profile;
+  const stored = await getPromotedAlbumSnapshot(userId);
+  if (
+    !forceRefresh &&
+    stored &&
+    snapshotIsFresh(stored, count, resultTtlMs, now)
+  ) {
+    const lifetimeMs = carouselTtlMs(
+      stored.albums.length,
+      stored.targetCount,
+      resultTtlMs
+    );
+    rememberCarousel(
+      userId,
+      stored.albums,
+      stored.targetCount,
+      lifetimeMs - (now - stored.builtAt),
+      now
+    );
+    return { status: "ready", albums: stored.albums.slice(0, count) };
+  }
 
-  const recentAlbums = profile.explorationHistory.albums ?? [];
-  const ctx: PickContext = {
-    profile,
-    config,
-    library: await loadLibraryMbids(),
-    budget: { remaining: RESOLUTION_BUDGET },
-    rng,
-    priority: source === "warmer" ? "background" : "interactive",
-  };
-
-  const picks = await buildPicks(ctx, new Set(recentAlbums), count);
-  if (picks.length === 0) return { status: "ready", albums: [] };
-
-  const rememberKeys = picks.map((p) => p.rememberKey);
-  const nextAlbums = [
-    ...rememberKeys,
-    ...recentAlbums.filter((m) => !rememberKeys.includes(m)),
-  ].slice(0, RECENT_SHOWN_LIMIT);
-  await updateExplorationHistory(userId, { albums: nextAlbums });
-
-  const results = picks.map((p) => p.result);
-  resultCache.set(userId, results, resultTtlMs, now());
-
-  return { status: "ready", albums: results };
+  return buildOrServeStored(
+    { userId, count, config, plexToken, rng, source },
+    stored,
+    resultTtlMs,
+    now
+  );
 }

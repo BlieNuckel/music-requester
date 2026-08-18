@@ -43,6 +43,28 @@ describe("resolveLayout", () => {
     expect(resolved[0].hidden).toBe(true);
   });
 
+  it("keeps an errored section visible when whenError is keep", () => {
+    const resolved = resolveLayout([makeDefinition({ whenError: "keep" })], {
+      spotlight: "error",
+    });
+    expect(resolved[0].hidden).toBe(false);
+  });
+
+  it("still hides an empty section when only errors are kept", () => {
+    const resolved = resolveLayout([makeDefinition({ whenError: "keep" })], {
+      spotlight: "empty",
+    });
+    expect(resolved[0].hidden).toBe(true);
+  });
+
+  it("hides an errored section when whenError overrides a kept whenEmpty", () => {
+    const resolved = resolveLayout(
+      [makeDefinition({ whenEmpty: "keep", whenError: "hide" })],
+      { spotlight: "error" }
+    );
+    expect(resolved[0].hidden).toBe(true);
+  });
+
   it("keeps an empty section visible when whenEmpty is keep", () => {
     const resolved = resolveLayout([makeDefinition({ whenEmpty: "keep" })], {
       spotlight: "empty",

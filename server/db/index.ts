@@ -68,3 +68,4 @@ export { LiveEventPerformer } from "./entity/LiveEventPerformer";
 export type { LiveEventResponse } from "./entity/UserLiveEventState";
 export { UserLiveEventState } from "./entity/UserLiveEventState";
 export { LiveQuotaUsage } from "./entity/LiveQuotaUsage";
+export { PromotedAlbumSnapshot } from "./entity/PromotedAlbumSnapshot";

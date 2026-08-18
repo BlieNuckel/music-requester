@@ -1609,3 +1609,144 @@ describe("injected randomness and clock", () => {
     expect(mockGetTopAlbumsByTag).toHaveBeenCalled();
   });
 });
+
+describe("resilience", () => {
+  const base = 1_700_000_000_000;
+  const ttlMs = defaultPromotedAlbumConfig.cacheDurationMinutes * 60 * 1000;
+  const throttled = new Error("MusicBrainz returned 503");
+
+  /** Tag-chart path only: an empty similar graph keeps the personal source out of it. */
+  function setupPool(page: typeof albumsPage = bigAlbumsPage) {
+    mockLoadArtistWeights.mockResolvedValue(plexArtists);
+    mockGetArtistTopTags.mockResolvedValue(tags);
+    mockGetTopAlbumsByTag.mockResolvedValue(page);
+    mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
+    mockGetSimilarArtists.mockResolvedValue([]);
+    mockFetchReleaseGroupsForArtist.mockResolvedValue([]);
+    mockGetArtistMbidByName.mockResolvedValue(null);
+  }
+
+  it("keeps the rest of the carousel when one candidate lookup throws", async () => {
+    setupPool();
+    mockResolveReleaseGroupInfo.mockImplementation((mbid: string) =>
+      mbid === "alb-1"
+        ? Promise.reject(throttled)
+        : Promise.resolve({
+            id: `rg-${mbid}`,
+            firstReleaseDate: "1997-06-16",
+            primaryType: "Album",
+            secondaryTypes: [],
+          })
+    );
+
+    const results = await getAlbums(userId);
+
+    expect(results).toHaveLength(5);
+    expect(results.map((r) => r.album.mbid)).not.toContain("rg-alb-1");
+  });
+
+  it("reports ready with nothing rather than throwing when every lookup fails", async () => {
+    setupPool();
+    mockResolveReleaseGroupInfo.mockRejectedValue(throttled);
+
+    await seedProfile(userId);
+
+    expect(await getPromotedAlbums(userId)).toEqual({
+      status: "ready",
+      albums: [],
+    });
+  });
+
+  it("serves the stored carousel after a restart instead of rebuilding it", async () => {
+    setupPool();
+
+    const first = await getAlbums(userId, false, 5, { now: () => base });
+    clearPromotedAlbumCache();
+    mockGetTopAlbumsByTag.mockClear();
+
+    const second = await getAlbums(userId, false, 5, {
+      now: () => base + 60_000,
+    });
+
+    expect(second).toEqual(first);
+    expect(mockGetTopAlbumsByTag).not.toHaveBeenCalled();
+  });
+
+  it("rebuilds rather than serving a stored carousel past its TTL", async () => {
+    setupPool();
+
+    await getAlbums(userId, false, 5, { now: () => base });
+    clearPromotedAlbumCache();
+    mockGetTopAlbumsByTag.mockClear();
+
+    await getAlbums(userId, false, 5, { now: () => base + ttlMs + 1 });
+
+    expect(mockGetTopAlbumsByTag).toHaveBeenCalled();
+  });
+
+  it("falls back to the stored carousel when the rebuild fails", async () => {
+    setupPool();
+    const first = await getAlbums(userId, false, 5, { now: () => base });
+
+    clearPromotedAlbumCache();
+    mockResolveReleaseGroupInfo.mockRejectedValue(throttled);
+    const second = await getAlbums(userId, false, 5, {
+      now: () => base + ttlMs + 1,
+    });
+
+    expect(second).toEqual(first);
+  });
+
+  it("has nothing to fall back to before a first successful build", async () => {
+    setupPool();
+    mockGetTopAlbumsByTag.mockRejectedValue(throttled);
+
+    expect(await getAlbums(userId, false, 5, { now: () => base })).toEqual([]);
+  });
+
+  it("retries a shortfall on a later load rather than on the next one", async () => {
+    setupPool(albumsPage);
+
+    const first = await getAlbums(userId, false, 5, { now: () => base });
+    expect(first).toHaveLength(2);
+    mockGetTopAlbumsByTag.mockClear();
+
+    await getAlbums(userId, false, 5, { now: () => base + 60_000 });
+    expect(mockGetTopAlbumsByTag).not.toHaveBeenCalled();
+
+    await getAlbums(userId, false, 5, { now: () => base + 6 * 60_000 });
+    expect(mockGetTopAlbumsByTag).toHaveBeenCalled();
+  });
+
+  it("re-tries only after the short window when a stale batch was served", async () => {
+    setupPool();
+    await getAlbums(userId, false, 5, { now: () => base });
+
+    clearPromotedAlbumCache();
+    mockResolveReleaseGroupInfo.mockRejectedValue(throttled);
+    const failedAt = base + ttlMs + 1;
+    await getAlbums(userId, false, 5, { now: () => failedAt });
+    mockGetTopAlbumsByTag.mockClear();
+
+    await getAlbums(userId, false, 5, { now: () => failedAt + 60_000 });
+    expect(mockGetTopAlbumsByTag).not.toHaveBeenCalled();
+
+    await getAlbums(userId, false, 5, { now: () => failedAt + 6 * 60_000 });
+    expect(mockGetTopAlbumsByTag).toHaveBeenCalled();
+  });
+
+  it("stores the batch a warm build produced, so the next visitor gets it", async () => {
+    setupPool();
+
+    await getAlbums(userId, true, 5, { now: () => base, source: "warmer" });
+    clearPromotedAlbumCache();
+    mockGetTopAlbumsByTag.mockClear();
+
+    const served = await getAlbums(userId, false, 5, {
+      now: () => base + 60_000,
+    });
+
+    expect(served).toHaveLength(5);
+    expect(mockGetTopAlbumsByTag).not.toHaveBeenCalled();
+  });
+});

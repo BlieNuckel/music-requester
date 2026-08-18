@@ -247,3 +247,37 @@ describe("PromotedAlbumCarousel", () => {
     expect(track()).toHaveStyle({ transform: "translateX(-100%)" });
   });
 });
+
+describe("failed load", () => {
+  it("offers a retry instead of an empty frame", () => {
+    renderCarousel({ albums: [], error: "Failed to fetch promoted albums" });
+
+    expect(
+      screen.getByText("Couldn't load recommendations")
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(mockRefresh).toHaveBeenCalled();
+  });
+
+  it("shows the albums it still has rather than the failure", () => {
+    renderCarousel({ error: "Failed to fetch promoted albums" });
+
+    expect(screen.getAllByTestId("promoted-album-card")).toHaveLength(5);
+    expect(
+      screen.queryByText("Couldn't load recommendations")
+    ).not.toBeInTheDocument();
+  });
+
+  it("prefers the skeleton while a retry is in flight", () => {
+    renderCarousel({
+      albums: [],
+      loading: true,
+      error: "Failed to fetch promoted albums",
+    });
+
+    expect(
+      screen.queryByText("Couldn't load recommendations")
+    ).not.toBeInTheDocument();
+  });
+});

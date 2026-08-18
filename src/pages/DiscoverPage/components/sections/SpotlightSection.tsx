@@ -15,13 +15,16 @@ export default function SpotlightSection({
     empty: promotedAlbums.length === 0 && !building,
   });
 
-  if (promotedAlbums.length === 0 && !loading && !building) return null;
+  if (promotedAlbums.length === 0 && !loading && !building && !error) {
+    return null;
+  }
 
   return (
     <PromotedAlbumCarousel
       albums={promotedAlbums}
       loading={loading}
       building={building}
+      error={error}
       onRefresh={refresh}
     />
   );

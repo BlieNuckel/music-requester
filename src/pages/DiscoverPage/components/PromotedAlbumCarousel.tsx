@@ -12,6 +12,8 @@ interface PromotedAlbumCarouselProps {
   loading: boolean;
   /** The server is still building this user's taste profile; there is nothing to show yet. */
   building?: boolean;
+  /** Set when the load failed outright, so the tile offers a retry instead of vanishing. */
+  error?: string | null;
   onRefresh: () => void;
 }
 
@@ -69,6 +71,25 @@ function BuildingNotice() {
   );
 }
 
+function LoadErrorNotice({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6 text-center">
+      <p className="text-sm font-bold text-gray-700 dark:text-gray-300">
+        Couldn&apos;t load recommendations
+      </p>
+      <p className="text-xs text-gray-500 dark:text-gray-400 max-w-xs">
+        MusicBrainz or Last.fm may be busy. Nothing is wrong with your library.
+      </p>
+      <button
+        onClick={onRetry}
+        className="mt-2 px-3 py-1.5 text-sm font-bold rounded-lg bg-amber-300 hover:bg-amber-200 text-black border-2 border-black shadow-cartoon-sm hover:shadow-cartoon-md active:shadow-cartoon-pressed transition-all"
+      >
+        Try again
+      </button>
+    </div>
+  );
+}
+
 function CarouselSkeleton() {
   return (
     <div className="flex-1 flex flex-col sm:flex-row">
@@ -86,6 +107,7 @@ export default function PromotedAlbumCarousel({
   albums,
   loading,
   building = false,
+  error = null,
   onRefresh,
 }: PromotedAlbumCarouselProps) {
   const [index, setIndex] = useState(0);
@@ -94,6 +116,7 @@ export default function PromotedAlbumCarousel({
   const haptics = useHaptics();
 
   const activeIndex = Math.min(index, Math.max(albums.length - 1, 0));
+  const failed = Boolean(error) && albums.length === 0;
   const showControls = !loading && !building && albums.length > 1;
 
   const goTo = (next: number) => {
@@ -165,6 +188,8 @@ export default function PromotedAlbumCarousel({
           <BuildingNotice />
         ) : loading ? (
           <CarouselSkeleton />
+        ) : failed ? (
+          <LoadErrorNotice onRetry={onRefresh} />
         ) : (
           <div
             className="flex flex-1 min-h-0 transition-transform duration-300 ease-out"
