@@ -464,7 +464,7 @@ describe("liveEvents config", () => {
 
     expect(() =>
       setConfig({ liveEvents: { regions: ["se"] } as never })
-    ).toThrow("alpha-2");
+    ).toThrow("must be uppercase");
 
     expect(() =>
       setConfig({ liveEvents: { regions: ["SWE"] } as never })
@@ -475,10 +475,16 @@ describe("liveEvents config", () => {
     );
   });
 
+  it("rejects a code that is shaped right but is not a country", () => {
+    expect(() =>
+      setConfig({ liveEvents: { regions: ["QQ"] } as never })
+    ).toThrow("alpha-2");
+  });
+
   it("rejects UK, because geoCountryIso2 expects GB", () => {
     expect(() =>
       setConfig({ liveEvents: { regions: ["UK"] } as never })
-    ).toThrow("must use GB rather than UK");
+    ).toThrow("GB rather than UK");
     expect(() =>
       setConfig({ liveEvents: { regions: ["GB"] } as never })
     ).not.toThrow();

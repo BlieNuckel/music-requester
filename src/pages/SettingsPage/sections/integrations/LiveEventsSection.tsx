@@ -1,4 +1,5 @@
 import type { LiveEventsSettings } from "@/context/settingsContextDef";
+import CountryPicker from "@/components/CountryPicker";
 import LiveQuotaStatus from "./LiveQuotaStatus";
 
 interface LiveEventsSectionProps {
@@ -14,25 +15,6 @@ const LABEL_CLASSES =
 
 const HINT_CLASSES = "text-gray-400 dark:text-gray-500 text-xs mt-1";
 
-const ISO2 = /^[A-Z]{2}$/;
-
-function parseRegions(raw: string): string[] {
-  return raw
-    .split(",")
-    .map((code) => code.trim().toUpperCase())
-    .filter((code) => code.length > 0);
-}
-
-function regionsError(codes: string[]): string | null {
-  if (codes.includes("UK")) {
-    return "Use GB rather than UK — that is what the events API expects.";
-  }
-  const invalid = codes.find((code) => !ISO2.test(code));
-  return invalid
-    ? `"${invalid}" is not a two-letter country code (ISO 3166-1 alpha-2).`
-    : null;
-}
-
 function parseCoordinate(raw: string): number | null {
   if (raw.trim() === "") return null;
   const value = Number(raw);
@@ -43,8 +25,6 @@ export default function LiveEventsSection({
   settings,
   onChange,
 }: LiveEventsSectionProps) {
-  const regionError = regionsError(settings.regions);
-
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
@@ -127,21 +107,14 @@ export default function LiveEventsSection({
 
       <div>
         <label className={LABEL_CLASSES}>Countries</label>
-        <input
-          type="text"
-          value={settings.regions.join(", ")}
-          onChange={(e) => onChange({ regions: parseRegions(e.target.value) })}
-          placeholder="SE, DK, DE"
-          className={INPUT_CLASSES}
+        <CountryPicker
+          value={settings.regions}
+          onChange={(regions) => onChange({ regions })}
         />
-        {regionError ? (
-          <p className="text-rose-500 text-xs mt-1">{regionError}</p>
-        ) : (
-          <p className={HINT_CLASSES}>
-            Default for people who have not picked their own. Each extra country
-            widens the shared sweep for everyone.
-          </p>
-        )}
+        <p className={HINT_CLASSES}>
+          Default for people who have not picked their own. Each extra country
+          widens the shared sweep for everyone.
+        </p>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-4">

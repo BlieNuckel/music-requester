@@ -3,6 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { getDataSource } from "./db/index";
 import { createLogger } from "./logger";
+import { countryCodeError } from "../shared/countries";
 import {
   DEFAULT_PROMOTED_ALBUM,
   DEFAULT_PURCHASE_DECISION,
@@ -346,8 +347,6 @@ function validateNotificationsConfig(config: NotificationsConfig) {
   }
 }
 
-const ISO2 = /^[A-Z]{2}$/;
-
 /** The Developer tier only returns events up to six months out. */
 const MAX_BANNER_HORIZON_DAYS = 180;
 
@@ -430,14 +429,13 @@ function validateLiveEventsConfig(config: LiveEventsConfig) {
     throw new Error("liveEvents.regions must be an array");
   }
   for (const code of config.regions) {
-    if (typeof code !== "string" || !ISO2.test(code)) {
+    if (typeof code !== "string") {
       throw new Error(
-        `liveEvents.regions entries must be uppercase ISO 3166-1 alpha-2 codes; got ${String(code)}`
+        `liveEvents.regions entries must be strings; got ${String(code)}`
       );
     }
-    if (code === "UK") {
-      throw new Error("liveEvents.regions must use GB rather than UK");
-    }
+    const error = countryCodeError(code);
+    if (error) throw new Error(`liveEvents.regions: ${error}`);
   }
 }
 
