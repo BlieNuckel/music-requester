@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { AppSettings } from "@/context/settingsContextDef";
 
 const mockTestSlskdConnection = vi.fn();
@@ -42,6 +43,10 @@ vi.mock("@/hooks/useAutoSave", () => ({
   }),
 }));
 
+vi.mock("@/context/useAuth", () => ({
+  useAuth: () => ({ user: { id: 1, username: "admin", permissions: 1 } }),
+}));
+
 vi.mock("@/hooks/useAutoSetupStatus", () => ({
   default: () => ({ status: null, loading: false, refetch: vi.fn() }),
 }));
@@ -50,22 +55,35 @@ vi.mock("../../shared/AutoSetupModal", () => ({
   default: () => null,
 }));
 
-vi.mock("../../sections/integrations/PlexSection", () => ({
-  default: () => null,
-}));
+import IntegrationsSettingsPage from "../../pages/IntegrationsSettingsPage";
+import SoulseekIntegrationPage from "../SoulseekIntegrationPage";
 
-import IntegrationsSettingsPage from "../IntegrationsSettingsPage";
-
-function getSlskdTestButton() {
-  const buttons = screen.getAllByRole("button", { name: "Test Connection" });
-  return buttons[buttons.length - 1];
+/** Rendered through the router so the outlet context wiring is exercised too. */
+function renderSoulseekGroup() {
+  return render(
+    <MemoryRouter initialEntries={["/settings/integrations/soulseek"]}>
+      <Routes>
+        <Route
+          path="/settings/integrations"
+          element={<IntegrationsSettingsPage />}
+        >
+          <Route path="soulseek" element={<SoulseekIntegrationPage />} />
+        </Route>
+      </Routes>
+    </MemoryRouter>
+  );
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("IntegrationsSettingsPage slskd test connection", () => {
+describe("SoulseekIntegrationPage", () => {
+  it("receives the shared settings through the outlet", () => {
+    renderSoulseekGroup();
+    expect(screen.getByDisplayValue("http://slskd:5030")).toBeInTheDocument();
+  });
+
   it("shows a success banner with version and soulseek state", async () => {
     mockTestSlskdConnection.mockResolvedValue({
       success: true,
@@ -73,8 +91,8 @@ describe("IntegrationsSettingsPage slskd test connection", () => {
       soulseekConnected: true,
     });
 
-    render(<IntegrationsSettingsPage />);
-    fireEvent.click(getSlskdTestButton());
+    renderSoulseekGroup();
+    fireEvent.click(screen.getByRole("button", { name: "Test Connection" }));
 
     await waitFor(() =>
       expect(
@@ -91,8 +109,8 @@ describe("IntegrationsSettingsPage slskd test connection", () => {
       soulseekConnected: false,
     });
 
-    render(<IntegrationsSettingsPage />);
-    fireEvent.click(getSlskdTestButton());
+    renderSoulseekGroup();
+    fireEvent.click(screen.getByRole("button", { name: "Test Connection" }));
 
     await waitFor(() =>
       expect(
@@ -107,12 +125,25 @@ describe("IntegrationsSettingsPage slskd test connection", () => {
       error: "slskd returned 401",
     });
 
-    render(<IntegrationsSettingsPage />);
-    fireEvent.click(getSlskdTestButton());
+    renderSoulseekGroup();
+    fireEvent.click(screen.getByRole("button", { name: "Test Connection" }));
 
     await waitFor(() =>
       expect(
         screen.getByText(/Connection failed: slskd returned 401/)
+      ).toBeInTheDocument()
+    );
+  });
+
+  it("reports a thrown test rather than leaving the button spinning", async () => {
+    mockTestSlskdConnection.mockRejectedValue(new Error("network down"));
+
+    renderSoulseekGroup();
+    fireEvent.click(screen.getByRole("button", { name: "Test Connection" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/Connection failed: network down/)
       ).toBeInTheDocument()
     );
   });
