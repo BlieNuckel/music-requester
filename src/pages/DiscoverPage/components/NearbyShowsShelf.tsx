@@ -7,7 +7,7 @@ interface NearbyShowsShelfProps {
   shows: NearbyShow[];
 }
 
-/** As many entries as the tile's four rows fit as cards. Rest on /library/live. */
+/** As many entries as the tile fits as cards. Rest on /library/live. */
 const MAX_VISIBLE = 4;
 
 const DATE_FORMAT: Intl.DateTimeFormatOptions = {
@@ -53,18 +53,18 @@ export default function NearbyShowsShelf({ shows }: NearbyShowsShelfProps) {
         }
       />
 
-      <div className="flex-1 min-h-0 overflow-hidden bg-white dark:bg-gray-800 rounded-xl border-2 border-black shadow-cartoon-md p-2">
-        <ul className="h-full flex flex-col gap-2">
-          {visible.map((show) => (
-            <NearbyShowCard
-              key={show.eventKey}
-              show={show}
-              headliner={headliner(show)}
-              subtitle={subtitle(show)}
-            />
-          ))}
-        </ul>
-      </div>
+      {/* No container: the cards are the widget. The gap clears each card's own
+          drop shadow so the one below it isn't overlapped. */}
+      <ul className="flex-1 min-h-0 flex flex-col gap-3">
+        {visible.map((show) => (
+          <NearbyShowCard
+            key={show.eventKey}
+            show={show}
+            headliner={headliner(show)}
+            subtitle={subtitle(show)}
+          />
+        ))}
+      </ul>
     </div>
   );
 }
