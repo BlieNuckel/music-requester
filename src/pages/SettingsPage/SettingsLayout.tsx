@@ -47,6 +47,12 @@ const settingsRoutes: SettingsRoute[] = [
     regex: /^\/settings\/logs/,
     requiredPermission: Permission.ADMIN,
   },
+  {
+    text: "Profiles",
+    route: "/settings/taste-profiles",
+    regex: /^\/settings\/taste-profiles/,
+    requiredPermission: Permission.ADMIN,
+  },
 ];
 
 export default function SettingsLayout() {

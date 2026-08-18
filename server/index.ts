@@ -13,6 +13,7 @@ import authRoutes from "./routes/auth";
 import lastfmRoutes from "./routes/lastfm";
 import lidarrRoutes from "./routes/lidarr";
 import logsRoutes from "./routes/logs";
+import profileRoutes from "./routes/profile";
 import musicbrainzRoutes from "./routes/musicbrainz";
 import plexRoutes from "./routes/plex";
 import promotedAlbumRoutes from "./routes/promotedAlbum";
@@ -63,6 +64,12 @@ app.use(
   requireAuth,
   requirePermission(Permission.ADMIN),
   logsRoutes
+);
+app.use(
+  "/api/profile",
+  requireAuth,
+  requirePermission(Permission.ADMIN),
+  profileRoutes
 );
 
 app.use("/api/settings", settingsRoutes);
