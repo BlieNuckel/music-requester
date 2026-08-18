@@ -15,6 +15,7 @@ const settingsRoutes: SettingsRoute[] = [
     route: "/settings/integrations",
     regex: /^\/settings\/integrations/,
     requiredPermission: Permission.ADMIN,
+    skipMobileHeader: true,
   },
   {
     text: "Recommendations",

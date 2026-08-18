@@ -14,6 +14,11 @@ import RecommendationsSettingsPage from "./pages/SettingsPage/pages/Recommendati
 import PurchaseDecisionSettingsPage from "./pages/SettingsPage/pages/PurchaseDecisionSettingsPage";
 import UsersSettingsPage from "./pages/SettingsPage/pages/UsersSettingsPage";
 import LogsSettingsPage from "./pages/SettingsPage/pages/LogsSettingsPage";
+import LidarrIntegrationPage from "./pages/SettingsPage/integrations/LidarrIntegrationPage";
+import SoulseekIntegrationPage from "./pages/SettingsPage/integrations/SoulseekIntegrationPage";
+import PlexIntegrationPage from "./pages/SettingsPage/integrations/PlexIntegrationPage";
+import LastfmIntegrationPage from "./pages/SettingsPage/integrations/LastfmIntegrationPage";
+import LiveEventsIntegrationPage from "./pages/SettingsPage/integrations/LiveEventsIntegrationPage";
 import NotificationsPage from "./pages/SettingsPage/notifications/NotificationsPage";
 import MyNotificationsPage from "./pages/SettingsPage/notifications/MyNotificationsPage";
 import EmailNotificationsPage from "./pages/SettingsPage/notifications/EmailNotificationsPage";
@@ -51,10 +56,22 @@ function App() {
                 element={<ConditionalRedirect to="/settings/general" />}
               />
               <Route path="general" element={<GeneralSettingsPage />} />
-              <Route
-                path="integrations"
-                element={<IntegrationsSettingsPage />}
-              />
+              <Route path="integrations" element={<IntegrationsSettingsPage />}>
+                <Route
+                  index
+                  element={
+                    <ConditionalRedirect to="/settings/integrations/lidarr" />
+                  }
+                />
+                <Route path="lidarr" element={<LidarrIntegrationPage />} />
+                <Route path="soulseek" element={<SoulseekIntegrationPage />} />
+                <Route path="plex" element={<PlexIntegrationPage />} />
+                <Route path="lastfm" element={<LastfmIntegrationPage />} />
+                <Route
+                  path="live-events"
+                  element={<LiveEventsIntegrationPage />}
+                />
+              </Route>
               <Route
                 path="recommendations"
                 element={<RecommendationsSettingsPage />}

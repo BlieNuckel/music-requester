@@ -35,7 +35,7 @@ Full-stack TypeScript app: React 19 frontend + Express 5 backend. Vite proxies `
 - `/album/:mbid` — AlbumPage (release group details, tracks, purchase/request actions)
 - `/library` — LibraryPage (subroutes: `/library/purchases`, `/library/wanted`, `/library/requests`, `/library/following`)
 - `/library/upload` — UploadPage (manual import)
-- `/settings` — SettingsLayout (subroutes: general, integrations, recommendations, purchase-decision, users, logs, notifications with email/webhook sub-pages; settings search via `settingsSearchConfig.ts`)
+- `/settings` — SettingsLayout (subroutes: general, integrations with per-service group pages (lidarr, soulseek, plex, lastfm, live-events), recommendations, purchase-decision, users, logs, notifications with email/webhook sub-pages; settings search via `settingsSearchConfig.ts`). The integrations parent owns the shared auto-save state and connection-test results and passes them to the active group through the router outlet.
 - `/onboarding` — OnboardingPage (first-run setup wizard)
 
 SetupPage (create first admin) and LoginPage are not routed — the `RequireAuth` component wraps all app routes and renders them based on auth status (`needs-setup` / `unauthenticated`).
