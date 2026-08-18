@@ -1,5 +1,7 @@
 import express, { type Request, type Response } from "express";
 import { requireAuth } from "../middleware/requireAuth";
+import { requirePermission } from "../middleware/requirePermission";
+import { Permission } from "../../shared/permissions";
 import { ApiError } from "../middleware/ApiError";
 import {
   findAllForUser,
@@ -18,6 +20,7 @@ import {
 } from "../services/liveEvents/preferences";
 import type { LivePreferencesPatch } from "../services/liveEvents/preferences";
 import { getQuotaStatus } from "../services/liveEvents/quota";
+import { searchPlaces } from "../api/openMeteo/geocoding";
 import type { NoticeCandidate } from "../services/liveEvents/notice";
 
 const router = express.Router();
@@ -80,6 +83,19 @@ router.patch("/preferences", async (req: Request, res: Response) => {
 router.get("/quota", async (_req: Request, res: Response) => {
   res.json(await getQuotaStatus());
 });
+
+/**
+ * Admin-only: it exists to fill in the instance origin, which only an admin can
+ * set, and it is an outbound lookup rather than something to leave open.
+ */
+router.get(
+  "/geocode",
+  requirePermission(Permission.ADMIN),
+  async (req: Request, res: Response) => {
+    const query = typeof req.query.q === "string" ? req.query.q : "";
+    res.json({ places: await searchPlaces(query) });
+  }
+);
 
 router.get("/notice", async (req: Request, res: Response) => {
   const { notice, additionalCount } = await selectNotice(req.user!.id);
