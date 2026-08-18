@@ -91,8 +91,8 @@ function mergeSimilar(
 
 /**
  * The shuffle decides *which* artists appear, so repeat visits vary. The sort
- * only decides the order they are shown in: weakest match first, so the grid
- * reads towards the closest match rather than away from it.
+ * only decides the order they are shown in: strongest match first, so the grid
+ * reads best to worst from where the eye starts.
  */
 function pickArtists(
   merged: SimilarArtist[],
@@ -102,7 +102,7 @@ function pickArtists(
   const pool = fresh.length >= RESULT_COUNT ? fresh : merged;
   return shuffle(pool)
     .slice(0, RESULT_COUNT)
-    .sort((a, b) => a.match - b.match);
+    .sort((a, b) => b.match - a.match);
 }
 
 export async function getPromotedArtists(
