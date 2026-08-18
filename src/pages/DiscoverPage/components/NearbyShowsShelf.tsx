@@ -1,12 +1,13 @@
 import { Link } from "react-router-dom";
 import SectionHeader from "./SectionHeader";
+import NearbyShowCard from "./NearbyShowCard";
 import type { NearbyShow } from "@/types";
 
 interface NearbyShowsShelfProps {
   shows: NearbyShow[];
 }
 
-/** As many entries as fit the tile's four rows without scrolling. Rest on /library/live. */
+/** As many entries as the tile's four rows fit as cards. Rest on /library/live. */
 const MAX_VISIBLE = 4;
 
 const DATE_FORMAT: Intl.DateTimeFormatOptions = {
@@ -25,6 +26,12 @@ function formatDate(iso: string): string {
 function headliner(show: NearbyShow): string {
   const lead = show.performers.find((performer) => performer.isHeadliner);
   return lead?.name ?? show.performers[0]?.name ?? show.name;
+}
+
+function subtitle(show: NearbyShow): string {
+  return [show.venueName, formatDate(show.eventDate)]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export default function NearbyShowsShelf({ shows }: NearbyShowsShelfProps) {
@@ -46,38 +53,15 @@ export default function NearbyShowsShelf({ shows }: NearbyShowsShelfProps) {
         }
       />
 
-      <div className="flex-1 min-h-0 overflow-y-auto overlay-scrollbar bg-white dark:bg-gray-800 rounded-xl border-2 border-black shadow-cartoon-md p-4">
-        <ul className="flex flex-col gap-3">
+      <div className="flex-1 min-h-0 overflow-hidden bg-white dark:bg-gray-800 rounded-xl border-2 border-black shadow-cartoon-md p-2">
+        <ul className="h-full flex flex-col gap-2">
           {visible.map((show) => (
-            <li key={show.eventKey} className="flex flex-col gap-0.5">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
-                  {headliner(show)}
-                </span>
-                {show.following && (
-                  <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border-2 border-black bg-emerald-300 text-black">
-                    Following
-                  </span>
-                )}
-              </div>
-
-              <span className="text-xs text-gray-600 dark:text-gray-400 truncate">
-                {[show.venueName, formatDate(show.eventDate)]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </span>
-
-              {show.ticketUrl && (
-                <a
-                  href={show.ticketUrl}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors self-start"
-                >
-                  Tickets →
-                </a>
-              )}
-            </li>
+            <NearbyShowCard
+              key={show.eventKey}
+              show={show}
+              headliner={headliner(show)}
+              subtitle={subtitle(show)}
+            />
           ))}
         </ul>
       </div>

@@ -6,6 +6,7 @@ const mockFindNearby = vi.fn();
 const mockGetPrefs = vi.fn();
 const mockListFollowed = vi.fn();
 const mockGetProfile = vi.fn();
+const mockGetArtistsImages = vi.fn();
 
 vi.mock("../../config", () => ({
   getConfig: () => mockGetConfig(),
@@ -23,6 +24,10 @@ vi.mock("../../db/liveEvents", async () => {
     listFollowedJambaseIds: () => mockListFollowed(),
   };
 });
+
+vi.mock("../../api/deezer/artists", () => ({
+  getArtistsImages: (...args: unknown[]) => mockGetArtistsImages(...args),
+}));
 
 vi.mock("../../db/userProfile", async () => {
   const actual = await vi.importActual<typeof import("../../db/userProfile")>(
@@ -88,6 +93,7 @@ beforeEach(() => {
   mockGetPrefs.mockResolvedValue(null);
   mockFindNearby.mockResolvedValue([]);
   mockListFollowed.mockResolvedValue([]);
+  mockGetArtistsImages.mockResolvedValue(new Map());
   mockGetProfile.mockResolvedValue(
     profileWith([
       { tag: "shoegaze", weight: 100 },
@@ -174,5 +180,72 @@ describe("getNearbyShows", () => {
     const shows = await getNearbyShows(1, NOW);
     expect(shows[0].affinity).toBe(1);
     expect(shows[0].matchedGenres).toEqual(["shoegaze"]);
+  });
+
+  it("fills in a headliner photo for events JamBase gave no image of", async () => {
+    mockFindNearby.mockResolvedValue([event("a", ["shoegaze"])]);
+    mockGetArtistsImages.mockResolvedValue(
+      new Map([["artist", "https://img.test/artist.jpg"]])
+    );
+
+    const shows = await getNearbyShows(1, NOW);
+
+    expect(mockGetArtistsImages).toHaveBeenCalledWith(["Artist"]);
+    expect(shows[0].artistImageUrl).toBe("https://img.test/artist.jpg");
+  });
+
+  it("looks up the headliner rather than the first performer listed", async () => {
+    mockFindNearby.mockResolvedValue([
+      {
+        event_key: "a",
+        event_date: "2026-09-01",
+        performers: [
+          {
+            artist_jambase_id: "jambase:2",
+            artist_name: "Support",
+            genres: null,
+            is_headliner: false,
+          },
+          {
+            artist_jambase_id: "jambase:1",
+            artist_name: "Headliner",
+            genres: null,
+            is_headliner: true,
+          },
+        ],
+      },
+    ]);
+
+    await getNearbyShows(1, NOW);
+
+    expect(mockGetArtistsImages).toHaveBeenCalledWith(["Headliner"]);
+  });
+
+  it("spends no lookup on an event that already has an image", async () => {
+    mockFindNearby.mockResolvedValue([
+      { ...event("a", ["shoegaze"]), image_url: "https://img.test/event.jpg" },
+    ]);
+
+    const shows = await getNearbyShows(1, NOW);
+
+    expect(mockGetArtistsImages).not.toHaveBeenCalled();
+    expect(shows[0].artistImageUrl).toBeNull();
+  });
+
+  it("only looks up as many images as the shelf can show", async () => {
+    mockFindNearby.mockResolvedValue(
+      [1, 2, 3, 4, 5, 6, 7, 8].map((n) => event(`e${n}`, ["shoegaze"]))
+    );
+
+    await getNearbyShows(1, NOW);
+
+    expect(mockGetArtistsImages.mock.calls[0][0]).toHaveLength(6);
+  });
+
+  it("leaves the photo null when the lookup finds nothing", async () => {
+    mockFindNearby.mockResolvedValue([event("a", ["shoegaze"])]);
+
+    const shows = await getNearbyShows(1, NOW);
+    expect(shows[0].artistImageUrl).toBeNull();
   });
 });
