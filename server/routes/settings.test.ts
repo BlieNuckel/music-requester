@@ -7,6 +7,8 @@ const mockListDirectorySuggestions = vi.fn();
 const mockClearPromotedAlbumCache = vi.fn();
 const mockTestLidarrConnection = vi.fn();
 const mockTestSlskdConnection = vi.fn();
+const mockSnapshotLiveEvents = vi.fn();
+const mockOnLiveEventsSaved = vi.fn();
 
 vi.mock("../config", () => ({
   getConfig: (...args: unknown[]) => mockGetConfig(...args),
@@ -28,6 +30,12 @@ vi.mock("../promotedAlbum/getPromotedAlbum", () => ({
 vi.mock("../services/settings", () => ({
   testLidarrConnection: (...args: unknown[]) =>
     mockTestLidarrConnection(...args),
+}));
+
+vi.mock("../services/liveEvents/settingsChange", () => ({
+  snapshotLiveEventsSettings: () => mockSnapshotLiveEvents(),
+  onLiveEventsSettingsSaved: (...args: unknown[]) =>
+    mockOnLiveEventsSaved(...args),
 }));
 
 vi.mock("../api/slskd/testConnection", () => ({
@@ -96,6 +104,33 @@ describe("PUT /settings", () => {
     expect(mockSetConfig).toHaveBeenCalledWith({
       lidarrUrl: "http://lidarr:8686",
     });
+  });
+
+  it("hands the poller the pre-write live events state so it can spot a transition", async () => {
+    const before = {
+      configured: false,
+      hasOrigin: false,
+      sweepIntervalHours: 24,
+    };
+    mockSnapshotLiveEvents.mockReturnValue(before);
+
+    const res = await request(app)
+      .put("/settings")
+      .send({ liveEvents: { apiKey: "k" } });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true });
+    expect(mockOnLiveEventsSaved).toHaveBeenCalledWith(before);
+    expect(mockSnapshotLiveEvents.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSetConfig.mock.invocationCallOrder[0]
+    );
+  });
+
+  it("leaves the live poller alone when the save has no liveEvents section", async () => {
+    await request(app).put("/settings").send({ lastfmApiKey: "k" });
+
+    expect(mockSnapshotLiveEvents).not.toHaveBeenCalled();
+    expect(mockOnLiveEventsSaved).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid import path", async () => {
