@@ -169,7 +169,7 @@ describe("getPromotedArtists", () => {
     expect(boc?.match).toBe(0.95);
   });
 
-  it("orders the picked artists from weakest to strongest match", async () => {
+  it("orders the picked artists from strongest to weakest match", async () => {
     mockGetSimilarArtists.mockImplementation((name: string) =>
       Promise.resolve(
         name === "Aphex Twin"
@@ -190,7 +190,7 @@ describe("getPromotedArtists", () => {
 
     const result = await getPromotedArtists(userId);
 
-    expect(result!.artists.map((a) => a.match)).toEqual([0.4, 0.6, 0.7, 0.9]);
+    expect(result!.artists.map((a) => a.match)).toEqual([0.9, 0.7, 0.6, 0.4]);
   });
 
   it("marks artists in the library", async () => {
