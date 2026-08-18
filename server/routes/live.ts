@@ -126,6 +126,7 @@ router.get("/nearby", async (req: Request, res: Response) => {
       affinity: entry.affinity,
       matchedGenres: entry.matchedGenres,
       following: entry.following,
+      artistImageUrl: entry.artistImageUrl,
     })),
   });
 });

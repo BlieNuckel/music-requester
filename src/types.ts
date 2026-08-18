@@ -220,6 +220,8 @@ export interface NearbyShow extends LiveEventSummary {
   affinity: number;
   matchedGenres: string[];
   following: boolean;
+  /** Headliner photo, filled in when the event itself has no image. */
+  artistImageUrl: string | null;
 }
 
 export interface NearbyShowsData {

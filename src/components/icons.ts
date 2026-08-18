@@ -29,4 +29,5 @@ export {
   HeartIcon,
   BellIcon,
   BellSlashIcon,
+  TicketIcon,
 } from "@heroicons/react/20/solid";

@@ -27,6 +27,7 @@ function show(overrides: Partial<NearbyShow> = {}): NearbyShow {
     affinity: 0.8,
     matchedGenres: ["shoegaze"],
     following: false,
+    artistImageUrl: null,
     ...overrides,
   };
 }
