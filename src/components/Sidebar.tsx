@@ -91,7 +91,7 @@ function MobileNav() {
   }, [measure]);
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 px-3 pb-3">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
       <div className="relative bg-white dark:bg-gray-800 border-3 border-black rounded-full px-4">
         <ul ref={navRef} className="relative flex items-center justify-around">
           {activeIndex !== -1 && (
@@ -177,15 +177,6 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Mobile Header, shown only on mobile */}
-      <header className="md:hidden fixed top-0 left-0 right-0 bg-white dark:bg-gray-800 border-b-4 border-black z-40">
-        <div className="px-4 py-3 flex items-center justify-between">
-          <NavLink to="/" className="flex items-center gap-2 group">
-            <LogoLockup size="md" />
-          </NavLink>
-        </div>
-      </header>
-
       {/* Desktop Sidebar, hidden on mobile */}
       <aside className="hidden md:flex w-64 h-screen overflow-y-auto bg-white dark:bg-gray-800 border-r-4 border-black flex-col shrink-0">
         <div className="p-6 border-b-4 border-black">

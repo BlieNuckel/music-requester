@@ -35,10 +35,10 @@ const renderSidebar = (path = "/") => {
 };
 
 describe("Sidebar", () => {
-  it("renders the logo and app name in both mobile header and desktop sidebar", () => {
-    renderSidebar();
-    const tunearrLinks = screen.getAllByText("Tunearr");
-    expect(tunearrLinks).toHaveLength(2);
+  it("renders the logo and app name only in the desktop sidebar", () => {
+    const { container } = renderSidebar();
+    expect(screen.getAllByText("Tunearr")).toHaveLength(1);
+    expect(container.querySelector("header")).toBeNull();
   });
 
   it("renders shared navigation links for both mobile and desktop", () => {
@@ -137,5 +137,13 @@ describe("Sidebar", () => {
     } finally {
       window.removeEventListener("search:reset", handler);
     }
+  });
+
+  it("keeps the mobile nav clear of the device safe area", () => {
+    const { container } = renderSidebar();
+    const mobileNav = container.querySelector("nav.md\\:hidden");
+    expect(mobileNav?.className).toContain(
+      "pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
+    );
   });
 });
