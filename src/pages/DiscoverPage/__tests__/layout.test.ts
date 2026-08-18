@@ -102,6 +102,13 @@ describe("sectionSlotClasses", () => {
     expect(classes).toContain("lg:overflow-hidden");
   });
 
+  it("insets the slot on the shadowed sides so the widget's drop shadow is not clipped", () => {
+    const classes = sectionSlotClasses(makeDefinition(), false);
+
+    expect(classes).toContain("lg:pr-[var(--bento-shadow-reach)]");
+    expect(classes).toContain("lg:pb-[var(--bento-shadow-reach)]");
+  });
+
   it("leaves mobile unbounded, where tiles stack and size to their content", () => {
     const classes = sectionSlotClasses(makeDefinition(), false);
 

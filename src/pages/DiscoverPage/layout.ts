@@ -31,8 +31,13 @@ const MOBILE_ORDER_CLASS = "max-lg:[order:var(--order-mobile)]";
  * A slot is a hard boundary at desktop sizes. Tiles are given a fixed height by
  * the grid, so anything taller has to be contained rather than allowed to spill
  * over the tile next to it.
+ *
+ * Clipping happens at the padding box, so the slot insets its widget on the two
+ * shadowed sides by the shadow's reach. Without that inset the widget's box ends
+ * exactly where the clip does and the drop shadow is shaved off.
  */
-const SLOT_BOUNDS_CLASS = "lg:min-h-0 lg:overflow-hidden";
+const SLOT_BOUNDS_CLASS =
+  "lg:min-h-0 lg:overflow-hidden lg:pr-[var(--bento-shadow-reach)] lg:pb-[var(--bento-shadow-reach)]";
 
 function isSectionHidden(
   definition: SectionDefinition,

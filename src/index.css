@@ -20,6 +20,14 @@
    * single line of content.
    */
   --bento-row-height: 5rem;
+
+  /*
+   * How far a widget's drop shadow reaches past its own box. A bento slot clips
+   * at its padding box, so it insets its content by this much on the shadowed
+   * sides; without it `overflow-hidden` shaves the shadow off every tile.
+   * Matches --shadow-cartoon-md, the shadow the widgets themselves use.
+   */
+  --bento-shadow-reach: 4px;
 }
 
 .overlay-scrollbar {
