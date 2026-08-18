@@ -118,12 +118,22 @@ export interface SpendingSummary {
 export type MonitorState =
   "idle" | "adding" | "success" | "already_monitored" | "error";
 
+/**
+ * Whether live coverage for an artist is coming, working, or never going to
+ * happen. "unavailable" means JamBase has never heard of them and the app will
+ * not retry, so an empty date list is permanent rather than just current.
+ */
+export type LiveTrackingState = "pending" | "tracked" | "unavailable";
+
+export type LiveRosterSummary = Record<LiveTrackingState, number>;
+
 export interface FollowedArtistItem {
   id: number;
   artistMbid: string;
   artistName: string;
   lastCheckedAt: string | null;
   createdAt: string;
+  liveTracking: LiveTrackingState;
 }
 
 export type NewReleaseSource = "followed" | "library" | "similar";

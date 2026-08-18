@@ -10,6 +10,7 @@ import {
   markFollowedReleaseViewed,
 } from "../services/followed/followedService";
 import { runPollOnce } from "../services/followed/poller";
+import { deriveLiveTracking } from "../services/liveEvents/tracking";
 
 const router = express.Router();
 
@@ -24,6 +25,7 @@ router.get("/", async (req: Request, res: Response) => {
       artistName: item.artist_name,
       lastCheckedAt: item.last_checked_at,
       createdAt: item.created_at,
+      liveTracking: deriveLiveTracking(item),
     }))
   );
 });

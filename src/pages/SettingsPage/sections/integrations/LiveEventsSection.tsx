@@ -1,6 +1,7 @@
 import type { LiveEventsSettings } from "@/context/settingsContextDef";
 import CountryPicker from "@/components/CountryPicker";
 import LiveQuotaStatus from "./LiveQuotaStatus";
+import LiveRosterStatus from "./LiveRosterStatus";
 import OriginLocationFields from "./OriginLocationFields";
 
 interface LiveEventsSectionProps {
@@ -39,6 +40,8 @@ export default function LiveEventsSection({
       </label>
 
       <LiveQuotaStatus enabled={settings.enabled} />
+
+      <LiveRosterStatus enabled={settings.enabled} />
 
       <div>
         <label className={LABEL_CLASSES}>JamBase API key</label>

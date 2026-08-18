@@ -17,6 +17,8 @@ import {
   markViewed,
   markNotified,
   setJambaseArtistId,
+  findArtistResolution,
+  listArtistResolutions,
   findUnresolvedFollowedArtists,
   findJambaseIdForArtistMbid,
   listFollowedJambaseIds,
@@ -767,6 +769,62 @@ describe("JamBase artist resolution", () => {
       "jambase:1",
       "jambase:2",
     ]);
+  });
+});
+
+describe("collapsed artist resolution", () => {
+  let userId: number;
+  let other: number;
+
+  beforeEach(async () => {
+    userId = await createUser("lasse");
+    other = await createUser("someone-else");
+  });
+
+  it("reports no follows for an artist nobody follows", async () => {
+    expect(await findArtistResolution("mbid-nobody")).toEqual({
+      follows: 0,
+      jambase_artist_id: null,
+      jambase_resolved_at: null,
+    });
+  });
+
+  it("counts every follow of the same artist as one artist", async () => {
+    await follow(userId, "mbid-a", "A", "jambase:1");
+    await follow(other, "mbid-a", "A", "jambase:1");
+
+    const summary = await findArtistResolution("mbid-a");
+    expect(summary.follows).toBe(2);
+    expect(summary.jambase_artist_id).toBe("jambase:1");
+  });
+
+  it("keeps the resolved id when only one follower's row has it", async () => {
+    await follow(userId, "mbid-a", "A", null);
+    await follow(other, "mbid-a", "A", "jambase:1");
+
+    expect((await findArtistResolution("mbid-a")).jambase_artist_id).toBe(
+      "jambase:1"
+    );
+  });
+
+  it("keeps a confirmed miss when another follower has not been attempted", async () => {
+    const id = await follow(userId, "mbid-a", "A", null);
+    await setJambaseArtistId(id, null, SWEPT_AT);
+    await follow(other, "mbid-a", "A", null);
+
+    const summary = await findArtistResolution("mbid-a");
+    expect(summary.jambase_artist_id).toBeNull();
+    expect(summary.jambase_resolved_at).toBe(SWEPT_AT);
+  });
+
+  it("lists one row per distinct artist rather than per follow", async () => {
+    await follow(userId, "mbid-a", "A", "jambase:1");
+    await follow(other, "mbid-a", "A", "jambase:1");
+    await follow(other, "mbid-b", "B", null);
+
+    const resolutions = await listArtistResolutions();
+    expect(resolutions).toHaveLength(2);
+    expect(resolutions.map((r) => r.follows).sort()).toEqual([1, 2]);
   });
 });
 

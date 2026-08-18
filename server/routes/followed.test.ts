@@ -69,6 +69,8 @@ describe("GET /", () => {
         artist_name: "Artist",
         last_checked_at: null,
         created_at: "2024-01-01",
+        jambase_artist_id: null,
+        jambase_resolved_at: null,
       },
     ]);
 
@@ -81,9 +83,39 @@ describe("GET /", () => {
         artistName: "Artist",
         lastCheckedAt: null,
         createdAt: "2024-01-01",
+        liveTracking: "pending",
       },
     ]);
     expect(mockGetFollowed).toHaveBeenCalledWith(1);
+  });
+
+  it("derives the live tracking state per follow", async () => {
+    mockGetFollowed.mockResolvedValue([
+      {
+        id: 1,
+        artist_mbid: "mbid-1",
+        artist_name: "Tracked",
+        last_checked_at: null,
+        created_at: "2024-01-01",
+        jambase_artist_id: "jambase:1",
+        jambase_resolved_at: "2026-08-01T00:00:00.000Z",
+      },
+      {
+        id: 2,
+        artist_mbid: "mbid-2",
+        artist_name: "Unknown to JamBase",
+        last_checked_at: null,
+        created_at: "2024-01-01",
+        jambase_artist_id: null,
+        jambase_resolved_at: "2026-08-01T00:00:00.000Z",
+      },
+    ]);
+
+    const res = await request(app).get("/");
+
+    expect(
+      res.body.map((item: { liveTracking: string }) => item.liveTracking)
+    ).toEqual(["tracked", "unavailable"]);
   });
 });
 
