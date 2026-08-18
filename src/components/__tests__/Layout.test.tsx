@@ -40,10 +40,9 @@ function renderLayout(path = "/") {
 }
 
 describe("Layout", () => {
-  it("renders the sidebar with logo in both mobile and desktop", () => {
+  it("renders the logo only in the desktop sidebar", () => {
     renderLayout();
-    const tunearrElements = screen.getAllByText("Tunearr");
-    expect(tunearrElements).toHaveLength(2);
+    expect(screen.getAllByText("Tunearr")).toHaveLength(1);
   });
 
   it("renders child route content via Outlet", () => {
@@ -54,5 +53,30 @@ describe("Layout", () => {
   it("renders different child route content", () => {
     renderLayout("/other");
     expect(screen.getByText("Other Content")).toBeInTheDocument();
+  });
+
+  it("sizes the shell to the dynamic viewport so the mobile nav is not pushed off-screen", () => {
+    const { container } = renderLayout();
+    const shell = container.firstElementChild as HTMLElement;
+    expect(shell.className).toContain("h-[100dvh]");
+    expect(shell.className).not.toContain("h-screen");
+  });
+
+  it("pads the scroll area past the mobile nav and the safe area", () => {
+    renderLayout();
+    const main = screen.getByRole("main");
+    expect(main.className).toContain(
+      "pb-[calc(7rem+env(safe-area-inset-bottom))]"
+    );
+    expect(main.className).toContain("md:pb-6");
+  });
+
+  it("does not reserve room for a mobile header", () => {
+    renderLayout();
+    const main = screen.getByRole("main");
+    expect(main.className).not.toContain("pt-20");
+    expect(main.className).toContain(
+      "pt-[calc(1.5rem+env(safe-area-inset-top))]"
+    );
   });
 });
