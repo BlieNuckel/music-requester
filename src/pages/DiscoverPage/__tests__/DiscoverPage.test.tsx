@@ -11,13 +11,14 @@ const mockRefreshPromotedAlbums = vi.fn();
 const mockRefreshArtists = vi.fn();
 
 let mockPromotedAlbums: unknown[] = [];
+let mockPromotedAlbumsError: string | null = null;
 let mockPromotedArtists: unknown = null;
 
 vi.mock("@/hooks/usePromotedAlbums", () => ({
   default: () => ({
     promotedAlbums: mockPromotedAlbums,
     loading: false,
-    error: null,
+    error: mockPromotedAlbumsError,
     refresh: mockRefreshPromotedAlbums,
   }),
 }));
@@ -68,6 +69,7 @@ vi.mock("../components/PromotedArtists", () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mockPromotedAlbums = [];
+  mockPromotedAlbumsError = null;
   mockPromotedArtists = null;
 });
 
@@ -82,6 +84,15 @@ describe("DiscoverPage", () => {
     render(<DiscoverPage />);
     expect(screen.getByTestId("promoted-album")).toBeInTheDocument();
     expect(screen.getByText("OK Computer")).toBeInTheDocument();
+  });
+
+  it("keeps the spotlight tile when the load failed, so the failure is visible", () => {
+    mockPromotedAlbumsError = "Failed to fetch promoted albums";
+    render(<DiscoverPage />);
+    expect(screen.getByTestId("promoted-album")).toBeInTheDocument();
+    expect(screen.getByTestId("discover-section-spotlight").className).not.toBe(
+      "hidden"
+    );
   });
 
   it("does not render promoted albums when the list is empty", () => {

@@ -43,10 +43,10 @@ function isSectionHidden(
   definition: SectionDefinition,
   status: SectionStatus
 ): boolean {
-  return (
-    definition.whenEmpty === "hide" &&
-    (status === "empty" || status === "error")
-  );
+  if (status === "error") {
+    return (definition.whenError ?? definition.whenEmpty) === "hide";
+  }
+  return definition.whenEmpty === "hide" && status === "empty";
 }
 
 /**

@@ -29,6 +29,7 @@ export const SECTION_DEFINITIONS: readonly SectionDefinition[] = [
     desktopOrder: 2,
     mobileOrder: 2,
     whenEmpty: "hide",
+    whenError: "keep",
     Component: SpotlightSection,
   },
   {

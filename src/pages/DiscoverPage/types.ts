@@ -44,9 +44,16 @@ export type SectionDefinition = {
   /** Position in the mobile stack, independent of desktop order. */
   mobileOrder: number;
   /**
-   * "hide" removes the tile when the section reports empty or error;
+   * "hide" removes the tile when the section reports empty;
    * "keep" leaves the tile visible so the section renders its own fallback.
    */
   whenEmpty: "hide" | "keep";
+  /**
+   * The same choice for a failed load, which is a different thing to report than an
+   * empty one: empty is an answer, an error is the absence of one. Defaults to whatever
+   * {@link whenEmpty} says, so a section only spells this out when it has a fallback
+   * worth showing — a message and a retry beats a tile that silently vanishes.
+   */
+  whenError?: "hide" | "keep";
   Component: ComponentType<SectionComponentProps>;
 };
