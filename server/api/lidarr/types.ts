@@ -68,19 +68,34 @@ export type LidarrHistoryRecord = {
   album: { id: number; title: string; foreignAlbumId: string };
 };
 
+/**
+ * Trimmed manual-import item: the fields the review UI renders plus the ones
+ * `buildConfirmPayload` sends back to Lidarr, and nothing else. Everything but
+ * the path is optional because Lidarr omits fields for files it could not match.
+ */
 export type LidarrManualImportItem = {
   path: string;
-  name: string;
-  albumReleaseId: number;
-  tracks: { id: number; title: string; trackNumber: string }[];
-  rejections: { reason: string }[];
-  quality: { quality: { name: string } };
-  indexerFlags: number;
-  downloadId: string;
-  disableReleaseSwitching: boolean;
-  artist: { id: number };
-  album: { id: number };
+  name?: string;
+  albumReleaseId?: number;
+  tracks?: { id: number; title: string; trackNumber: string }[];
+  rejections?: { reason: string }[];
+  quality?: { quality: { name: string } };
+  indexerFlags?: number;
+  downloadId?: string;
+  disableReleaseSwitching?: boolean;
+  artist?: { id: number };
+  album?: { id: number };
 };
+
+/**
+ * What `/manualimport` actually returns: every item embeds the full artist and
+ * album resources (overview, images, links, statistics, every release of the
+ * group), which runs to tens of KB per file. `toManualImportItem` narrows these
+ * before they cross our own API boundary, since the client posts the same items
+ * back to `/import/confirm` and the fat version blows the JSON body limit.
+ */
+export type LidarrManualImportItemRaw = LidarrManualImportItem &
+  Record<string, unknown>;
 
 export type LidarrSchemaField = {
   name: string;

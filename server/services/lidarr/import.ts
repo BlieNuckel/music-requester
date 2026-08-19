@@ -1,6 +1,9 @@
 import { lidarrGet } from "../../api/lidarr/get";
 import { lidarrPost } from "../../api/lidarr/post";
-import type { LidarrManualImportItem } from "../../api/lidarr/types";
+import type {
+  LidarrManualImportItem,
+  LidarrManualImportItemRaw,
+} from "../../api/lidarr/types";
 import { getAlbumByMbid, getOrAddArtist, getOrAddAlbum } from "./helpers";
 
 export const ALLOWED_EXTENSIONS = [
@@ -21,6 +24,37 @@ type ScanResult =
       items: LidarrManualImportItem[];
     };
 
+/**
+ * Narrows a raw `/manualimport` item to the fields we actually use. The client
+ * posts these items back verbatim on confirm, so anything kept here is paid for
+ * twice over the wire.
+ */
+export function toManualImportItem(
+  raw: LidarrManualImportItemRaw
+): LidarrManualImportItem {
+  return {
+    path: raw.path,
+    name: raw.name,
+    albumReleaseId: raw.albumReleaseId,
+    tracks: raw.tracks?.map((track) => ({
+      id: track.id,
+      title: track.title,
+      trackNumber: track.trackNumber,
+    })),
+    rejections: raw.rejections?.map((rejection) => ({
+      reason: rejection.reason,
+    })),
+    quality: raw.quality
+      ? { quality: { name: raw.quality.quality.name } }
+      : undefined,
+    indexerFlags: raw.indexerFlags,
+    downloadId: raw.downloadId,
+    disableReleaseSwitching: raw.disableReleaseSwitching,
+    artist: raw.artist ? { id: raw.artist.id } : undefined,
+    album: raw.album ? { id: raw.album.id } : undefined,
+  };
+}
+
 export async function scanUploadedFiles(
   albumMbid: string,
   uploadDir: string
@@ -38,7 +72,7 @@ export async function scanUploadedFiles(
   const artist = await getOrAddArtist(artistMbid);
   const { album } = await getOrAddAlbum(albumMbid, artist);
 
-  const scanResult = await lidarrGet<LidarrManualImportItem[]>(
+  const scanResult = await lidarrGet<LidarrManualImportItemRaw[]>(
     "/manualimport",
     {
       folder: uploadDir,
@@ -68,7 +102,7 @@ export async function scanUploadedFiles(
     ok: true,
     artistId: artist.id,
     albumId: album.id,
-    items: scanResult.data,
+    items: scanResult.data.map(toManualImportItem),
   };
 }
 

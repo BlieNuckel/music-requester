@@ -36,9 +36,9 @@ export default function ImportReview({
                 </div>
               </div>
             </div>
-            {item.rejections?.length > 0 && (
+            {(item.rejections?.length ?? 0) > 0 && (
               <div className="mt-1.5 space-y-0.5">
-                {item.rejections.map((r, j) => (
+                {item.rejections?.map((r, j) => (
                   <p
                     key={j}
                     className="text-amber-700 dark:text-amber-400 text-xs"
