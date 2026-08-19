@@ -1,5 +1,6 @@
 import manifestJson from "../../public/manifest.json?raw";
 import indexHtml from "../../index.html?raw";
+import { THEME_COLORS } from "../context/themeColors";
 
 type ManifestIcon = {
   src: string;
@@ -65,6 +66,11 @@ describe("manifest.json", () => {
     expect(match?.[1]?.toLowerCase()).toBe(manifest.theme_color.toLowerCase());
   });
 
+  it("themes and backs the install with the app's own light background", () => {
+    expect(manifest.theme_color.toLowerCase()).toBe(THEME_COLORS.light);
+    expect(manifest.background_color.toLowerCase()).toBe(THEME_COLORS.light);
+  });
+
   it("only links shortcuts to real app routes", () => {
     for (const shortcut of manifest.shortcuts) {
       expect(shortcut.url.startsWith("/")).toBe(true);
@@ -86,5 +92,17 @@ describe("index.html", () => {
 
   it("no longer ships the create-react-app description", () => {
     expect(indexHtml).not.toContain("create-react-app");
+  });
+
+  it("covers the display cutout so the safe-area insets resolve", () => {
+    const viewport = indexHtml.match(
+      /<meta\s+name="viewport"\s+content="([^"]+)"/s
+    );
+
+    expect(viewport?.[1]).toContain("viewport-fit=cover");
+  });
+
+  it("switches the boot theme-color to the dark background with the class", () => {
+    expect(indexHtml).toContain(THEME_COLORS.dark);
   });
 });

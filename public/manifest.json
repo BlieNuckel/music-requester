@@ -7,7 +7,7 @@
   "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
-  "theme_color": "#000000",
+  "theme_color": "#fffbeb",
   "background_color": "#fffbeb",
   "categories": ["music", "entertainment"],
   "icons": [
