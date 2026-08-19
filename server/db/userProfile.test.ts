@@ -56,6 +56,8 @@ const CONFIG_INPUTS = {
   distributionWeight: 0.5,
   minPlaysForDistribution: 5,
   minAvailableTracksForDistribution: 3,
+  listeningWeight: 1,
+  maxTrackMinutesForWeight: 0,
   topArtistsCount: 10,
   exploreCandidateCount: 12,
 };
@@ -153,6 +155,12 @@ describe("computeConfigHash", () => {
   });
 
   it("changes when a graph-shaping field changes", () => {
+    expect(
+      computeConfigHash({ ...CONFIG_INPUTS, listeningWeight: 0 })
+    ).not.toBe(computeConfigHash(CONFIG_INPUTS));
+    expect(
+      computeConfigHash({ ...CONFIG_INPUTS, maxTrackMinutesForWeight: 20 })
+    ).not.toBe(computeConfigHash(CONFIG_INPUTS));
     expect(
       computeConfigHash({ ...CONFIG_INPUTS, topArtistsCount: 20 })
     ).not.toBe(computeConfigHash(CONFIG_INPUTS));

@@ -33,6 +33,18 @@ export type PromotedAlbumSettings = {
   distributionWeight: number;
   minPlaysForDistribution: number;
   minAvailableTracksForDistribution: number;
+  /**
+   * Where an artist's weight comes from: `0` ranks on play counts, `1` on listening time.
+   * Plays count decisions to hear something again, time counts exposure, and the two
+   * disagree most on very long tracks.
+   */
+  listeningWeight: number;
+  /**
+   * Ceiling on what one play of a single track is worth, in minutes. `0` is uncapped and is
+   * the default; it exists only to blunt the seek-past-halfway path, which commits a play
+   * for listening that never happened.
+   */
+  maxTrackMinutesForWeight: number;
 };
 
 export type PurchaseDecisionSettings = {
@@ -80,6 +92,8 @@ export const DEFAULT_PROMOTED_ALBUM: PromotedAlbumSettings = {
   distributionWeight: 0.5,
   minPlaysForDistribution: 5,
   minAvailableTracksForDistribution: 3,
+  listeningWeight: 1,
+  maxTrackMinutesForWeight: 0,
 };
 
 export const DEFAULT_PURCHASE_DECISION: PurchaseDecisionSettings = {

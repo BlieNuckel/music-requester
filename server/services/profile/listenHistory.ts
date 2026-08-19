@@ -198,6 +198,10 @@ function trackDurations(events: UserSignalEvent[]): Map<string, number> {
   return durations;
 }
 
+/** One episode's contribution under the caller's per-play ceiling; `0` is uncapped. */
+const creditedMs = (episode: ListenEpisode, capMs: number): number =>
+  capMs > 0 ? Math.min(episode.listenedMs, capMs) : episode.listenedMs;
+
 /**
  * Per-artist listening from the episodes started inside `[fromMs, toMs)`. Windowed on
  * `startedAt`, not `viewedAt`, so a long set counts against the window it was actually
@@ -209,7 +213,8 @@ function trackDurations(events: UserSignalEvent[]): Map<string, number> {
 export function rollupEpisodesToArtists(
   episodes: Map<string, ListenEpisode>,
   fromMs = -Infinity,
-  toMs = Infinity
+  toMs = Infinity,
+  capMs = 0
 ): ArtistListenRollup[] {
   const byArtist = new Map<string, ArtistListenRollup>();
 
@@ -218,24 +223,25 @@ export function rollupEpisodesToArtists(
     const key = episode.artistKey || episode.artistName;
     if (!key) continue;
 
+    const listenedMs = creditedMs(episode, capMs);
     const existing = byArtist.get(key);
     if (!existing) {
       byArtist.set(key, {
         artistKey: key,
         name: episode.artistName,
         plays: 1,
-        listenedMs: episode.listenedMs,
+        listenedMs,
         topTrackKey: episode.ratingKey,
-        topTrackListenedMs: episode.listenedMs,
+        topTrackListenedMs: listenedMs,
       });
       continue;
     }
     existing.plays += 1;
-    existing.listenedMs += episode.listenedMs;
+    existing.listenedMs += listenedMs;
     if (!existing.name) existing.name = episode.artistName;
   }
 
-  applyTopTracks(byArtist, episodes, fromMs, toMs);
+  applyTopTracks(byArtist, episodes, fromMs, toMs, capMs);
   return Array.from(byArtist.values());
 }
 
@@ -248,7 +254,8 @@ function applyTopTracks(
   byArtist: Map<string, ArtistListenRollup>,
   episodes: Map<string, ListenEpisode>,
   fromMs: number,
-  toMs: number
+  toMs: number,
+  capMs: number
 ): void {
   const perTrack = new Map<string, { artist: string; listenedMs: number }>();
 
@@ -257,14 +264,12 @@ function applyTopTracks(
     const artist = episode.artistKey || episode.artistName;
     if (!artist) continue;
 
+    const listenedMs = creditedMs(episode, capMs);
     const existing = perTrack.get(episode.ratingKey);
     if (existing) {
-      existing.listenedMs += episode.listenedMs;
+      existing.listenedMs += listenedMs;
     } else {
-      perTrack.set(episode.ratingKey, {
-        artist,
-        listenedMs: episode.listenedMs,
-      });
+      perTrack.set(episode.ratingKey, { artist, listenedMs });
     }
   }
 

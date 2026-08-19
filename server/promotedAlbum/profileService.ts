@@ -162,6 +162,8 @@ export async function regenerateProfile(
     distributionWeight: config.distributionWeight,
     minPlaysForDistribution: config.minPlaysForDistribution,
     minAvailableTracksForDistribution: config.minAvailableTracksForDistribution,
+    listeningWeight: config.listeningWeight,
+    maxTrackMinutesForWeight: config.maxTrackMinutesForWeight,
   });
   if (weighted.length === 0) return null;
 

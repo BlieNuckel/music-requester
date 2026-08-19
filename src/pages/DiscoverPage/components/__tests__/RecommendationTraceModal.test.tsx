@@ -269,7 +269,7 @@ describe("RecommendationTraceModal", () => {
       expect(spread).toHaveTextContent("×0.50 spread");
       expect(spread).toHaveAttribute(
         "title",
-        "1 track(s) played; top track is 100% of plays"
+        "1 track(s) played; top track is 100% of listening"
       );
     });
 
@@ -302,7 +302,7 @@ describe("RecommendationTraceModal", () => {
       );
       expect(screen.getByTestId("artist-spread")).toHaveAttribute(
         "title",
-        "2 track(s) played; top track is 90% of plays; 100% of rating evidence sits off that track"
+        "2 track(s) played; top track is 90% of listening; 100% of rating evidence sits off that track"
       );
     });
 

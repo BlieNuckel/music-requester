@@ -9,11 +9,12 @@ vi.mock("../api/plex/trackPlayCounts", () => ({
 
 import {
   derivePlayWeights,
+  toPlayEquivalents,
   deriveWindowedTrackPlays,
   deriveArtistDistributions,
   deriveTrackAvailability,
   applyDistributionFactor,
-  reconstructArtistPlayCounts,
+  reconstructArtistTotals,
   aggregateArtistRatings,
   applyRatingMultiplier,
   loadArtistWeights,
@@ -21,6 +22,7 @@ import {
   type ArtistWeight,
   type ArtistWeightOptions,
   type DistributionOptions,
+  type PlayWeightOptions,
 } from "./artistWeights";
 import {
   NOMINAL_TRACK_MS,
@@ -37,9 +39,22 @@ type TrackSpec = {
   artistKey?: string;
   albumKey?: string;
   albumTitle?: string;
+  durationMs?: number;
 };
 
 const DAY = 24 * 60 * 60 * 1000;
+
+function playOptions(
+  overrides: Partial<PlayWeightOptions> = {}
+): PlayWeightOptions {
+  return {
+    now: NOW,
+    windowMs: 30 * DAY,
+    capMs: 0,
+    listeningWeight: 1,
+    ...overrides,
+  };
+}
 
 function weightOptions(overrides: Partial<ArtistWeightOptions> = {}) {
   return {
@@ -48,6 +63,8 @@ function weightOptions(overrides: Partial<ArtistWeightOptions> = {}) {
     distributionWeight: 0,
     minPlaysForDistribution: 5,
     minAvailableTracksForDistribution: 0,
+    listeningWeight: 1,
+    maxTrackMinutesForWeight: 0,
     now: NOW,
     ...overrides,
   };
@@ -81,6 +98,7 @@ function trackEvent(tracks: TrackSpec[], daysAgo: number): UserSignalEvent {
         albumKey: track.albumKey ?? `alb-${track.artistName}`,
         albumTitle: track.albumTitle ?? "Album",
         playCount: track.playCount,
+        durationMs: track.durationMs,
       })),
     }),
     recorded_at: new Date(NOW - daysAgo * DAY).toISOString(),
@@ -125,9 +143,9 @@ function ratingsFor(events: UserSignalEvent[], ratings: UserSignalEvent[]) {
   return aggregateArtistRatings(ratings, tracks, distributions);
 }
 
-describe("reconstructArtistPlayCounts", () => {
+describe("reconstructArtistTotals", () => {
   it("accumulates track plays into per-artist totals", () => {
-    const counts = reconstructArtistPlayCounts(
+    const counts = reconstructArtistTotals(
       [
         trackEvent(
           [
@@ -141,12 +159,15 @@ describe("reconstructArtistPlayCounts", () => {
       [],
       Infinity
     );
-    expect(counts.get("A")).toBe(10);
-    expect(counts.get("B")).toBe(2);
+    expect(counts.get("A")).toEqual({
+      plays: 10,
+      listenedMs: 10 * NOMINAL_TRACK_MS,
+    });
+    expect(counts.get("B")?.plays).toBe(2);
   });
 
   it("groups by artistKey so a rename keeps one bucket", () => {
-    const counts = reconstructArtistPlayCounts(
+    const counts = reconstructArtistTotals(
       [
         trackEvent(
           [
@@ -174,11 +195,11 @@ describe("reconstructArtistPlayCounts", () => {
       [],
       Infinity
     );
-    expect([...counts.values()]).toEqual([8]);
+    expect([...counts.values()].map((t) => t.plays)).toEqual([8]);
   });
 
   it("keeps same-named artists separate when their keys differ", () => {
-    const counts = reconstructArtistPlayCounts(
+    const counts = reconstructArtistTotals(
       [
         trackEvent(
           [
@@ -201,20 +222,20 @@ describe("reconstructArtistPlayCounts", () => {
       [],
       Infinity
     );
-    expect(counts.get("Nova")).toBe(5);
+    expect(counts.get("Nova")?.plays).toBe(5);
   });
 
   it("takes the higher of the two series per artist", () => {
-    const counts = reconstructArtistPlayCounts(
+    const counts = reconstructArtistTotals(
       [trackEvent([{ ratingKey: "1", artistName: "A", playCount: 4 }], 0)],
       [legacyEvent([{ name: "A", playCount: 30 }], 0)],
       Infinity
     );
-    expect(counts.get("A")).toBe(30);
+    expect(counts.get("A")?.plays).toBe(30);
   });
 
   it("ignores events recorded after the cutoff", () => {
-    const counts = reconstructArtistPlayCounts(
+    const counts = reconstructArtistTotals(
       [
         trackEvent([{ ratingKey: "1", artistName: "A", playCount: 4 }], 40),
         trackEvent([{ ratingKey: "1", artistName: "A", playCount: 90 }], 0),
@@ -222,7 +243,62 @@ describe("reconstructArtistPlayCounts", () => {
       [],
       NOW - 30 * DAY
     );
-    expect(counts.get("A")).toBe(4);
+    expect(counts.get("A")?.plays).toBe(4);
+  });
+
+  it("carries listening time alongside the plays it came from", () => {
+    const counts = reconstructArtistTotals(
+      [
+        trackEvent(
+          [
+            {
+              ratingKey: "set",
+              artistName: "A",
+              playCount: 2,
+              durationMs: 5_400_000,
+            },
+          ],
+          0
+        ),
+      ],
+      [],
+      Infinity
+    );
+    expect(counts.get("A")).toEqual({ plays: 2, listenedMs: 10_800_000 });
+  });
+
+  it("caps what one play of a very long track is worth", () => {
+    const counts = reconstructArtistTotals(
+      [
+        trackEvent(
+          [
+            {
+              ratingKey: "set",
+              artistName: "A",
+              playCount: 2,
+              durationMs: 5_400_000,
+            },
+          ],
+          0
+        ),
+      ],
+      [],
+      Infinity,
+      600_000
+    );
+    expect(counts.get("A")?.listenedMs).toBe(1_200_000);
+  });
+
+  it("enters the legacy artist series at the nominal length", () => {
+    const counts = reconstructArtistTotals(
+      [],
+      [legacyEvent([{ name: "A", playCount: 30 }], 0)],
+      Infinity
+    );
+    expect(counts.get("A")).toEqual({
+      plays: 30,
+      listenedMs: 30 * NOMINAL_TRACK_MS,
+    });
   });
 });
 
@@ -238,7 +314,7 @@ describe("derivePlayWeights", () => {
       ),
       trackEvent([{ ratingKey: "1", artistName: "A", playCount: 30 }], 0),
     ];
-    const result = derivePlayWeights(trackEvents, [], NOW, 30 * DAY);
+    const result = derivePlayWeights(trackEvents, [], new Map(), playOptions());
     expect(result.weights).toEqual([{ name: "A", viewCount: 20 }]);
     expect(result.windowStart).toBe(NOW - 30 * DAY);
   });
@@ -248,7 +324,7 @@ describe("derivePlayWeights", () => {
       trackEvent([{ ratingKey: "1", artistName: "A", playCount: 10 }], 5),
       trackEvent([{ ratingKey: "1", artistName: "A", playCount: 12 }], 0),
     ];
-    const result = derivePlayWeights(trackEvents, [], NOW, 30 * DAY);
+    const result = derivePlayWeights(trackEvents, [], new Map(), playOptions());
     expect(result.weights).toEqual([{ name: "A", viewCount: 12 }]);
     expect(result.windowStart).toBeNull();
   });
@@ -258,13 +334,13 @@ describe("derivePlayWeights", () => {
       trackEvent([{ ratingKey: "1", artistName: "A", playCount: 10 }], 40),
       trackEvent([{ ratingKey: "1", artistName: "A", playCount: 10 }], 0),
     ];
-    const result = derivePlayWeights(trackEvents, [], NOW, 30 * DAY);
+    const result = derivePlayWeights(trackEvents, [], new Map(), playOptions());
     expect(result.weights).toEqual([{ name: "A", viewCount: 10 }]);
     expect(result.windowStart).toBeNull();
   });
 
   it("returns empty when neither series has captures", () => {
-    expect(derivePlayWeights([], [], NOW, 30 * DAY)).toEqual({
+    expect(derivePlayWeights([], [], new Map(), playOptions())).toEqual({
       weights: [],
       windowStart: null,
     });
@@ -281,7 +357,12 @@ describe("derivePlayWeights", () => {
       ),
       legacyEvent([{ name: "A", playCount: 30 }], 0),
     ];
-    const result = derivePlayWeights([], legacyEvents, NOW, 30 * DAY);
+    const result = derivePlayWeights(
+      [],
+      legacyEvents,
+      new Map(),
+      playOptions()
+    );
     expect(result.weights).toEqual([{ name: "A", viewCount: 20 }]);
   });
 
@@ -296,7 +377,12 @@ describe("derivePlayWeights", () => {
         0
       ),
     ];
-    const result = derivePlayWeights(trackEvents, legacyEvents, NOW, 30 * DAY);
+    const result = derivePlayWeights(
+      trackEvents,
+      legacyEvents,
+      new Map(),
+      playOptions()
+    );
     expect(result.weights).toEqual([{ name: "A", viewCount: 15 }]);
   });
 
@@ -308,8 +394,133 @@ describe("derivePlayWeights", () => {
     const trackEvents = [
       trackEvent([{ ratingKey: "1", artistName: "A", playCount: 4 }], 0),
     ];
-    const result = derivePlayWeights(trackEvents, legacyEvents, NOW, 30 * DAY);
+    const result = derivePlayWeights(
+      trackEvents,
+      legacyEvents,
+      new Map(),
+      playOptions()
+    );
     expect(result.windowStart).toBe(NOW - 30 * DAY);
+  });
+});
+
+describe("toPlayEquivalents", () => {
+  it("counts a nominal-length play as one, so thresholds keep their meaning", () => {
+    expect(
+      toPlayEquivalents({ plays: 4, listenedMs: 4 * NOMINAL_TRACK_MS }, 1)
+    ).toBe(4);
+  });
+
+  it("makes one hour-long set outweigh one short single", () => {
+    const set = toPlayEquivalents({ plays: 1, listenedMs: 3_600_000 }, 1);
+    const single = toPlayEquivalents({ plays: 1, listenedMs: 180_000 }, 1);
+    expect(set).toBeGreaterThan(single);
+  });
+
+  it("ranks purely on plays at weight 0", () => {
+    expect(toPlayEquivalents({ plays: 3, listenedMs: 5_400_000 }, 0)).toBe(3);
+  });
+
+  it("interpolates between recurrence and exposure", () => {
+    const totals = { plays: 1, listenedMs: 60 * NOMINAL_TRACK_MS };
+    expect(toPlayEquivalents(totals, 0.5)).toBe(30.5);
+  });
+
+  it("is unchanged by the knob when nothing carries a duration", () => {
+    const totals = { plays: 7, listenedMs: 7 * NOMINAL_TRACK_MS };
+    expect(toPlayEquivalents(totals, 0)).toBe(toPlayEquivalents(totals, 1));
+  });
+});
+
+describe("derivePlayWeights with episodes", () => {
+  function episode(
+    ratingKey: string,
+    artistName: string,
+    daysAgo: number,
+    listenedMs: number
+  ) {
+    return {
+      ratingKey,
+      title: `t${ratingKey}`,
+      artistKey: `ak-${artistName}`,
+      artistName,
+      albumKey: `alb-${artistName}`,
+      albumTitle: "Album",
+      startedAt: NOW - daysAgo * DAY,
+      durationMs: listenedMs,
+      listenedMs,
+      measured: false,
+    };
+  }
+
+  function episodes(...items: ReturnType<typeof episode>[]) {
+    return new Map(items.map((item, i) => [`e${i}`, item]));
+  }
+
+  it("weights from the episodes when history covers the window", () => {
+    const result = derivePlayWeights(
+      [trackEvent([{ ratingKey: "1", artistName: "A", playCount: 40 }], 60)],
+      [],
+      episodes(episode("1", "A", 40, 210_000), episode("1", "A", 10, 630_000)),
+      playOptions()
+    );
+
+    expect(result.weights).toEqual([{ name: "A", viewCount: 3 }]);
+    expect(result.windowStart).toBe(NOW - 30 * DAY);
+  });
+
+  it("counts a play once, not once per series", () => {
+    const trackEvents = [
+      trackEvent([{ ratingKey: "1", artistName: "A", playCount: 0 }], 60),
+      trackEvent([{ ratingKey: "1", artistName: "A", playCount: 5 }], 0),
+    ];
+    const fromEpisodes = derivePlayWeights(
+      trackEvents,
+      [],
+      episodes(episode("1", "A", 40, 210_000), episode("1", "A", 10, 210_000)),
+      playOptions()
+    );
+
+    expect(fromEpisodes.weights[0].viewCount).toBe(1);
+  });
+
+  it("falls back to the count deltas when history starts inside the window", () => {
+    const result = derivePlayWeights(
+      [
+        trackEvent([{ ratingKey: "1", artistName: "A", playCount: 10 }], 60),
+        trackEvent([{ ratingKey: "1", artistName: "A", playCount: 14 }], 0),
+      ],
+      [],
+      episodes(episode("1", "A", 10, 210_000)),
+      playOptions()
+    );
+
+    expect(result.weights).toEqual([{ name: "A", viewCount: 4 }]);
+  });
+
+  it("caps what one very long episode is worth", () => {
+    const result = derivePlayWeights(
+      [trackEvent([{ ratingKey: "1", artistName: "A", playCount: 1 }], 60)],
+      [],
+      episodes(
+        episode("1", "A", 40, 210_000),
+        episode("1", "A", 10, 5_400_000)
+      ),
+      playOptions({ capMs: 600_000 })
+    );
+
+    expect(result.weights[0].viewCount).toBeCloseTo(600_000 / NOMINAL_TRACK_MS);
+  });
+
+  it("ignores episodes started outside the window", () => {
+    const result = derivePlayWeights(
+      [trackEvent([{ ratingKey: "1", artistName: "A", playCount: 1 }], 60)],
+      [],
+      episodes(episode("1", "A", 40, 210_000)),
+      playOptions()
+    );
+
+    expect(result.windowStart).toBeNull();
   });
 });
 
@@ -413,6 +624,64 @@ describe("deriveArtistDistributions", () => {
     );
     expect(dists.get("Nova")?.playCount).toBe(9);
   });
+
+  it("keeps the artist holding more listening when two share a name", () => {
+    const dists = artistDistributions(
+      [
+        trackEvent(
+          [
+            {
+              ratingKey: "1",
+              artistKey: "k1",
+              artistName: "Nova",
+              playCount: 3,
+              durationMs: 5_400_000,
+            },
+            {
+              ratingKey: "2",
+              artistKey: "k2",
+              artistName: "Nova",
+              playCount: 9,
+              durationMs: 180_000,
+            },
+          ],
+          0
+        ),
+      ],
+      null
+    );
+    expect(dists.get("Nova")?.playCount).toBe(3);
+  });
+
+  it("takes the most-listened track for the concentration share", () => {
+    const dists = artistDistributions(
+      [
+        trackEvent(
+          [
+            {
+              ratingKey: "set",
+              artistName: "A",
+              playCount: 1,
+              durationMs: 5_400_000,
+            },
+            {
+              ratingKey: "single",
+              artistName: "A",
+              playCount: 8,
+              durationMs: 180_000,
+            },
+          ],
+          0
+        ),
+      ],
+      null
+    );
+    expect(dists.get("A")).toMatchObject({
+      topTrackKey: "single",
+      topTrackPlayCount: 8,
+      topTrackListenedMs: 5_400_000,
+    });
+  });
 });
 
 describe("applyDistributionFactor", () => {
@@ -465,6 +734,48 @@ describe("applyDistributionFactor", () => {
       ["A", { rating: 10, breadth }],
     ]);
   }
+
+  /** An artist whose plays and listening sit on different tracks. */
+  function splitDistribution(
+    playCount: number,
+    topTrackPlayCount: number,
+    listenedMs: number,
+    topTrackListenedMs: number
+  ) {
+    return new Map([
+      [
+        "A",
+        {
+          artistKey: "ak-A",
+          name: "A",
+          playCount,
+          listenedMs,
+          distinctTracksPlayed: 2,
+          topTrackPlayCount,
+          topTrackListenedMs,
+          topTrackKey: "top",
+        },
+      ],
+    ]);
+  }
+
+  it("measures concentration on listening rather than on plays", () => {
+    // 20 short plays and one long set: spread by plays, concentrated by time.
+    const result = factor(
+      splitDistribution(21, 20, 5_400_000 + 20 * 180_000, 5_400_000)
+    );
+
+    expect(result[0].topTrackShare).toBeCloseTo(0.6, 5);
+  });
+
+  it("keeps the evidence gate on plays, not on milliseconds", () => {
+    const result = factor(splitDistribution(2, 2, 7_200_000, 7_200_000), {
+      minPlays: 5,
+    });
+
+    expect(result[0].viewCount).toBe(200);
+    expect(result[0].topTrackShare).toBeUndefined();
+  });
 
   it("penalises an artist whose plays sit on one track", () => {
     const result = factor(distributions(200, 200, 1));
@@ -550,6 +861,20 @@ describe("applyDistributionFactor", () => {
     });
     expect(result[0].distributionFactor).toBe(0.5);
     expect(result[0].availableTracks).toBeUndefined();
+  });
+
+  it("still exempts a two-track long-form artist once concentration is on listening", () => {
+    // Two 90-minute sets: half the listening sits on one of them, but with nothing else in
+    // the library to play, that is not a one-hit habit.
+    const result = factor(
+      splitDistribution(6, 3, 6 * 5_400_000, 3 * 5_400_000),
+      { minAvailableTracks: 3 },
+      noRatings,
+      new Map([["A", 2]])
+    );
+
+    expect(result[0].viewCount).toBe(200);
+    expect(result[0].availableTracks).toBe(2);
   });
 
   it("turns the exemption off at a threshold of 0", () => {
@@ -796,6 +1121,182 @@ describe("loadArtistWeights (with DB)", () => {
     expect(mockGetAllTrackPlayCounts).toHaveBeenCalledWith("tok");
     expect(await getSignalEvents(1, "plex_track_plays")).toHaveLength(1);
     expect(result).toEqual([{ name: "A", viewCount: 42 }]);
+  });
+
+  it("weights a long set above a short single at equal play counts", async () => {
+    await appendSignalEvent(1, "plex_track_plays", {
+      tracks: [
+        {
+          ratingKey: "set",
+          title: "Antwerp Expo",
+          artistKey: "ak-dj",
+          artistName: "DJ",
+          albumKey: "alb-dj",
+          albumTitle: "Live",
+          playCount: 3,
+          durationMs: 5_400_000,
+        },
+        {
+          ratingKey: "single",
+          title: "Air",
+          artistKey: "ak-pop",
+          artistName: "Pop",
+          albumKey: "alb-pop",
+          albumTitle: "Album",
+          playCount: 3,
+          durationMs: 180_000,
+        },
+      ],
+    });
+
+    const result = await loadArtistWeights(1, "tok", weightOptions());
+    const byName = new Map(result.map((w) => [w.name, w.viewCount]));
+
+    expect(byName.get("DJ")).toBeGreaterThan(byName.get("Pop") ?? 0);
+    expect(byName.get("DJ")).toBeCloseTo((3 * 5_400_000) / NOMINAL_TRACK_MS, 5);
+  });
+
+  it("ranks the two the same when weighting on plays instead", async () => {
+    await appendSignalEvent(1, "plex_track_plays", {
+      tracks: [
+        {
+          ratingKey: "set",
+          title: "Antwerp Expo",
+          artistKey: "ak-dj",
+          artistName: "DJ",
+          albumKey: "alb-dj",
+          albumTitle: "Live",
+          playCount: 3,
+          durationMs: 5_400_000,
+        },
+        {
+          ratingKey: "single",
+          title: "Air",
+          artistKey: "ak-pop",
+          artistName: "Pop",
+          albumKey: "alb-pop",
+          albumTitle: "Album",
+          playCount: 3,
+          durationMs: 180_000,
+        },
+      ],
+    });
+
+    const result = await loadArtistWeights(
+      1,
+      "tok",
+      weightOptions({ listeningWeight: 0 })
+    );
+
+    expect(result.map((w) => w.viewCount)).toEqual([3, 3]);
+  });
+
+  it("takes measured listening over the estimate for the same play", async () => {
+    const startedAt = NOW - 10 * DAY;
+    await appendSignalEvent(1, "plex_track_plays", {
+      tracks: [
+        {
+          ratingKey: "set",
+          title: "Antwerp Expo",
+          artistKey: "ak-dj",
+          artistName: "DJ",
+          albumKey: "alb-dj",
+          albumTitle: "Live",
+          playCount: 1,
+          durationMs: 5_400_000,
+        },
+      ],
+    });
+    await appendSignalEvent(1, "plex_listen_history", {
+      episodes: [
+        // Reaches back past the window, which is what makes history authoritative for it.
+        {
+          ratingKey: "old",
+          title: "Air",
+          artistKey: "ak-pop",
+          artistName: "Pop",
+          albumKey: "alb-pop",
+          albumTitle: "Album",
+          viewedAt: Math.round((NOW - 40 * DAY) / 1000),
+          startedAt: NOW - 40 * DAY,
+          durationMs: 180_000,
+          listenedMs: 180_000,
+          measured: false,
+        },
+        {
+          ratingKey: "set",
+          title: "Antwerp Expo",
+          artistKey: "ak-dj",
+          artistName: "DJ",
+          albumKey: "alb-dj",
+          albumTitle: "Live",
+          viewedAt: Math.round((startedAt + 2_700_000) / 1000),
+          startedAt,
+          durationMs: 5_400_000,
+          listenedMs: 5_400_000,
+          measured: false,
+        },
+      ],
+    });
+    await appendSignalEvent(1, "plex_listen_sessions", {
+      episodes: [
+        {
+          ratingKey: "set",
+          title: "Antwerp Expo",
+          artistKey: "ak-dj",
+          artistName: "DJ",
+          albumKey: "alb-dj",
+          albumTitle: "Live",
+          startedAt,
+          durationMs: 5_400_000,
+          listenedMs: 720_000,
+          measured: true,
+        },
+      ],
+    });
+
+    const result = await loadArtistWeights(1, "tok", weightOptions());
+    const dj = result.find((weight) => weight.name === "DJ");
+
+    expect(dj?.viewCount).toBeCloseTo(720_000 / NOMINAL_TRACK_MS, 5);
+  });
+
+  it("stays on the count series when history starts inside the window", async () => {
+    await appendSignalEvent(1, "plex_track_plays", {
+      tracks: [
+        {
+          ratingKey: "set",
+          title: "Antwerp Expo",
+          artistKey: "ak-dj",
+          artistName: "DJ",
+          albumKey: "alb-dj",
+          albumTitle: "Live",
+          playCount: 1,
+          durationMs: 5_400_000,
+        },
+      ],
+    });
+    await appendSignalEvent(1, "plex_listen_history", {
+      episodes: [
+        {
+          ratingKey: "set",
+          title: "Antwerp Expo",
+          artistKey: "ak-dj",
+          artistName: "DJ",
+          albumKey: "alb-dj",
+          albumTitle: "Live",
+          viewedAt: Math.round((NOW - 10 * DAY) / 1000),
+          startedAt: NOW - 10 * DAY,
+          durationMs: 5_400_000,
+          listenedMs: 5_400_000,
+          measured: false,
+        },
+      ],
+    });
+
+    const result = await loadArtistWeights(1, "tok", weightOptions());
+
+    expect(result[0].viewCount).toBeCloseTo(5_400_000 / NOMINAL_TRACK_MS, 5);
   });
 
   it("does not fetch live when only a legacy series exists", async () => {

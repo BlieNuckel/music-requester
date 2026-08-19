@@ -166,6 +166,7 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
       "generic",
       "plays",
       "one-hit",
+      "listening time",
     ],
     permission: Permission.ADMIN,
   },

@@ -394,9 +394,10 @@ function accumulateArtistTrack(
   byArtist: Map<string, ArtistPlayRollup>,
   key: string,
   track: TrackPlayState,
-  plays: number
+  plays: number,
+  capMs: number
 ): void {
-  const listenedMs = inferListenedMs(plays, track.durationMs);
+  const listenedMs = inferListenedMs(plays, track.durationMs, capMs);
   const existing = byArtist.get(key);
   if (!existing) {
     byArtist.set(key, {
@@ -433,10 +434,14 @@ function accumulateArtistTrack(
  * Passing `baseline` (an earlier fold of the same series) rolls up the *change* since then
  * per track, so the distribution describes what was played inside a window rather than
  * all-time. Tracks unchanged since the baseline count as unplayed for that window.
+ *
+ * `capMs` bounds what one play of a single track may contribute to `listenedMs`; `0` (the
+ * default) is uncapped. See {@link inferListenedMs}.
  */
 export function rollupToArtists(
   tracks: Map<string, TrackPlayState>,
-  baseline?: Map<string, TrackPlayState>
+  baseline?: Map<string, TrackPlayState>,
+  capMs = 0
 ): ArtistPlayRollup[] {
   const byArtist = new Map<string, ArtistPlayRollup>();
   for (const track of tracks.values()) {
@@ -450,7 +455,7 @@ export function rollupToArtists(
         )
       : track.playCount;
 
-    accumulateArtistTrack(byArtist, key, track, plays);
+    accumulateArtistTrack(byArtist, key, track, plays, capMs);
   }
   return Array.from(byArtist.values());
 }
@@ -532,14 +537,22 @@ export function rollupToArtistCatalogue(
   return byName;
 }
 
-/** Inferred listening time for a run of plays on one track. */
+/**
+ * Inferred listening time for a run of plays on one track.
+ *
+ * `capMs` is a ceiling on what one play of the track may be worth; `0` is uncapped and is
+ * the right default. It exists only to blunt the one path that credits listening which never
+ * happened — seeking past the halfway mark commits a play outright — and set low it recreates
+ * the under-counting it is meant to correct. It is a weighting policy the caller chooses, not
+ * a property of the stored signal.
+ */
 export function inferListenedMs(
   playCount: number,
-  durationMs: number | undefined
+  durationMs: number | undefined,
+  capMs = 0
 ): number {
-  return (
-    playCount * (durationMs && durationMs > 0 ? durationMs : NOMINAL_TRACK_MS)
-  );
+  const length = durationMs && durationMs > 0 ? durationMs : NOMINAL_TRACK_MS;
+  return playCount * (capMs > 0 ? Math.min(length, capMs) : length);
 }
 
 /**

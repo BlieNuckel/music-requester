@@ -116,7 +116,7 @@ function SpreadNote({ artist }: { artist: TraceArtistEntry }) {
       className="text-[10px] opacity-70"
       title={`${artist.distinctTracksPlayed ?? 0} track(s) played; top track is ${Math.round(
         artist.topTrackShare * 100
-      )}% of plays${breadthNote}`}
+      )}% of listening${breadthNote}`}
     >
       ×{artist.distributionFactor.toFixed(2)} spread
     </span>
