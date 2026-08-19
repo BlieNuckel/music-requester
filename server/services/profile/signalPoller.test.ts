@@ -4,6 +4,7 @@ const mockGetConfigValue = vi.fn();
 const mockGetRatedItems = vi.fn();
 const mockGetAllTrackPlayCounts = vi.fn();
 const mockGetAllAlbumTrackCounts = vi.fn();
+const mockGetPlayHistory = vi.fn();
 
 vi.mock("../../config", () => ({
   getConfigValue: (...args: unknown[]) => mockGetConfigValue(...args),
@@ -18,6 +19,9 @@ vi.mock("../../api/plex/trackPlayCounts", () => ({
 vi.mock("../../api/plex/albumTrackCounts", () => ({
   getAllAlbumTrackCounts: (...args: unknown[]) =>
     mockGetAllAlbumTrackCounts(...args),
+}));
+vi.mock("../../api/plex/playHistory", () => ({
+  getPlayHistory: (...args: unknown[]) => mockGetPlayHistory(...args),
 }));
 
 import { runSignalIngestionOnce } from "./signalPoller";
@@ -56,6 +60,18 @@ beforeEach(async () => {
       albumKey: "alb1",
       albumTitle: "Prologue",
       viewCount: 120,
+      durationMs: 210_000,
+    },
+  ]);
+  mockGetPlayHistory.mockResolvedValue([
+    {
+      ratingKey: "451",
+      title: "Air",
+      artistKey: "art1",
+      artistName: "Andromedik",
+      albumKey: "alb1",
+      albumTitle: "Prologue",
+      viewedAt: 1_770_000_000,
     },
   ]);
   mockGetAllAlbumTrackCounts.mockResolvedValue([
@@ -84,6 +100,9 @@ describe("runSignalIngestionOnce", () => {
       expect(await getSignalEvents(userId, "plex_rating")).toHaveLength(1);
       expect(await getSignalEvents(userId, "plex_track_plays")).toHaveLength(1);
       expect(await getSignalEvents(userId, "plex_album_tracks")).toHaveLength(
+        1
+      );
+      expect(await getSignalEvents(userId, "plex_listen_history")).toHaveLength(
         1
       );
     }
@@ -143,6 +162,26 @@ describe("runSignalIngestionOnce", () => {
     await runSignalIngestionOnce(Date.now() + 8 * 24 * 60 * 60 * 1000);
 
     expect(await getSignalEvents(1, "plex_album_tracks")).toHaveLength(2);
+  });
+
+  it("sweeps history every tick, appending only plays it has not seen", async () => {
+    await createUser("alice", "tok-a");
+
+    await runSignalIngestionOnce();
+    await runSignalIngestionOnce();
+
+    expect(mockGetPlayHistory).toHaveBeenCalledTimes(2);
+    expect(await getSignalEvents(1, "plex_listen_history")).toHaveLength(1);
+  });
+
+  it("captures plays before history, so an episode finds its track length", async () => {
+    await createUser("alice", "tok-a");
+
+    await runSignalIngestionOnce();
+
+    const events = await getSignalEvents(1, "plex_listen_history");
+    const [episode] = JSON.parse(events[0].payload).episodes;
+    expect(episode.durationMs).toBe(210_000);
   });
 
   it("isolates per-user failures so the sweep continues", async () => {

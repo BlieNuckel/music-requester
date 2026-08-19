@@ -12,6 +12,14 @@ import {
   reconstructTrackPlayCounts,
   rollupToArtists,
 } from "./signalIngestion";
+import {
+  reconstructListenEpisodes,
+  rollupEpisodesToArtists,
+} from "./listenHistory";
+import {
+  mergeMeasuredEpisodes,
+  reconstructMeasuredEpisodes,
+} from "./listenSessions";
 import type { UserProfile } from "../../db/entity/UserProfile";
 import type { UserSignalEvent } from "../../db/entity/UserSignalEvent";
 
@@ -62,6 +70,9 @@ export type ProfileDebugPlex = {
   totalPlays: number;
   artists: number;
   ratedItems: number;
+  listenEpisodes: number;
+  /** Listening across every episode, measured where observed and inferred elsewhere. */
+  listenedHours: number;
 };
 
 export type ProfileDebugEntry = {
@@ -79,7 +90,7 @@ const TOP_LIST_SIZE = 10;
 const RECENT_SIGNAL_COUNT = 8;
 
 /** Payload shapes only differ in which array carries the delta. */
-const DELTA_ARRAYS = ["tracks", "artists"] as const;
+const DELTA_ARRAYS = ["tracks", "artists", "episodes"] as const;
 
 function countDelta(event: UserSignalEvent): number {
   try {
@@ -127,15 +138,35 @@ function recentSignals(events: UserSignalEvent[]): ProfileDebugRecentSignal[] {
     }));
 }
 
+const MS_PER_HOUR = 60 * 60 * 1000;
+
+const ofKind = (events: UserSignalEvent[], kind: string): UserSignalEvent[] =>
+  events.filter((event) => event.kind === kind);
+
 function foldPlexState(events: UserSignalEvent[]): ProfileDebugPlex {
   const tracks = reconstructTrackPlayCounts(events, Infinity);
   const artists = rollupToArtists(tracks);
+  // Both episode series carry an `episodes` payload, so they are separated by kind rather
+  // than by shape the way the count series are.
+  const episodes = mergeMeasuredEpisodes(
+    reconstructListenEpisodes(ofKind(events, "plex_listen_history"), Infinity),
+    reconstructMeasuredEpisodes(
+      ofKind(events, "plex_listen_sessions"),
+      Infinity
+    )
+  );
+  const listenedMs = rollupEpisodesToArtists(episodes).reduce(
+    (sum, artist) => sum + artist.listenedMs,
+    0
+  );
 
   return {
     trackedTracks: tracks.size,
     totalPlays: artists.reduce((sum, artist) => sum + artist.playCount, 0),
     artists: artists.length,
     ratedItems: latestRatings(events).size,
+    listenEpisodes: episodes.size,
+    listenedHours: Math.floor(listenedMs / MS_PER_HOUR),
   };
 }
 

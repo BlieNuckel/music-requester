@@ -18,6 +18,8 @@ function plexFacts(entry: ProfileDebugEntry) {
     { label: "Total plays", value: entry.plex.totalPlays },
     { label: "Artists", value: entry.plex.artists },
     { label: "Rated items", value: entry.plex.ratedItems },
+    { label: "Listen episodes", value: entry.plex.listenEpisodes },
+    { label: "Listened hours", value: entry.plex.listenedHours },
   ];
 }
 

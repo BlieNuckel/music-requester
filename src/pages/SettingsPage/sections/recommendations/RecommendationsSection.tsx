@@ -247,6 +247,24 @@ export default function RecommendationsSection({
         description="How much your Plex star ratings boost an artist's weight: ×(1 + weight × stars/5). 0 ignores ratings; 0.5 gives a 5-star artist +50% weight."
       />
       <NumberField
+        label="Listening Time vs Plays"
+        value={config.listeningWeight}
+        onChange={(v) => update("listeningWeight", v)}
+        min={0}
+        max={1}
+        step={0.05}
+        description="What counts as listening to an artist more. 1 ranks by time spent, so an hour-long DJ set outweighs a three-minute single played once. 0 ranks by play count, so twenty plays of one short track outweigh one long set. Plays measure how often you chose it again; time measures how much of your listening it filled."
+      />
+      <NumberField
+        label="Maximum Minutes per Play"
+        value={config.maxTrackMinutesForWeight}
+        onChange={(v) => update("maxTrackMinutesForWeight", v)}
+        min={0}
+        max={240}
+        step={5}
+        description="Ceiling on how much listening time a single play can be worth. 0 is uncapped and is usually right — a low cap re-creates the under-counting of long tracks this is meant to fix. Raise it off 0 only if skipping through long mixes is inflating an artist."
+      />
+      <NumberField
         label="One-Hit Discount"
         value={config.distributionWeight}
         onChange={(v) => update("distributionWeight", v)}

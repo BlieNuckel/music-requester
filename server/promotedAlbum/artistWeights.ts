@@ -1,6 +1,8 @@
 import { getSignalEvents } from "../db/userProfile";
 import { isPlaceholderArtist } from "../utils/artistFilter";
 import {
+  NOMINAL_TRACK_MS,
+  inferListenedMs,
   ingestUserTrackPlays,
   latestRatings,
   reconstructAlbumTrackCounts,
@@ -14,13 +16,27 @@ import type {
   PlexRatingPayload,
   TrackPlayState,
 } from "../services/profile/signalIngestion";
+import {
+  historyCovers,
+  reconstructListenEpisodes,
+  rollupEpisodesToArtists,
+} from "../services/profile/listenHistory";
+import {
+  mergeMeasuredEpisodes,
+  reconstructMeasuredEpisodes,
+} from "../services/profile/listenSessions";
+import type { ListenEpisode } from "../services/profile/listenHistory";
 import type { UserSignalEvent } from "../db/entity/UserSignalEvent";
 
 /**
- * An artist with the effective weight (windowed plays × rating boost × distribution factor)
- * the recommender ranks by. The distribution fields are absent for artists known only from
- * the legacy artist-level series, which carries no per-track detail; the rating fields are
- * absent for artists with nothing rated.
+ * An artist with the effective weight (windowed listening × rating boost × distribution
+ * factor) the recommender ranks by. The distribution fields are absent for artists known
+ * only from the legacy artist-level series, which carries no per-track detail; the rating
+ * fields are absent for artists with nothing rated.
+ *
+ * `viewCount` is denominated in **play-equivalents**, not plays: one play of a nominal-length
+ * track is `1`, one play of a 90-minute set is ~26. The name predates listening time and is
+ * kept because it is what every consumer reads. See {@link toPlayEquivalents}.
  */
 export type ArtistWeight = {
   name: string;
@@ -97,11 +113,57 @@ export type ArtistWeightOptions = {
   distributionWeight: number;
   minPlaysForDistribution: number;
   minAvailableTracksForDistribution: number;
+  listeningWeight: number;
+  maxTrackMinutesForWeight: number;
   now?: number;
 };
 
-function allTimeWeights(latest: Map<string, number>): ArtistWeight[] {
-  return Array.from(latest, ([name, viewCount]) => ({ name, viewCount }));
+/** How much of an artist's window the two stored quantities each describe. */
+export type ArtistListenTotals = {
+  plays: number;
+  listenedMs: number;
+};
+
+/** What {@link derivePlayWeights} needs beyond the series themselves. */
+export type PlayWeightOptions = {
+  now: number;
+  windowMs: number;
+  /** Per-play ceiling on listening credit, in ms; `0` is uncapped. */
+  capMs: number;
+  /** `0` ranks on plays, `1` on listening time. See {@link toPlayEquivalents}. */
+  listeningWeight: number;
+};
+
+/**
+ * One artist's window reduced to the number the recommender ranks by, denominated in
+ * play-equivalents — one nominal-length play is `1` — so the play-denominated thresholds
+ * around it keep meaning roughly what they meant.
+ *
+ * `listeningWeight` chooses what "more" means, because the two stored quantities are
+ * different evidence and neither substitutes for the other. Plays count *decisions*: twenty
+ * plays of a three-minute track are twenty separate choices to hear it again. Listening time
+ * counts *exposure*: those twenty plays and one hour-long set are the same hour. At `1` an
+ * hour-long DJ set finally stops counting the same as a three-minute single; at `0` this is
+ * exactly the play ranking that predates listening time being captured at all.
+ *
+ * With no durations stored, exposure equals plays and the knob does nothing.
+ */
+export function toPlayEquivalents(
+  totals: ArtistListenTotals,
+  listeningWeight: number
+): number {
+  const exposure = totals.listenedMs / NOMINAL_TRACK_MS;
+  return totals.plays * (1 - listeningWeight) + exposure * listeningWeight;
+}
+
+function allTimeWeights(
+  latest: Map<string, ArtistListenTotals>,
+  listeningWeight: number
+): ArtistWeight[] {
+  return Array.from(latest, ([name, totals]) => ({
+    name,
+    viewCount: toPlayEquivalents(totals, listeningWeight),
+  }));
 }
 
 /** Oldest `recorded_at` across both plays series, or null when neither has any events. */
@@ -114,69 +176,151 @@ function earliestRecordedAt(...series: UserSignalEvent[][]): number | null {
 }
 
 /**
- * Cumulative all-time plays per artist at `cutoffMs`, merged across the track series and
- * the legacy artist series. Both are monotonic cumulative counts of the same quantity, so
- * the higher of the two is the safe estimate: it never under-counts a baseline (which would
- * inflate a windowed delta), and it lets the track series take over on its own as the
- * legacy series stops being written. Keyed by artist name, which is what the ratings series
- * joins on and the only key the legacy series has.
+ * Cumulative all-time plays *and* listening per artist at `cutoffMs`, merged across the
+ * track series and the legacy artist series. Both are monotonic and cumulative, so the
+ * higher of the two is the safe estimate on each quantity: it never under-counts a baseline
+ * (which would inflate a windowed delta), and it lets the track series take over on its own
+ * as the legacy series stops being written. Keyed by artist name, which is what the ratings
+ * series joins on and the only key the legacy series has.
+ *
+ * The legacy series is artist-level and carries no durations, so its counts enter as
+ * listening at the nominal length — numerically identical to how they compared before this
+ * became a listening merge.
  */
-export function reconstructArtistPlayCounts(
+export function reconstructArtistTotals(
   trackEvents: UserSignalEvent[],
   legacyEvents: UserSignalEvent[],
-  cutoffMs: number
-): Map<string, number> {
-  const merged = reconstructPlayCounts(legacyEvents, cutoffMs);
+  cutoffMs: number,
+  capMs = 0
+): Map<string, ArtistListenTotals> {
+  const merged = new Map<string, ArtistListenTotals>();
+  for (const [name, plays] of reconstructPlayCounts(legacyEvents, cutoffMs)) {
+    merged.set(name, {
+      plays,
+      listenedMs: inferListenedMs(plays, undefined, capMs),
+    });
+  }
+
   const tracks = reconstructTrackPlayCounts(trackEvents, cutoffMs);
-  for (const artist of rollupToArtists(tracks)) {
+  for (const artist of rollupToArtists(tracks, undefined, capMs)) {
     if (!artist.name) continue;
-    const known = merged.get(artist.name) ?? 0;
-    merged.set(artist.name, Math.max(known, artist.playCount));
+    const known = merged.get(artist.name);
+    merged.set(artist.name, {
+      plays: Math.max(known?.plays ?? 0, artist.playCount),
+      listenedMs: Math.max(known?.listenedMs ?? 0, artist.listenedMs),
+    });
   }
   return merged;
 }
 
 /**
- * Per-artist play weight derived from the plays delta series. When the series spans the
- * full window, weight = plays within the window (cumulative count now minus the count
- * reconstructed at the window start). Until the series is that deep — or when nothing was
- * played in the window — weight falls back to the latest cumulative all-time count, so the
- * set is never empty and a thin history still produces sensible weights.
+ * Per-artist totals for the window, taken from the episode series when it covers the window
+ * outright. History records which plays happened and when, so where it reaches it is the
+ * better answer than a difference of two cumulative snapshots — and once a session
+ * observation has replaced an episode's inferred time, this is also how measured listening
+ * reaches the weights. Returns null when history does not cover the window, which is the
+ * signal to fall back to the count deltas rather than to add both and count every play twice.
+ */
+function episodeTotals(
+  episodes: Map<string, ListenEpisode>,
+  windowStart: number,
+  now: number,
+  capMs: number
+): Map<string, ArtistListenTotals> | null {
+  if (!historyCovers(episodes, windowStart)) return null;
+
+  const totals = new Map<string, ArtistListenTotals>();
+  for (const rollup of rollupEpisodesToArtists(
+    episodes,
+    windowStart,
+    now,
+    capMs
+  )) {
+    if (!rollup.name) continue;
+    const known = totals.get(rollup.name);
+    // Two artists sharing a name collapse to the busier, mirroring how the counts merge.
+    if (known && known.listenedMs >= rollup.listenedMs) continue;
+    totals.set(rollup.name, {
+      plays: rollup.plays,
+      listenedMs: rollup.listenedMs,
+    });
+  }
+  return totals;
+}
+
+/** The window's totals per artist, as the difference between two cumulative snapshots. */
+function countDeltaTotals(
+  trackEvents: UserSignalEvent[],
+  legacyEvents: UserSignalEvent[],
+  windowStart: number,
+  latest: Map<string, ArtistListenTotals>,
+  capMs: number
+): Map<string, ArtistListenTotals> {
+  const baseline = reconstructArtistTotals(
+    trackEvents,
+    legacyEvents,
+    windowStart,
+    capMs
+  );
+
+  const deltas = new Map<string, ArtistListenTotals>();
+  for (const [name, totals] of latest) {
+    const before = baseline.get(name);
+    deltas.set(name, {
+      plays: Math.max(0, totals.plays - (before?.plays ?? 0)),
+      listenedMs: Math.max(0, totals.listenedMs - (before?.listenedMs ?? 0)),
+    });
+  }
+  return deltas;
+}
+
+/**
+ * Per-artist weight over the recent window, in play-equivalents. The window's listening
+ * comes from the episode series where history covers it, and from the difference of two
+ * cumulative snapshots otherwise — one or the other, never both, or every play inside the
+ * covered span would count twice.
+ *
+ * Until either series is deep enough to span the window — or when nothing was played in it —
+ * weight falls back to the latest cumulative all-time totals, so the set is never empty and
+ * a thin history still produces sensible weights.
  */
 export function derivePlayWeights(
   trackEvents: UserSignalEvent[],
   legacyEvents: UserSignalEvent[],
-  now: number,
-  windowMs: number
+  episodes: Map<string, ListenEpisode>,
+  options: PlayWeightOptions
 ): PlayWeightResult {
+  const { now, windowMs, capMs, listeningWeight } = options;
   const earliest = earliestRecordedAt(trackEvents, legacyEvents);
   if (earliest === null) return { weights: [], windowStart: null };
-  const latest = reconstructArtistPlayCounts(
+
+  const latest = reconstructArtistTotals(
     trackEvents,
     legacyEvents,
-    Infinity
+    Infinity,
+    capMs
   );
-
   const windowStart = now - windowMs;
-  if (earliest > windowStart) {
-    return { weights: allTimeWeights(latest), windowStart: null };
-  }
+  const allTime = {
+    weights: allTimeWeights(latest, listeningWeight),
+    windowStart: null,
+  };
 
-  const baseline = reconstructArtistPlayCounts(
-    trackEvents,
-    legacyEvents,
-    windowStart
-  );
+  const covered = episodeTotals(episodes, windowStart, now, capMs);
+  if (!covered && earliest > windowStart) return allTime;
+
+  const deltas =
+    covered ??
+    countDeltaTotals(trackEvents, legacyEvents, windowStart, latest, capMs);
+
   const windowed: ArtistWeight[] = [];
   let total = 0;
-  for (const [name, count] of latest) {
-    const delta = Math.max(0, count - (baseline.get(name) ?? 0));
-    total += delta;
-    if (delta > 0) windowed.push({ name, viewCount: delta });
+  for (const [name, totals] of deltas) {
+    const viewCount = toPlayEquivalents(totals, listeningWeight);
+    total += viewCount;
+    if (viewCount > 0) windowed.push({ name, viewCount });
   }
-  return total > 0
-    ? { weights: windowed, windowStart }
-    : { weights: allTimeWeights(latest), windowStart: null };
+  return total > 0 ? { weights: windowed, windowStart } : allTime;
 }
 
 /**
@@ -211,19 +355,20 @@ export function deriveWindowedTrackPlays(
 
 /**
  * Per-artist play distribution over the measured window, keyed by artist name so it joins
- * onto the weight set. Two artists sharing a name collapse to whichever has more plays,
- * mirroring how the counts merge.
+ * onto the weight set. Two artists sharing a name collapse to whichever holds more
+ * listening, mirroring how the totals merge.
  */
 export function deriveArtistDistributions(
-  tracks: Map<string, TrackPlayState>
+  tracks: Map<string, TrackPlayState>,
+  capMs = 0
 ): Map<string, ArtistPlayRollup> {
-  const rollups = rollupToArtists(tracks);
+  const rollups = rollupToArtists(tracks, undefined, capMs);
 
   const byName = new Map<string, ArtistPlayRollup>();
   for (const rollup of rollups) {
     if (!rollup.name) continue;
     const existing = byName.get(rollup.name);
-    if (!existing || rollup.playCount > existing.playCount) {
+    if (!existing || rollup.listenedMs > existing.listenedMs) {
       byName.set(rollup.name, rollup);
     }
   }
@@ -231,11 +376,17 @@ export function deriveArtistDistributions(
 }
 
 /**
- * Scale each artist's weight by how broadly their plays spread across their tracks:
+ * Scale each artist's weight by how broadly their listening spreads across their tracks:
  * `factor = 1 - distributionWeight × topTrackShare`, where `topTrackShare` is the share of
- * the artist's plays belonging to their single most-played track. One song on repeat is a
- * song the user likes; the same play count spread over a catalogue is an artist they like,
- * and only the second should pull that artist's whole tag set into the genre vector.
+ * the artist's listening time belonging to their single most-listened track. One song on
+ * repeat is a song the user likes; the same time spread over a catalogue is an artist they
+ * like, and only the second should pull that artist's whole tag set into the genre vector.
+ *
+ * Concentration is measured on listening rather than on plays because that is what the
+ * weight it scales is now made of. With no durations stored the two orderings are identical,
+ * so this changes nothing on events written before track lengths were captured. The evidence
+ * *gate* below stays on plays deliberately: point `minPlays` at milliseconds and a threshold
+ * of `5` silently becomes "5 milliseconds" and stops gating anything.
  *
  * The discount is refuted by the artist's rating breadth: ratings spread across the
  * catalogue are direct evidence against the one-hit read, so they scale the discount down
@@ -250,8 +401,8 @@ export function deriveArtistDistributions(
  * as before.
  *
  * `distributionWeight` of `0` is a no-op, so the correction is switchable from settings.
- * Artists below `minPlays` are left alone — at a handful of plays `topTrackShare` is noise,
- * not concentration — as are artists with no track-level data at all.
+ * Artists below `minPlays` *plays* are left alone — at a handful of plays `topTrackShare` is
+ * noise, not concentration — as are artists with no track-level data at all.
  */
 export function applyDistributionFactor(
   plays: ArtistWeight[],
@@ -264,13 +415,13 @@ export function applyDistributionFactor(
   return plays.map((play) => {
     const available = evidence.availability.get(play.name);
     const dist = evidence.distributions.get(play.name);
-    if (!dist || dist.playCount < minPlays || dist.playCount <= 0) return play;
+    if (!dist || dist.playCount < minPlays || dist.listenedMs <= 0) return play;
     if (available !== undefined && available <= minAvailableTracks) {
       return { ...play, availableTracks: available };
     }
 
     const signal = evidence.ratings.get(play.name);
-    const topTrackShare = dist.topTrackPlayCount / dist.playCount;
+    const topTrackShare = dist.topTrackListenedMs / dist.listenedMs;
     const distributionFactor =
       1 - distributionWeight * topTrackShare * (1 - (signal?.breadth ?? 0));
     return {
@@ -467,6 +618,26 @@ export function applyRatingMultiplier(
  * query — except the cold-start case (zero captures in either series), where one is ingested
  * on demand so the first read still goes through our own table.
  */
+/**
+ * Both episode series as one, measured time replacing inferred wherever a session witnessed
+ * the play. The weighting deliberately cannot tell which it got — that is what makes the
+ * millisecond currency worth the trouble.
+ */
+async function loadEpisodeSeries(
+  userId: number
+): Promise<Map<string, ListenEpisode>> {
+  return mergeMeasuredEpisodes(
+    reconstructListenEpisodes(
+      await getSignalEvents(userId, "plex_listen_history"),
+      Infinity
+    ),
+    reconstructMeasuredEpisodes(
+      await getSignalEvents(userId, "plex_listen_sessions"),
+      Infinity
+    )
+  );
+}
+
 export async function loadArtistWeights(
   userId: number,
   plexToken: string,
@@ -478,8 +649,11 @@ export async function loadArtistWeights(
     distributionWeight,
     minPlaysForDistribution,
     minAvailableTracksForDistribution,
+    listeningWeight,
+    maxTrackMinutesForWeight,
   } = options;
   const now = options.now ?? Date.now();
+  const capMs = Math.max(0, maxTrackMinutesForWeight) * 60_000;
 
   let trackEvents = await getSignalEvents(userId, "plex_track_plays");
   const legacyEvents = await getSignalEvents(userId, "plex_plays");
@@ -490,11 +664,17 @@ export async function loadArtistWeights(
 
   const ratingEvents = await getSignalEvents(userId, "plex_rating");
   const albumEvents = await getSignalEvents(userId, "plex_album_tracks");
+  const episodes = await loadEpisodeSeries(userId);
 
-  const plays = derivePlayWeights(trackEvents, legacyEvents, now, windowMs);
+  const plays = derivePlayWeights(trackEvents, legacyEvents, episodes, {
+    now,
+    windowMs,
+    capMs,
+    listeningWeight,
+  });
   const trackPlays = deriveWindowedTrackPlays(trackEvents, plays.windowStart);
   const allTimeTracks = reconstructTrackPlayCounts(trackEvents, Infinity);
-  const distributions = deriveArtistDistributions(trackPlays);
+  const distributions = deriveArtistDistributions(trackPlays, capMs);
   const ratings = aggregateArtistRatings(
     ratingEvents,
     trackPlays,

@@ -13,7 +13,13 @@ import { User } from "./User";
  * (plays, ratings, behaviour) without a migration — a new signal is a new string.
  */
 export type SignalKind =
-  "plex_plays" | "plex_track_plays" | "plex_rating" | "request" | "skip";
+  | "plex_plays"
+  | "plex_track_plays"
+  | "plex_listen_history"
+  | "plex_listen_sessions"
+  | "plex_rating"
+  | "request"
+  | "skip";
 
 /** Authoritative, append-only raw signals — plays, ratings, behaviour all land here. */
 @Entity("user_signal_events")

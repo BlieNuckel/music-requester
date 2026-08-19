@@ -26,11 +26,12 @@ const musicSection = okResponse({
   MediaContainer: { Directory: [{ key: "3", type: "artist", title: "Music" }] },
 });
 
-function rawTrack(index: number, viewCount: number) {
+function rawTrack(index: number, viewCount: number, duration?: number) {
   return {
     ratingKey: String(index),
     title: `Track ${index}`,
     viewCount,
+    duration,
     parentRatingKey: "alb1",
     parentTitle: "Album",
     grandparentRatingKey: "art1",
@@ -66,8 +67,33 @@ describe("getAllTrackPlayCounts", () => {
         albumKey: "alb1",
         albumTitle: "Album",
         viewCount: 12,
+        durationMs: 0,
       },
     ]);
+  });
+
+  it("carries the track duration through", async () => {
+    mockFetch.mockResolvedValueOnce(musicSection).mockResolvedValueOnce(
+      okResponse({
+        MediaContainer: { totalSize: 1, Metadata: [rawTrack(1, 2, 5_448_000)] },
+      })
+    );
+
+    const result = await getAllTrackPlayCounts("tok");
+
+    expect(result[0].durationMs).toBe(5_448_000);
+  });
+
+  it("reports zero for a track Plex gives no duration for", async () => {
+    mockFetch.mockResolvedValueOnce(musicSection).mockResolvedValueOnce(
+      okResponse({
+        MediaContainer: { totalSize: 1, Metadata: [rawTrack(1, 2)] },
+      })
+    );
+
+    const result = await getAllTrackPlayCounts("tok");
+
+    expect(result[0].durationMs).toBe(0);
   });
 
   it("requests tracks sorted by play count descending", async () => {

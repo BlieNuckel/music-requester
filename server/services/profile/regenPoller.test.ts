@@ -53,6 +53,8 @@ const baseConfig: PromotedAlbumConfig = {
   distributionWeight: 0,
   minPlaysForDistribution: 5,
   minAvailableTracksForDistribution: 0,
+  listeningWeight: 1,
+  maxTrackMinutesForWeight: 0,
 };
 
 const plexArtists = [

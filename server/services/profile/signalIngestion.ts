@@ -49,6 +49,12 @@ export type TrackPlayState = {
   albumKey: string;
   albumTitle: string;
   playCount: number;
+  /**
+   * Track length in milliseconds. Absent on events written before the field existed, and `0`
+   * where Plex reports no length; both fold to {@link NOMINAL_TRACK_MS} until
+   * {@link ingestUserTrackPlays} backfills them.
+   */
+  durationMs?: number;
 };
 
 /**
@@ -64,8 +70,20 @@ export type ArtistPlayRollup = {
   artistKey: string;
   name: string;
   playCount: number;
+  /**
+   * Time spent on this artist in milliseconds, **inferred** as plays x track length rather
+   * than observed. Sound as an exposure estimate because Plex only commits a play once
+   * playback passes half the track, so it over-credits by a length-independent factor that
+   * cancels in relative weighting.
+   */
+  listenedMs: number;
   distinctTracksPlayed: number;
   topTrackPlayCount: number;
+  /**
+   * Inferred time on the artist's most-*listened* track, which is not necessarily
+   * {@link topTrackKey} — that stays keyed on plays.
+   */
+  topTrackListenedMs: number;
   /** `ratingKey` of the most-played track, so a rating can be tested against it. */
   topTrackKey: string;
 };
@@ -106,6 +124,13 @@ const log = createLogger("signal-ingestion");
 const MAX_TRACKS_PER_EVENT = 2000;
 
 /**
+ * Length assumed for a track with no duration on its event — pre-backfill rows, and the
+ * handful Plex genuinely reports nothing for. Roughly a pop single, so such a track keeps
+ * about the weight it had when plays were the only currency.
+ */
+export const NOMINAL_TRACK_MS = 210_000;
+
+/**
  * Upper bound on per-sweep un-rating candidates. Beyond this, a mass disappearance is
  * far more likely a Plex data event (history clear, library re-import) than a user
  * deliberately un-starring; we skip rather than corrupt the backup with bogus clears.
@@ -127,7 +152,7 @@ const UNRATE_CONFIRM_CONCURRENCY = 5;
  * A payload that won't parse is skipped and counted; a systematically malformed write
  * would otherwise degrade profiles with nothing in the logs to explain it.
  */
-function foldEvents<TPayload, TValue>(
+export function foldEvents<TPayload, TValue>(
   events: UserSignalEvent[],
   cutoffMs: number,
   entries: (payload: TPayload) => Iterable<[string, TValue]>,
@@ -364,6 +389,42 @@ export function reconstructTrackPlayCounts(
   );
 }
 
+/** Fold one track's contribution into its artist's rollup. */
+function accumulateArtistTrack(
+  byArtist: Map<string, ArtistPlayRollup>,
+  key: string,
+  track: TrackPlayState,
+  plays: number,
+  capMs: number
+): void {
+  const listenedMs = inferListenedMs(plays, track.durationMs, capMs);
+  const existing = byArtist.get(key);
+  if (!existing) {
+    byArtist.set(key, {
+      artistKey: key,
+      name: track.artistName,
+      playCount: plays,
+      listenedMs,
+      distinctTracksPlayed: plays > 0 ? 1 : 0,
+      topTrackPlayCount: plays,
+      topTrackListenedMs: listenedMs,
+      topTrackKey: track.ratingKey,
+    });
+    return;
+  }
+  existing.playCount += plays;
+  existing.listenedMs += listenedMs;
+  if (plays > 0) existing.distinctTracksPlayed += 1;
+  if (plays > existing.topTrackPlayCount) {
+    existing.topTrackPlayCount = plays;
+    existing.topTrackKey = track.ratingKey;
+  }
+  if (listenedMs > existing.topTrackListenedMs) {
+    existing.topTrackListenedMs = listenedMs;
+  }
+  if (!existing.name) existing.name = track.artistName;
+}
+
 /**
  * Per-artist plays accumulated from the track fold, with the distribution of those plays
  * across the artist's tracks. Grouped by `artistKey` so a Plex rename keeps one bucket and
@@ -373,10 +434,14 @@ export function reconstructTrackPlayCounts(
  * Passing `baseline` (an earlier fold of the same series) rolls up the *change* since then
  * per track, so the distribution describes what was played inside a window rather than
  * all-time. Tracks unchanged since the baseline count as unplayed for that window.
+ *
+ * `capMs` bounds what one play of a single track may contribute to `listenedMs`; `0` (the
+ * default) is uncapped. See {@link inferListenedMs}.
  */
 export function rollupToArtists(
   tracks: Map<string, TrackPlayState>,
-  baseline?: Map<string, TrackPlayState>
+  baseline?: Map<string, TrackPlayState>,
+  capMs = 0
 ): ArtistPlayRollup[] {
   const byArtist = new Map<string, ArtistPlayRollup>();
   for (const track of tracks.values()) {
@@ -390,25 +455,7 @@ export function rollupToArtists(
         )
       : track.playCount;
 
-    const existing = byArtist.get(key);
-    if (!existing) {
-      byArtist.set(key, {
-        artistKey: key,
-        name: track.artistName,
-        playCount: plays,
-        distinctTracksPlayed: plays > 0 ? 1 : 0,
-        topTrackPlayCount: plays,
-        topTrackKey: track.ratingKey,
-      });
-      continue;
-    }
-    existing.playCount += plays;
-    if (plays > 0) existing.distinctTracksPlayed += 1;
-    if (plays > existing.topTrackPlayCount) {
-      existing.topTrackPlayCount = plays;
-      existing.topTrackKey = track.ratingKey;
-    }
-    if (!existing.name) existing.name = track.artistName;
+    accumulateArtistTrack(byArtist, key, track, plays, capMs);
   }
   return Array.from(byArtist.values());
 }
@@ -490,15 +537,56 @@ export function rollupToArtistCatalogue(
   return byName;
 }
 
-const toTrackPlayState = (track: TrackPlayCount): TrackPlayState => ({
+/**
+ * Inferred listening time for a run of plays on one track.
+ *
+ * `capMs` is a ceiling on what one play of the track may be worth; `0` is uncapped and is
+ * the right default. It exists only to blunt the one path that credits listening which never
+ * happened — seeking past the halfway mark commits a play outright — and set low it recreates
+ * the under-counting it is meant to correct. It is a weighting policy the caller chooses, not
+ * a property of the stored signal.
+ */
+export function inferListenedMs(
+  playCount: number,
+  durationMs: number | undefined,
+  capMs = 0
+): number {
+  const length = durationMs && durationMs > 0 ? durationMs : NOMINAL_TRACK_MS;
+  return playCount * (capMs > 0 ? Math.min(length, capMs) : length);
+}
+
+/**
+ * `playFloor` is the count already stored for the track. It only matters for a row emitted
+ * solely to backfill `durationMs`, where the live count may have gone backwards (a Plex
+ * history clear) and the series must stay monotonic.
+ */
+const toTrackPlayState = (
+  track: TrackPlayCount,
+  playFloor: number
+): TrackPlayState => ({
   ratingKey: track.ratingKey,
   title: track.title,
   artistKey: track.artistKey,
   artistName: track.artistName,
   albumKey: track.albumKey,
   albumTitle: track.albumTitle,
-  playCount: track.viewCount,
+  playCount: Math.max(track.viewCount, playFloor),
+  durationMs: track.durationMs,
 });
+
+/**
+ * Whether a stored track carries no length while Plex now reports one — rows written before
+ * the field existed, and tracks Plex only later got a duration for. The play count is
+ * unchanged, so nothing else would ever rewrite the event, and until one is written the
+ * track's listening time can only be inferred at a nominal length. Gated on Plex actually
+ * reporting a length, or the tracks it has none for would re-emit on every sweep forever.
+ */
+function needsDurationBackfill(
+  prior: TrackPlayState | undefined,
+  track: TrackPlayCount
+): boolean {
+  return prior !== undefined && !prior.durationMs && track.durationMs > 0;
+}
 
 /**
  * Append `plex_track_plays` deltas capturing only the tracks whose cumulative play count
@@ -506,7 +594,10 @@ const toTrackPlayState = (track: TrackPlayCount): TrackPlayState => ({
  * lose, and the series the recommender diffs to derive play trends. Counts are treated as
  * monotonic: a decrease or a vanished track (Plex history clear / re-import) is never
  * recorded, so the stored value is the max ever seen and a transient-empty read is a no-op.
- * When nothing increased, no event is written.
+ *
+ * Tracks whose stored state predates `durationMs` are re-emitted too, which backfills the
+ * whole existing series on the first sweep after deploy. When nothing increased and nothing
+ * needs backfilling, no event is written.
  */
 export async function ingestUserTrackPlays(
   userId: number,
@@ -517,16 +608,18 @@ export async function ingestUserTrackPlays(
     await getSignalEvents(userId, "plex_track_plays"),
     Infinity
   );
-  const changed = live.filter(
-    (track) => track.viewCount > (stored.get(track.ratingKey)?.playCount ?? 0)
-  );
+  const changed: TrackPlayState[] = [];
+  for (const track of live) {
+    const prior = stored.get(track.ratingKey);
+    const grew = track.viewCount > (prior?.playCount ?? 0);
+    if (!grew && !needsDurationBackfill(prior, track)) continue;
+    changed.push(toTrackPlayState(track, prior?.playCount ?? 0));
+  }
   if (changed.length === 0) return;
 
   const chunks: PlexTrackPlaysPayload[] = [];
   for (let i = 0; i < changed.length; i += MAX_TRACKS_PER_EVENT) {
-    chunks.push({
-      tracks: changed.slice(i, i + MAX_TRACKS_PER_EVENT).map(toTrackPlayState),
-    });
+    chunks.push({ tracks: changed.slice(i, i + MAX_TRACKS_PER_EVENT) });
   }
   await appendSignalEvents(userId, "plex_track_plays", chunks);
 }

@@ -6,6 +6,7 @@ import {
   ingestUserRatings,
   ingestUserTrackPlays,
 } from "./signalIngestion";
+import { ingestUserListenHistory } from "./listenHistory";
 import { createLogger } from "../../logger";
 
 const log = createLogger("signal-ingestion-poller");
@@ -47,6 +48,7 @@ export async function runSignalIngestionOnce(now = Date.now()): Promise<void> {
     let ratingsWritten = 0;
     let playsWritten = 0;
     let cataloguesWritten = 0;
+    let episodesWritten = 0;
 
     for (const user of users) {
       try {
@@ -59,6 +61,13 @@ export async function runSignalIngestionOnce(now = Date.now()): Promise<void> {
           await ingestUserTrackPlays(user.userId, user.plexToken);
           playsWritten += 1;
         }
+
+        // After the plays capture, so a play first seen this sweep already has its length
+        // stored when the episodes join onto it.
+        episodesWritten += await ingestUserListenHistory(
+          user.userId,
+          user.plexToken
+        );
 
         const albumEvents = await getSignalEvents(
           user.userId,
@@ -73,10 +82,15 @@ export async function runSignalIngestionOnce(now = Date.now()): Promise<void> {
       }
     }
 
-    if (ratingsWritten > 0 || playsWritten > 0 || cataloguesWritten > 0) {
+    if (
+      ratingsWritten > 0 ||
+      playsWritten > 0 ||
+      cataloguesWritten > 0 ||
+      episodesWritten > 0
+    ) {
       log.info(
         `Ingested ${ratingsWritten} rating change(s), ${playsWritten} plays capture(s), ` +
-          `${cataloguesWritten} catalogue capture(s)`
+          `${cataloguesWritten} catalogue capture(s), ${episodesWritten} listen episode(s)`
       );
     }
   } finally {

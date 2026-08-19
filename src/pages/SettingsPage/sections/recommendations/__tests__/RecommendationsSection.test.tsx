@@ -75,6 +75,42 @@ describe("RecommendationsSection — ratings backup toggle", () => {
     });
   });
 
+  it("edits how much listening time counts against play count", () => {
+    const onChange = vi.fn();
+    render(
+      <RecommendationsSection
+        config={DEFAULT_PROMOTED_ALBUM}
+        onConfigChange={onChange}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText(/Listening Time vs Plays/i), {
+      target: { value: "0.5" },
+    });
+    expect(onChange).toHaveBeenCalledWith({
+      ...DEFAULT_PROMOTED_ALBUM,
+      listeningWeight: 0.5,
+    });
+  });
+
+  it("edits the per-play ceiling on listening time", () => {
+    const onChange = vi.fn();
+    render(
+      <RecommendationsSection
+        config={DEFAULT_PROMOTED_ALBUM}
+        onConfigChange={onChange}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText(/Maximum Minutes per Play/i), {
+      target: { value: "20" },
+    });
+    expect(onChange).toHaveBeenCalledWith({
+      ...DEFAULT_PROMOTED_ALBUM,
+      maxTrackMinutesForWeight: 20,
+    });
+  });
+
   it("edits the small-catalogue exemption", () => {
     const onChange = vi.fn();
     render(
