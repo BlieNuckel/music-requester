@@ -16,6 +16,10 @@ import {
   reconstructListenEpisodes,
   rollupEpisodesToArtists,
 } from "./listenHistory";
+import {
+  mergeMeasuredEpisodes,
+  reconstructMeasuredEpisodes,
+} from "./listenSessions";
 import type { UserProfile } from "../../db/entity/UserProfile";
 import type { UserSignalEvent } from "../../db/entity/UserSignalEvent";
 
@@ -67,7 +71,7 @@ export type ProfileDebugPlex = {
   artists: number;
   ratedItems: number;
   listenEpisodes: number;
-  /** Inferred listening across every episode, rounded down. */
+  /** Listening across every episode, measured where observed and inferred elsewhere. */
   listenedHours: number;
 };
 
@@ -136,10 +140,21 @@ function recentSignals(events: UserSignalEvent[]): ProfileDebugRecentSignal[] {
 
 const MS_PER_HOUR = 60 * 60 * 1000;
 
+const ofKind = (events: UserSignalEvent[], kind: string): UserSignalEvent[] =>
+  events.filter((event) => event.kind === kind);
+
 function foldPlexState(events: UserSignalEvent[]): ProfileDebugPlex {
   const tracks = reconstructTrackPlayCounts(events, Infinity);
   const artists = rollupToArtists(tracks);
-  const episodes = reconstructListenEpisodes(events, Infinity);
+  // Both episode series carry an `episodes` payload, so they are separated by kind rather
+  // than by shape the way the count series are.
+  const episodes = mergeMeasuredEpisodes(
+    reconstructListenEpisodes(ofKind(events, "plex_listen_history"), Infinity),
+    reconstructMeasuredEpisodes(
+      ofKind(events, "plex_listen_sessions"),
+      Infinity
+    )
+  );
   const listenedMs = rollupEpisodesToArtists(episodes).reduce(
     (sum, artist) => sum + artist.listenedMs,
     0

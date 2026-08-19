@@ -132,3 +132,32 @@ export type PlexRatedItem = {
   /** Plex scale 0–10 (half-star = 1 unit). */
   rating: number;
 };
+
+/** The subset of a `/status/sessions` row the listening tracker reads. */
+export type PlexSessionMetadata = {
+  sessionKey?: string;
+  ratingKey?: string;
+  type?: string;
+  title?: string;
+  parentRatingKey?: string;
+  parentTitle?: string;
+  grandparentRatingKey?: string;
+  grandparentTitle?: string;
+  /** Track length in milliseconds. */
+  duration?: number;
+  /** Playback position in milliseconds. */
+  viewOffset?: number;
+  Player?: {
+    state?: string;
+    machineIdentifier?: string;
+    product?: string;
+  };
+  User?: { id?: string | number };
+};
+
+export type PlexSessionsResponse = {
+  MediaContainer: {
+    size?: number;
+    Metadata?: PlexSessionMetadata[];
+  };
+};

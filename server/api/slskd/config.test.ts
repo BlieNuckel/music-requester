@@ -8,6 +8,7 @@ import {
   DEFAULT_LIVE_EVENTS,
   DEFAULT_FOLLOWED_POLL_INTERVAL_MS,
   DEFAULT_REQUEST_STATUS_POLL_INTERVAL_MS,
+  DEFAULT_LISTEN_SESSION_POLL_INTERVAL_MS,
 } from "../../config";
 
 vi.mock("../../config", async (importOriginal) => {
@@ -40,6 +41,7 @@ const fullConfig = {
   liveEvents: DEFAULT_LIVE_EVENTS,
   followedArtistPollIntervalMs: DEFAULT_FOLLOWED_POLL_INTERVAL_MS,
   requestStatusPollIntervalMs: DEFAULT_REQUEST_STATUS_POLL_INTERVAL_MS,
+  listenSessionPollIntervalMs: DEFAULT_LISTEN_SESSION_POLL_INTERVAL_MS,
 };
 
 beforeEach(() => {

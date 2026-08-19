@@ -20,8 +20,12 @@ export type ListenEpisode = {
   artistName: string;
   albumKey: string;
   albumTitle: string;
-  /** Unix **seconds**, exactly as Plex stamped it — when the play committed, not when it began. */
-  viewedAt: number;
+  /**
+   * Unix **seconds**, exactly as Plex stamped it — when the play committed, not when it
+   * began. Absent on an episode that came from watching playback rather than from Plex's
+   * event log: an abandoned play commits nothing, so there is no such stamp to record.
+   */
+  viewedAt?: number;
   /**
    * Epoch **milliseconds** when playback started, derived as `viewedAt - durationMs / 2`
    * because Plex commits a play at the halfway mark. For a 90-minute set that correction is
@@ -70,32 +74,45 @@ export const episodeKey = (ratingKey: string, viewedAt: number): string =>
   `${ratingKey}:${viewedAt}`;
 
 /**
- * Every stored episode keyed by (`ratingKey`, `viewedAt`), replayed from the append-only
- * log. Last-write-wins on that key is what makes re-sweeps and Plex's own double-reporting
- * idempotent — a repeat of an episode we already hold overwrites it with itself.
+ * Replay an episode series from its append-only log, keyed by `keyOf`. Last-write-wins on
+ * that key is what makes re-sweeps and Plex's own double-reporting idempotent — a repeat of
+ * an episode we already hold overwrites it with itself. An episode `keyOf` cannot key is
+ * dropped rather than folded under a bogus key.
  */
-export function reconstructListenEpisodes(
+export function foldEpisodes(
   events: UserSignalEvent[],
-  cutoffMs: number
+  cutoffMs: number,
+  keyOf: (episode: ListenEpisode) => string | null,
+  label: string
 ): Map<string, ListenEpisode> {
   return foldEvents<PlexListenHistoryPayload, ListenEpisode>(
     events,
     cutoffMs,
     (payload) =>
       (payload.episodes ?? [])
-        .filter(
-          (episode) =>
-            episode &&
-            typeof episode.ratingKey === "string" &&
-            typeof episode.viewedAt === "number"
-        )
-        .map(
-          (episode) =>
-            [episodeKey(episode.ratingKey, episode.viewedAt), episode] as [
-              string,
-              ListenEpisode,
-            ]
-        ),
+        .filter((episode) => episode && typeof episode.ratingKey === "string")
+        .flatMap((episode) => {
+          const key = keyOf(episode);
+          return key === null
+            ? []
+            : [[key, episode] as [string, ListenEpisode]];
+        }),
+    label
+  );
+}
+
+/** Every stored history episode, keyed by (`ratingKey`, `viewedAt`). */
+export function reconstructListenEpisodes(
+  events: UserSignalEvent[],
+  cutoffMs: number
+): Map<string, ListenEpisode> {
+  return foldEpisodes(
+    events,
+    cutoffMs,
+    (episode) =>
+      typeof episode.viewedAt === "number"
+        ? episodeKey(episode.ratingKey, episode.viewedAt)
+        : null,
     "plex_listen_history"
   );
 }
@@ -108,7 +125,9 @@ export function reconstructListenEpisodes(
 export function historyWatermark(stored: Map<string, ListenEpisode>): number {
   let latest = 0;
   for (const episode of stored.values()) {
-    if (episode.viewedAt > latest) latest = episode.viewedAt;
+    if (episode.viewedAt !== undefined && episode.viewedAt > latest) {
+      latest = episode.viewedAt;
+    }
   }
   return latest;
 }

@@ -16,6 +16,7 @@ export type SignalKind =
   | "plex_plays"
   | "plex_track_plays"
   | "plex_listen_history"
+  | "plex_listen_sessions"
   | "plex_rating"
   | "request"
   | "skip";

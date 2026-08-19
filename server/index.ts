@@ -37,6 +37,7 @@ import { installQuotaTracking } from "./services/liveEvents/quota";
 import { startRequestStatusPoller } from "./services/requests/statusPoller";
 import { startProfileRegenPoller } from "./services/profile/regenPoller";
 import { startSignalIngestionPoller } from "./services/profile/signalPoller";
+import { startListenSessionPoller } from "./services/profile/sessionPoller";
 import { startSpotlightWarmer } from "./promotedAlbum/warmer";
 import { getConfig } from "./config";
 
@@ -125,6 +126,7 @@ const profileRegenIntervalMs =
 startProfileRegenPoller(profileRegenIntervalMs);
 
 startSignalIngestionPoller();
+startListenSessionPoller(getConfig().listenSessionPollIntervalMs);
 
 installQuotaTracking();
 startLiveEventsPoller();

@@ -76,6 +76,12 @@ export type IConfig = {
   liveEvents: LiveEventsConfig;
   followedArtistPollIntervalMs: number;
   requestStatusPollIntervalMs: number;
+  /**
+   * How often to read `/status/sessions` for measured listening time. Seconds-scale on
+   * purpose: a track that starts and ends between two polls is never seen at all, so the
+   * interval is the resolution of the whole measurement.
+   */
+  listenSessionPollIntervalMs: number;
 };
 
 /** Input type for setConfig — nested objects are optional since defaults are deep-merged */
@@ -109,6 +115,7 @@ export const DEFAULT_NOTIFICATIONS: NotificationsConfig = {
 
 export const DEFAULT_FOLLOWED_POLL_INTERVAL_MS = 6 * 60 * 60 * 1000;
 export const DEFAULT_REQUEST_STATUS_POLL_INTERVAL_MS = 2 * 60 * 1000;
+export const DEFAULT_LISTEN_SESSION_POLL_INTERVAL_MS = 5 * 1000;
 
 const DEFAULT_CONFIG: IConfig = {
   lidarrUrl: "",
@@ -130,6 +137,7 @@ const DEFAULT_CONFIG: IConfig = {
   liveEvents: DEFAULT_LIVE_EVENTS,
   followedArtistPollIntervalMs: DEFAULT_FOLLOWED_POLL_INTERVAL_MS,
   requestStatusPollIntervalMs: DEFAULT_REQUEST_STATUS_POLL_INTERVAL_MS,
+  listenSessionPollIntervalMs: DEFAULT_LISTEN_SESSION_POLL_INTERVAL_MS,
 };
 
 type RawStatement = {
@@ -490,6 +498,14 @@ function validateConfig(mergedConfig: IConfig) {
   ) {
     throw new Error(
       "requestStatusPollIntervalMs must be a number >= 60000 (1 minute)"
+    );
+  }
+  if (
+    typeof mergedConfig.listenSessionPollIntervalMs !== "number" ||
+    mergedConfig.listenSessionPollIntervalMs < 1_000
+  ) {
+    throw new Error(
+      "listenSessionPollIntervalMs must be a number >= 1000 (1 second)"
     );
   }
 }
