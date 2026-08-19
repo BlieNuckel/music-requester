@@ -75,6 +75,33 @@ function profileRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function listenHistory(
+  episodes: { ratingKey: string; viewedAt: number; durationMs: number }[],
+  recordedAt = AT
+) {
+  return {
+    id: 1,
+    user_id: 1,
+    kind: "plex_listen_history",
+    recorded_at: recordedAt,
+    payload: JSON.stringify({
+      episodes: episodes.map((episode) => ({
+        ratingKey: episode.ratingKey,
+        title: `Track ${episode.ratingKey}`,
+        artistKey: "artist-1",
+        artistName: "Slowdive",
+        albumKey: "album-1",
+        albumTitle: "Souvlaki",
+        viewedAt: episode.viewedAt,
+        startedAt: episode.viewedAt * 1000 - episode.durationMs / 2,
+        durationMs: episode.durationMs,
+        listenedMs: episode.durationMs,
+        measured: false,
+      })),
+    }),
+  };
+}
+
 function trackPlays(
   tracks: { ratingKey: string; playCount: number; artistKey?: string }[],
   recordedAt = AT
@@ -235,7 +262,24 @@ describe("getProfileDebugSummaries", () => {
       totalPlays: 6,
       artists: 1,
       ratedItems: 0,
+      listenEpisodes: 0,
+      listenedHours: 0,
     });
+  });
+
+  it("folds the episode series into a count and total listening", async () => {
+    mockGetSignalEvents.mockResolvedValue([
+      listenHistory([
+        { ratingKey: "t1", viewedAt: 1_770_000_000, durationMs: 3_600_000 },
+        { ratingKey: "t1", viewedAt: 1_770_010_000, durationMs: 3_600_000 },
+        { ratingKey: "t2", viewedAt: 1_770_020_000, durationMs: 1_800_000 },
+      ]),
+    ]);
+
+    const [entry] = await getProfileDebugSummaries();
+
+    expect(entry.plex.listenEpisodes).toBe(3);
+    expect(entry.plex.listenedHours).toBe(2);
   });
 
   it("counts a rating once however many times it was rewritten", async () => {

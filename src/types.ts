@@ -305,6 +305,8 @@ export interface ProfileDebugPlex {
   totalPlays: number;
   artists: number;
   ratedItems: number;
+  listenEpisodes: number;
+  listenedHours: number;
 }
 
 export interface ProfileDebugEntry {

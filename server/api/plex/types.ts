@@ -59,14 +59,36 @@ export type PlexAlbumsResponse = {
   };
 };
 
+/**
+ * One row of `/status/sessions/history/all`. Carries no `duration` and no `viewOffset` —
+ * it is a timestamped event, not a record of how much was heard.
+ *
+ * `viewedAt` is Unix **seconds** and is *not* when listening started: Plex commits a play
+ * once playback passes the halfway mark, so the stamp lands around `start + duration / 2`.
+ */
 export type PlexHistoryMetadata = {
+  historyKey?: string;
+  ratingKey?: string;
+  librarySectionID?: number;
+  title?: string;
+  parentKey?: string;
+  parentRatingKey?: string;
+  parentTitle?: string;
+  grandparentKey?: string;
+  grandparentRatingKey?: string;
   grandparentTitle?: string;
   grandparentThumb?: string;
+  index?: number;
   viewedAt: number;
+  accountID?: number;
+  deviceID?: number;
 };
 
 export type PlexHistoryResponse = {
-  MediaContainer: { Metadata?: PlexHistoryMetadata[] };
+  MediaContainer: {
+    totalSize?: number;
+    Metadata?: PlexHistoryMetadata[];
+  };
 };
 
 export type TopArtistsRange = "all" | "4weeks" | "6months" | "12months";

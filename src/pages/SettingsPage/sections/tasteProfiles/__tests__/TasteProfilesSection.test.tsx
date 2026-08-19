@@ -51,6 +51,8 @@ function entry(overrides: Partial<ProfileDebugEntry> = {}): ProfileDebugEntry {
       totalPlays: 5400,
       artists: 180,
       ratedItems: 42,
+      listenEpisodes: 4800,
+      listenedHours: 310,
     },
     ...overrides,
   };
@@ -82,6 +84,17 @@ describe("TasteProfilesSection", () => {
     expect(screen.getByText("1200")).toBeInTheDocument();
     expect(screen.getByText("5400")).toBeInTheDocument();
     expect(screen.getByText("42")).toBeInTheDocument();
+  });
+
+  it("shows how much listening the episode series holds", async () => {
+    respond([entry()]);
+
+    render(<TasteProfilesSection />);
+
+    expect(await screen.findByText("Listen episodes")).toBeInTheDocument();
+    expect(screen.getByText("4800")).toBeInTheDocument();
+    expect(screen.getByText("Listened hours")).toBeInTheDocument();
+    expect(screen.getByText("310")).toBeInTheDocument();
   });
 
   it("shows the derived profile counts", async () => {

@@ -152,7 +152,7 @@ const UNRATE_CONFIRM_CONCURRENCY = 5;
  * A payload that won't parse is skipped and counted; a systematically malformed write
  * would otherwise degrade profiles with nothing in the logs to explain it.
  */
-function foldEvents<TPayload, TValue>(
+export function foldEvents<TPayload, TValue>(
   events: UserSignalEvent[],
   cutoffMs: number,
   entries: (payload: TPayload) => Iterable<[string, TValue]>,
