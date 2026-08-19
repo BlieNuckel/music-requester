@@ -12,6 +12,11 @@ export type TrackPlayCount = {
   albumKey: string;
   albumTitle: string;
   viewCount: number;
+  /**
+   * Track length in milliseconds, `0` when Plex reports none. A play alone is unusable as an
+   * exposure measure — one play of a 90-minute set and one of a 3-minute single are both `1`.
+   */
+  durationMs: number;
 };
 
 type TrackPage = {
@@ -41,6 +46,7 @@ const mapTrack = (raw: PlexTrackMetadata): TrackPlayCount => ({
   albumKey: raw.parentRatingKey ?? "",
   albumTitle: raw.parentTitle ?? "",
   viewCount: raw.viewCount ?? 0,
+  durationMs: raw.duration ?? 0,
 });
 
 async function fetchPage(

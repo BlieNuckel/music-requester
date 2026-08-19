@@ -23,6 +23,8 @@ export type PlexTrackMetadata = {
   ratingKey: string;
   title: string;
   viewCount?: number;
+  /** Track length in milliseconds. Absent on rows Plex has no length for. */
+  duration?: number;
   parentRatingKey?: string;
   parentTitle?: string;
   grandparentRatingKey?: string;

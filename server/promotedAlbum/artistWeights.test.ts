@@ -22,7 +22,10 @@ import {
   type ArtistWeightOptions,
   type DistributionOptions,
 } from "./artistWeights";
-import type { ArtistPlayRollup } from "../services/profile/signalIngestion";
+import {
+  NOMINAL_TRACK_MS,
+  type ArtistPlayRollup,
+} from "../services/profile/signalIngestion";
 import { initializeDatabase, closeDatabase, getDataSource } from "../db";
 import { appendSignalEvent, getSignalEvents } from "../db/userProfile";
 import type { UserSignalEvent } from "../db/entity/UserSignalEvent";
@@ -447,8 +450,10 @@ describe("applyDistributionFactor", () => {
           artistKey: "ak-A",
           name: "A",
           playCount,
+          listenedMs: playCount * NOMINAL_TRACK_MS,
           distinctTracksPlayed,
           topTrackPlayCount,
+          topTrackListenedMs: topTrackPlayCount * NOMINAL_TRACK_MS,
           topTrackKey: "top",
         },
       ],

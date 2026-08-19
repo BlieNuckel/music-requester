@@ -37,6 +37,7 @@ import {
   type PlexTrackPlaysPayload,
   type TrackPlayState,
   type AlbumTrackState,
+  NOMINAL_TRACK_MS,
 } from "./signalIngestion";
 import { initializeDatabase, closeDatabase, getDataSource } from "../../db";
 import { getSignalEvents } from "../../db/userProfile";
@@ -197,7 +198,12 @@ describe("reconstructPlayCounts", () => {
   });
 });
 
-function liveTrack(ratingKey: string, artistName: string, viewCount: number) {
+function liveTrack(
+  ratingKey: string,
+  artistName: string,
+  viewCount: number,
+  durationMs = 0
+) {
   return {
     ratingKey,
     title: `t${ratingKey}`,
@@ -206,6 +212,7 @@ function liveTrack(ratingKey: string, artistName: string, viewCount: number) {
     albumKey: `alb-${artistName}`,
     albumTitle: "Album",
     viewCount,
+    durationMs,
   };
 }
 
@@ -307,16 +314,20 @@ describe("rollupToArtists", () => {
         artistKey: "ak-A",
         name: "A",
         playCount: 10,
+        listenedMs: 10 * NOMINAL_TRACK_MS,
         distinctTracksPlayed: 2,
         topTrackPlayCount: 6,
+        topTrackListenedMs: 6 * NOMINAL_TRACK_MS,
         topTrackKey: "2",
       },
       {
         artistKey: "ak-B",
         name: "B",
         playCount: 2,
+        listenedMs: 2 * NOMINAL_TRACK_MS,
         distinctTracksPlayed: 1,
         topTrackPlayCount: 2,
+        topTrackListenedMs: 2 * NOMINAL_TRACK_MS,
         topTrackKey: "3",
       },
     ]);
@@ -340,8 +351,10 @@ describe("rollupToArtists", () => {
         artistKey: "k1",
         name: "Old",
         playCount: 8,
+        listenedMs: 8 * NOMINAL_TRACK_MS,
         distinctTracksPlayed: 2,
         topTrackPlayCount: 5,
+        topTrackListenedMs: 5 * NOMINAL_TRACK_MS,
         topTrackKey: "2",
       },
     ]);
@@ -362,8 +375,10 @@ describe("rollupToArtists", () => {
         artistKey: "A",
         name: "A",
         playCount: 3,
+        listenedMs: 3 * NOMINAL_TRACK_MS,
         distinctTracksPlayed: 1,
         topTrackPlayCount: 3,
+        topTrackListenedMs: 3 * NOMINAL_TRACK_MS,
         topTrackKey: "1",
       },
     ]);
@@ -380,6 +395,94 @@ describe("rollupToArtists", () => {
       Infinity
     );
     expect(rollupToArtists(tracks)).toEqual([]);
+  });
+});
+
+describe("rollupToArtists listening time", () => {
+  it("infers listening time from play count and track length", () => {
+    const tracks = reconstructTrackPlayCounts(
+      [
+        trackPlaysEvent(
+          [
+            trackState("1", "A", 2, { durationMs: 5_400_000 }),
+            trackState("2", "A", 10, { durationMs: 180_000 }),
+          ],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+
+    const [artist] = rollupToArtists(tracks);
+    expect(artist.playCount).toBe(12);
+    expect(artist.listenedMs).toBe(2 * 5_400_000 + 10 * 180_000);
+  });
+
+  it("folds a track with no stored duration to the nominal length", () => {
+    const tracks = reconstructTrackPlayCounts(
+      [trackPlaysEvent([trackState("1", "A", 4)], "2026-01-01T00:00:00.000Z")],
+      Infinity
+    );
+
+    expect(rollupToArtists(tracks)[0].listenedMs).toBe(4 * NOMINAL_TRACK_MS);
+  });
+
+  it("takes the most-listened track for the listening share, plays for the top track", () => {
+    const tracks = reconstructTrackPlayCounts(
+      [
+        trackPlaysEvent(
+          [
+            trackState("dj-set", "A", 1, { durationMs: 5_400_000 }),
+            trackState("single", "A", 8, { durationMs: 180_000 }),
+          ],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+
+    const [artist] = rollupToArtists(tracks);
+    expect(artist.topTrackKey).toBe("single");
+    expect(artist.topTrackPlayCount).toBe(8);
+    expect(artist.topTrackListenedMs).toBe(5_400_000);
+  });
+
+  it("keeps listening time proportional to plays when no track has a duration", () => {
+    const tracks = reconstructTrackPlayCounts(
+      [
+        trackPlaysEvent(
+          [trackState("1", "A", 6), trackState("2", "B", 2)],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+
+    const [a, b] = rollupToArtists(tracks);
+    expect(a.listenedMs / b.listenedMs).toBe(a.playCount / b.playCount);
+  });
+
+  it("infers listening time from the windowed delta, not the all-time count", () => {
+    const latest = reconstructTrackPlayCounts(
+      [
+        trackPlaysEvent(
+          [trackState("1", "A", 30, { durationMs: 600_000 })],
+          "2026-02-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+    const baseline = reconstructTrackPlayCounts(
+      [
+        trackPlaysEvent(
+          [trackState("1", "A", 28, { durationMs: 600_000 })],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+
+    expect(rollupToArtists(latest, baseline)[0].listenedMs).toBe(2 * 600_000);
   });
 });
 
@@ -409,8 +512,10 @@ describe("rollupToArtists with a baseline", () => {
         artistKey: "ak-A",
         name: "A",
         playCount: 5,
+        listenedMs: 5 * NOMINAL_TRACK_MS,
         distinctTracksPlayed: 1,
         topTrackPlayCount: 5,
+        topTrackListenedMs: 5 * NOMINAL_TRACK_MS,
         topTrackKey: "1",
       },
     ]);
@@ -427,8 +532,10 @@ describe("rollupToArtists with a baseline", () => {
         artistKey: "ak-A",
         name: "A",
         playCount: 4,
+        listenedMs: 4 * NOMINAL_TRACK_MS,
         distinctTracksPlayed: 1,
         topTrackPlayCount: 4,
+        topTrackListenedMs: 4 * NOMINAL_TRACK_MS,
         topTrackKey: "9",
       },
     ]);
@@ -679,8 +786,8 @@ describe("ingestion (with DB)", () => {
 
   it("writes a track-plays capture covering every played track", async () => {
     mockGetAllTrackPlayCounts.mockResolvedValue([
-      liveTrack("1", "Andromedik", 120),
-      liveTrack("2", "Durry", 30),
+      liveTrack("1", "Andromedik", 120, 240_000),
+      liveTrack("2", "Durry", 30, 180_000),
     ]);
 
     await ingestUserTrackPlays(1, "tok");
@@ -697,6 +804,7 @@ describe("ingestion (with DB)", () => {
         albumKey: "alb-Andromedik",
         albumTitle: "Album",
         playCount: 120,
+        durationMs: 240_000,
       },
       {
         ratingKey: "2",
@@ -706,6 +814,7 @@ describe("ingestion (with DB)", () => {
         albumKey: "alb-Durry",
         albumTitle: "Album",
         playCount: 30,
+        durationMs: 180_000,
       },
     ]);
     expect(mockGetAllTrackPlayCounts).toHaveBeenCalledWith("tok");
@@ -805,6 +914,61 @@ describe("ingestion (with DB)", () => {
     await ingestUserTrackPlays(1, "tok");
 
     expect(await getSignalEvents(1, "plex_track_plays")).toHaveLength(1);
+  });
+
+  it("re-emits stored tracks that predate durationMs, backfilling the series", async () => {
+    mockGetAllTrackPlayCounts.mockReset();
+    mockGetAllTrackPlayCounts.mockResolvedValueOnce([liveTrack("1", "A", 10)]);
+    await ingestUserTrackPlays(1, "tok");
+    mockGetAllTrackPlayCounts.mockResolvedValueOnce([
+      liveTrack("1", "A", 10, 600_000),
+    ]);
+    await ingestUserTrackPlays(1, "tok");
+
+    const events = await getSignalEvents(1, "plex_track_plays");
+    expect(events).toHaveLength(2);
+    expect(reconstructTrackPlayCounts(events, Infinity).get("1")).toMatchObject(
+      { playCount: 10, durationMs: 600_000 }
+    );
+  });
+
+  it("stops re-emitting once a duration is stored", async () => {
+    mockGetAllTrackPlayCounts.mockReset();
+    mockGetAllTrackPlayCounts.mockResolvedValueOnce([liveTrack("1", "A", 10)]);
+    await ingestUserTrackPlays(1, "tok");
+    mockGetAllTrackPlayCounts.mockResolvedValue([
+      liveTrack("1", "A", 10, 600_000),
+    ]);
+    await ingestUserTrackPlays(1, "tok");
+    await ingestUserTrackPlays(1, "tok");
+
+    expect(await getSignalEvents(1, "plex_track_plays")).toHaveLength(2);
+  });
+
+  it("never re-emits a track Plex reports no duration for", async () => {
+    mockGetAllTrackPlayCounts.mockReset();
+    mockGetAllTrackPlayCounts.mockResolvedValue([liveTrack("1", "A", 10)]);
+
+    await ingestUserTrackPlays(1, "tok");
+    await ingestUserTrackPlays(1, "tok");
+    await ingestUserTrackPlays(1, "tok");
+
+    expect(await getSignalEvents(1, "plex_track_plays")).toHaveLength(1);
+  });
+
+  it("keeps the stored count when a backfill row reads a lower live count", async () => {
+    mockGetAllTrackPlayCounts.mockReset();
+    mockGetAllTrackPlayCounts.mockResolvedValueOnce([liveTrack("1", "A", 10)]);
+    await ingestUserTrackPlays(1, "tok");
+    mockGetAllTrackPlayCounts.mockResolvedValueOnce([
+      liveTrack("1", "A", 2, 600_000),
+    ]);
+    await ingestUserTrackPlays(1, "tok");
+
+    const events = await getSignalEvents(1, "plex_track_plays");
+    expect(reconstructTrackPlayCounts(events, Infinity).get("1")).toMatchObject(
+      { playCount: 10, durationMs: 600_000 }
+    );
   });
 
   it("chunks a large first capture and folds it back identically", async () => {
