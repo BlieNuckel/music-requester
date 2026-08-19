@@ -178,7 +178,7 @@ export default function Sidebar() {
   return (
     <>
       {/* Desktop Sidebar, hidden on mobile */}
-      <aside className="hidden md:flex w-64 h-screen overflow-y-auto bg-white dark:bg-gray-800 border-r-4 border-black flex-col shrink-0">
+      <aside className="hidden md:flex w-64 h-screen sticky top-0 overflow-y-auto bg-white dark:bg-gray-800 border-r-4 border-black flex-col shrink-0">
         <div className="p-6 border-b-4 border-black">
           <NavLink to="/" className="flex items-center gap-3 group">
             <LogoLockup size="lg" />
