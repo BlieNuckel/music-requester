@@ -6,6 +6,7 @@ import {
   type ActualTheme,
   type ThemeContextValue,
 } from "./themeContextDef";
+import { applyThemeColor } from "./themeColors";
 import { useAuth } from "./useAuth";
 
 const getSystemTheme = (): ActualTheme => {
@@ -47,6 +48,7 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", actualTheme === "dark");
+    applyThemeColor(actualTheme);
   }, [actualTheme]);
 
   const setTheme = useCallback(
