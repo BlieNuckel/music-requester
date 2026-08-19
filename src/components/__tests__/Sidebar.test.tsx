@@ -139,6 +139,14 @@ describe("Sidebar", () => {
     }
   });
 
+  it("pins the desktop sidebar while the document scrolls", () => {
+    const { container } = renderSidebar();
+    const aside = container.querySelector("aside");
+    expect(aside?.className).toContain("sticky");
+    expect(aside?.className).toContain("top-0");
+    expect(aside?.className).toContain("h-screen");
+  });
+
   it("keeps the mobile nav clear of the device safe area", () => {
     const { container } = renderSidebar();
     const mobileNav = container.querySelector("nav.md\\:hidden");

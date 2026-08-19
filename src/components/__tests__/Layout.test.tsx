@@ -55,11 +55,19 @@ describe("Layout", () => {
     expect(screen.getByText("Other Content")).toBeInTheDocument();
   });
 
-  it("sizes the shell to the dynamic viewport so the mobile nav is not pushed off-screen", () => {
+  it("floors the shell at the dynamic viewport without capping it", () => {
     const { container } = renderLayout();
     const shell = container.firstElementChild as HTMLElement;
-    expect(shell.className).toContain("h-[100dvh]");
+    expect(shell.className).toContain("min-h-[100dvh]");
     expect(shell.className).not.toContain("h-screen");
+  });
+
+  it("scrolls the document rather than an inner container", () => {
+    const { container } = renderLayout();
+    const shell = container.firstElementChild as HTMLElement;
+    const main = screen.getByRole("main");
+    expect(shell.className).not.toContain("overflow");
+    expect(main.className).not.toContain("overflow");
   });
 
   it("pads the scroll area past the mobile nav and the safe area", () => {
