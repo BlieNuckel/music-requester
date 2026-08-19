@@ -1,17 +1,19 @@
 import { useState, useCallback } from "react";
 
+/** Mirrors the server's trimmed manual-import item — Lidarr omits fields for
+ *  files it could not match. */
 export type ManualImportItem = {
   path: string;
-  name: string;
-  quality: { quality: { name: string } };
-  rejections: { reason: string }[];
-  tracks: { id: number; title: string; trackNumber: string }[];
-  albumReleaseId: number;
-  indexerFlags: number;
-  downloadId: string;
-  disableReleaseSwitching: boolean;
-  artist: { id: number };
-  album: { id: number };
+  name?: string;
+  quality?: { quality: { name: string } };
+  rejections?: { reason: string }[];
+  tracks?: { id: number; title: string; trackNumber: string }[];
+  albumReleaseId?: number;
+  indexerFlags?: number;
+  downloadId?: string;
+  disableReleaseSwitching?: boolean;
+  artist?: { id: number };
+  album?: { id: number };
 };
 
 type ImportStep =

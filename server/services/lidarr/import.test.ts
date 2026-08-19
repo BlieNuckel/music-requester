@@ -23,6 +23,7 @@ vi.mock("../../api/lidarr/post", () => ({
 import {
   ALLOWED_EXTENSIONS,
   scanUploadedFiles,
+  toManualImportItem,
   buildConfirmPayload,
   confirmImport,
 } from "./import";
@@ -98,6 +99,92 @@ describe("scanUploadedFiles", () => {
       expect(result.albumId).toBe(10);
       expect(result.items).toEqual(scanItems);
     }
+  });
+
+  it("strips the embedded artist and album resources from scan items", async () => {
+    mockGetAlbumByMbid.mockResolvedValue({
+      artist: { foreignArtistId: "artist-mbid" },
+    });
+    mockGetOrAddArtist.mockResolvedValue({ id: 1 });
+    mockGetOrAddAlbum.mockResolvedValue({ album: { id: 10 } });
+    mockLidarrGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: [
+        {
+          path: "/uploads/test/song.flac",
+          name: "song.flac",
+          artist: {
+            id: 1,
+            overview: "x".repeat(4000),
+            images: [{ url: "/cover.jpg" }],
+            statistics: { trackCount: 12 },
+          },
+          album: {
+            id: 10,
+            releases: [{ id: 99, media: [{ mediumNumber: 1 }] }],
+            overview: "y".repeat(4000),
+          },
+        },
+      ],
+    });
+
+    const result = await scanUploadedFiles("mbid-1", "/uploads/test");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.items[0].artist).toEqual({ id: 1 });
+      expect(result.items[0].album).toEqual({ id: 10 });
+      expect(JSON.stringify(result.items).length).toBeLessThan(500);
+    }
+  });
+});
+
+describe("toManualImportItem", () => {
+  it("keeps only the fields the UI and confirm payload need", () => {
+    const raw = {
+      path: "/uploads/song.flac",
+      name: "song.flac",
+      albumReleaseId: 55,
+      indexerFlags: 0,
+      downloadId: "dl-1",
+      disableReleaseSwitching: false,
+      quality: { quality: { name: "FLAC", id: 7, source: 1 }, revision: {} },
+      rejections: [{ reason: "Unknown track", type: "permanent" }],
+      tracks: [
+        {
+          id: 3,
+          title: "Track One",
+          trackNumber: "1",
+          duration: 210000,
+          absoluteTrackNumber: 1,
+        },
+      ],
+      artist: { id: 1, overview: "long text" },
+      album: { id: 10, releases: [{ id: 99 }] },
+      customFormats: [{ id: 1, name: "noise" }],
+    };
+
+    expect(toManualImportItem(raw)).toEqual({
+      path: "/uploads/song.flac",
+      name: "song.flac",
+      albumReleaseId: 55,
+      indexerFlags: 0,
+      downloadId: "dl-1",
+      disableReleaseSwitching: false,
+      quality: { quality: { name: "FLAC" } },
+      rejections: [{ reason: "Unknown track" }],
+      tracks: [{ id: 3, title: "Track One", trackNumber: "1" }],
+      artist: { id: 1 },
+      album: { id: 10 },
+    });
+  });
+
+  it("leaves fields Lidarr omitted for an unmatched file undefined", () => {
+    const item = toManualImportItem({ path: "/uploads/mystery.flac" });
+
+    expect(item).toEqual({ path: "/uploads/mystery.flac" });
+    expect(item.tracks).toBeUndefined();
+    expect(item.album).toBeUndefined();
   });
 });
 
