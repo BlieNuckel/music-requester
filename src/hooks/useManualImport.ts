@@ -3,12 +3,17 @@ import { useState, useCallback } from "react";
 /** Mirrors the server's trimmed manual-import item — Lidarr omits fields for
  *  files it could not match. */
 export type ManualImportItem = {
+  id?: number;
   path: string;
   name?: string;
-  quality?: { quality: { name: string } };
+  quality?: {
+    quality: { id: number; name: string };
+    revision?: { version?: number; real?: number; isRepack?: boolean };
+  };
   rejections?: { reason: string }[];
   tracks?: { id: number; title: string; trackNumber: string }[];
   albumReleaseId?: number;
+  releaseGroup?: string;
   indexerFlags?: number;
   downloadId?: string;
   disableReleaseSwitching?: boolean;
@@ -26,6 +31,28 @@ type ImportState = {
   albumId: number | null;
   items: ManualImportItem[];
   error: string | null;
+};
+
+/** The confirm endpoint's error body: a message plus the files Lidarr could not
+ *  match, if that is why it refused. */
+export type ImportErrorBody = {
+  error?: string;
+  files?: { path: string; reason: string }[];
+};
+
+/** Flattens the per-file reasons onto the error message so the UI can show which
+ *  file failed rather than just that something did. */
+export const importErrorMessage = (data: ImportErrorBody): string => {
+  const base = data.error || "Import failed";
+  if (!data.files?.length) {
+    return base;
+  }
+
+  const details = data.files
+    .map((file) => `${file.path.split(/[/\\]/).pop()}: ${file.reason}`)
+    .join("\n");
+
+  return `${base}\n${details}`;
 };
 
 /** Parse response as JSON, falling back to the raw text as the error message */
@@ -83,28 +110,31 @@ export default function useManualImport() {
     }
   }, []);
 
-  const confirm = useCallback(async (items: ManualImportItem[]) => {
-    setState((s) => ({ ...s, step: "importing", error: null }));
+  const confirm = useCallback(
+    async (items: ManualImportItem[]) => {
+      setState((s) => ({ ...s, step: "importing", error: null }));
 
-    try {
-      const res = await fetch("/api/lidarr/import/confirm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items }),
-      });
+      try {
+        const res = await fetch("/api/lidarr/import/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items, uploadId: state.uploadId }),
+        });
 
-      const data = await parseResponse(res);
-      if (!res.ok) throw new Error(data.error || "Import failed");
+        const data = await parseResponse(res);
+        if (!res.ok) throw new Error(importErrorMessage(data));
 
-      setState((s) => ({ ...s, step: "done" }));
-    } catch (err) {
-      setState((s) => ({
-        ...s,
-        step: "error",
-        error: err instanceof Error ? err.message : "Import failed",
-      }));
-    }
-  }, []);
+        setState((s) => ({ ...s, step: "done" }));
+      } catch (err) {
+        setState((s) => ({
+          ...s,
+          step: "error",
+          error: err instanceof Error ? err.message : "Import failed",
+        }));
+      }
+    },
+    [state.uploadId]
+  );
 
   const cancel = useCallback(async () => {
     const uploadId = state.uploadId;

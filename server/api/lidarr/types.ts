@@ -31,6 +31,7 @@ export type LidarrAlbum = {
   foreignAlbumId: string;
   monitored: boolean;
   statistics?: LidarrAlbumStatistics;
+  releases?: { id: number; trackCount?: number; monitored?: boolean }[];
   artist: {
     id: number;
     artistName: string;
@@ -69,17 +70,29 @@ export type LidarrHistoryRecord = {
 };
 
 /**
+ * Lidarr compares qualities by `quality.id` alone, so an item posted back
+ * without the id deserializes as Unknown and gets rejected by the quality
+ * profile. Round-trip the whole model rather than the display name.
+ */
+export type LidarrQualityModel = {
+  quality: { id: number; name: string };
+  revision?: { version?: number; real?: number; isRepack?: boolean };
+};
+
+/**
  * Trimmed manual-import item: the fields the review UI renders plus the ones
  * `buildConfirmPayload` sends back to Lidarr, and nothing else. Everything but
  * the path is optional because Lidarr omits fields for files it could not match.
  */
 export type LidarrManualImportItem = {
+  id?: number;
   path: string;
   name?: string;
   albumReleaseId?: number;
   tracks?: { id: number; title: string; trackNumber: string }[];
   rejections?: { reason: string }[];
-  quality?: { quality: { name: string } };
+  quality?: LidarrQualityModel;
+  releaseGroup?: string;
   indexerFlags?: number;
   downloadId?: string;
   disableReleaseSwitching?: boolean;
@@ -135,6 +148,9 @@ export type LidarrCommand = {
   id: number;
   name: string;
   status: string;
+  result?: string;
+  message?: string;
+  exception?: string;
 };
 
 /** Extracts a human-readable error message from Lidarr's error responses (array or object format) */

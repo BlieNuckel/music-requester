@@ -12,6 +12,7 @@ import {
   ALLOWED_EXTENSIONS,
   scanUploadedFiles,
   confirmImport,
+  findImportProblems,
 } from "../../services/lidarr/import";
 
 const log = createLogger("Import");
@@ -120,6 +121,50 @@ const requireImportPath = (_req: Request, res: Response, next: () => void) => {
   next();
 };
 
+/** Guards against an uploadId escaping the import path via `..` segments. */
+const resolveUploadDir = (
+  importPath: string,
+  uploadId: string
+): string | null => {
+  const uploadDir = path.join(importPath, uploadId);
+  return path.resolve(uploadDir).startsWith(path.resolve(importPath))
+    ? uploadDir
+    : null;
+};
+
+/**
+ * Removes the upload directory once Lidarr has moved the files out. Audio files
+ * still sitting there are ones Lidarr did not take, so the directory stays and
+ * the upload is not lost.
+ */
+const cleanupUploadDir = (uploadId: string) => {
+  const importPath = getConfigValue("importPath");
+  if (!importPath) {
+    return;
+  }
+
+  const uploadDir = resolveUploadDir(importPath, uploadId);
+  if (!uploadDir || !fs.existsSync(uploadDir)) {
+    return;
+  }
+
+  const leftovers = fs
+    .readdirSync(uploadDir)
+    .filter((name) =>
+      ALLOWED_EXTENSIONS.includes(path.extname(name).toLowerCase())
+    );
+
+  if (leftovers.length) {
+    log.warn("Leaving upload directory in place, audio files remain", {
+      uploadDir,
+      leftovers,
+    });
+    return;
+  }
+
+  fs.rmSync(uploadDir, { recursive: true });
+};
+
 router.post(
   "/import/upload",
   requireImport,
@@ -188,10 +233,9 @@ router.post(
     }
 
     const importPath = getConfigValue("importPath")!;
-    const uploadDir = path.join(importPath, uploadId);
+    const uploadDir = resolveUploadDir(importPath, uploadId);
 
-    const resolved = path.resolve(uploadDir);
-    if (!resolved.startsWith(path.resolve(importPath))) {
+    if (!uploadDir) {
       return res.status(400).json({ error: "Invalid uploadId" });
     }
 
@@ -227,24 +271,39 @@ router.post(
   "/import/confirm",
   requireImport,
   async (req: Request, res: Response) => {
-    const { items }: { items: LidarrManualImportItem[] } = req.body;
+    const {
+      items,
+      uploadId,
+    }: { items: LidarrManualImportItem[]; uploadId?: string } = req.body;
     if (!items?.length) {
       return res.status(400).json({ error: "items array is required" });
     }
 
-    const result = await confirmImport(items);
-
-    log.info("confirm command response", {
-      ok: result.ok,
-      status: result.status,
-      data: result.data,
-    });
-
-    if (!result.ok) {
-      return res.status(502).json({ error: "Lidarr manual import failed" });
+    const problems = findImportProblems(items);
+    if (problems.length) {
+      log.warn("Refusing manual import, Lidarr could not match every file", {
+        problems,
+      });
+      return res.status(400).json({
+        error:
+          "Lidarr could not match every file to a track. Check the file tags and try again.",
+        files: problems,
+      });
     }
 
-    res.json({ status: "success" });
+    const result = await confirmImport(items);
+
+    log.info("Manual import outcome", result);
+
+    if (!result.ok) {
+      return res.status(502).json({ error: result.error });
+    }
+
+    if (!result.pending && uploadId) {
+      cleanupUploadDir(uploadId);
+    }
+
+    res.json({ status: "success", pending: result.pending });
   }
 );
 
@@ -257,10 +316,9 @@ router.delete(
       return res.status(400).json({ error: "importPath not configured" });
     }
 
-    const uploadDir = path.join(importPath, req.params.uploadId);
+    const uploadDir = resolveUploadDir(importPath, req.params.uploadId);
 
-    const resolved = path.resolve(uploadDir);
-    if (!resolved.startsWith(path.resolve(importPath))) {
+    if (!uploadDir) {
       return res.status(400).json({ error: "Invalid uploadId" });
     }
 

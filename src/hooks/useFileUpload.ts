@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import type { ManualImportItem } from "./useManualImport";
+import { importErrorMessage, type ManualImportItem } from "./useManualImport";
 
 type FileStatus = "pending" | "uploading" | "done" | "error";
 
@@ -24,6 +24,8 @@ type UploadState = {
   uploadId: string | null;
   items: ManualImportItem[];
   error: string | null;
+  /** Lidarr accepted the import but was still working when we stopped waiting. */
+  pending: boolean;
 };
 
 const MAX_CONCURRENT = 3;
@@ -43,6 +45,7 @@ const INITIAL_STATE: UploadState = {
   uploadId: null,
   items: [],
   error: null,
+  pending: false,
 };
 
 async function uploadSingleFile(
@@ -88,23 +91,33 @@ async function scanFiles(
   return data;
 }
 
-async function confirmImport(items: ManualImportItem[]): Promise<void> {
+async function confirmImport(
+  items: ManualImportItem[],
+  uploadId: string | null
+): Promise<{ pending: boolean }> {
   const res = await fetch("/api/lidarr/import/confirm", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ items }),
+    body: JSON.stringify({ items, uploadId }),
   });
 
-  if (!res.ok) {
-    const text = await res.text();
-    let msg = "Import failed";
-    try {
-      msg = JSON.parse(text).error || msg;
-    } catch {
-      // use default message
-    }
-    throw new Error(msg);
+  const text = await res.text();
+  let body: {
+    pending?: boolean;
+    error?: string;
+    files?: { path: string; reason: string }[];
+  } = {};
+  try {
+    body = JSON.parse(text);
+  } catch {
+    // fall through to the generic message
   }
+
+  if (!res.ok) {
+    throw new Error(importErrorMessage(body));
+  }
+
+  return { pending: body.pending ?? false };
 }
 
 export default function useFileUpload() {
@@ -208,8 +221,8 @@ export default function useFileUpload() {
   const confirm = useCallback(async (items: ManualImportItem[]) => {
     setState((s) => ({ ...s, step: "importing", error: null }));
     try {
-      await confirmImport(items);
-      setState((s) => ({ ...s, step: "done" }));
+      const { pending } = await confirmImport(items, uploadIdRef.current);
+      setState((s) => ({ ...s, step: "done", pending }));
     } catch (err) {
       setState((s) => ({
         ...s,

@@ -5,6 +5,7 @@ import {
   getAlbumByMbid,
   removeAlbum,
   waitForArtistRefresh,
+  waitForAlbumTracks,
 } from "./helpers";
 import { getArtistList, invalidateArtistList } from "./artists";
 import type { LidarrArtist, LidarrAlbum } from "../../api/lidarr/types";
@@ -221,6 +222,54 @@ describe("waitForArtistRefresh", () => {
   });
 });
 
+describe("waitForAlbumTracks", () => {
+  it("returns as soon as the album reports tracks", async () => {
+    mockLidarrGet.mockResolvedValue({
+      status: 200,
+      ok: true,
+      data: { id: 10, statistics: { totalTrackCount: 12 } },
+    });
+
+    await expect(waitForAlbumTracks(10)).resolves.toBe(true);
+    expect(mockLidarrGet).toHaveBeenCalledWith("/album/10");
+    expect(mockLidarrGet).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts a release track count when statistics are empty", async () => {
+    mockLidarrGet.mockResolvedValue({
+      status: 200,
+      ok: true,
+      data: { id: 10, releases: [{ id: 1, trackCount: 9 }] },
+    });
+
+    await expect(waitForAlbumTracks(10)).resolves.toBe(true);
+  });
+
+  it("keeps polling while the album has no tracks yet", async () => {
+    vi.useFakeTimers();
+
+    mockLidarrGet
+      .mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        data: { id: 10, statistics: { totalTrackCount: 0 }, releases: [] },
+      })
+      .mockResolvedValue({
+        status: 200,
+        ok: true,
+        data: { id: 10, statistics: { totalTrackCount: 11 } },
+      });
+
+    const pending = waitForAlbumTracks(10);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    await expect(pending).resolves.toBe(true);
+    expect(mockLidarrGet).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+});
+
 describe("getOrAddAlbum", () => {
   it("returns existing album with wasAdded=false", async () => {
     mockLidarrGet.mockResolvedValue({
@@ -249,6 +298,48 @@ describe("getOrAddAlbum", () => {
     const result = await getOrAddAlbum("new-album-mbid", mockArtist);
     expect(result.wasAdded).toBe(true);
     expect(result.album).toEqual(mockAlbum);
+  });
+
+  it("adds the album without searching by default", async () => {
+    mockLidarrGet
+      .mockResolvedValueOnce({ status: 200, data: [], ok: true })
+      .mockResolvedValueOnce({ status: 200, data: [mockAlbum], ok: true });
+
+    mockLidarrPost.mockResolvedValue({
+      status: 201,
+      data: mockAlbum,
+      ok: true,
+    });
+
+    await getOrAddAlbum("new-album-mbid", mockArtist);
+
+    expect(mockLidarrPost).toHaveBeenCalledWith(
+      "/album",
+      expect.objectContaining({
+        addOptions: { searchForNewAlbum: false },
+      })
+    );
+  });
+
+  it("searches on add when the caller asks for it", async () => {
+    mockLidarrGet
+      .mockResolvedValueOnce({ status: 200, data: [], ok: true })
+      .mockResolvedValueOnce({ status: 200, data: [mockAlbum], ok: true });
+
+    mockLidarrPost.mockResolvedValue({
+      status: 201,
+      data: mockAlbum,
+      ok: true,
+    });
+
+    await getOrAddAlbum("new-album-mbid", mockArtist, { search: true });
+
+    expect(mockLidarrPost).toHaveBeenCalledWith(
+      "/album",
+      expect.objectContaining({
+        addOptions: { searchForNewAlbum: true },
+      })
+    );
   });
 
   it("throws when album add fails", async () => {

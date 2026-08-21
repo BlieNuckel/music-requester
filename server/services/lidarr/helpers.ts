@@ -12,11 +12,17 @@ import { AsyncLock } from "../../api/asyncLock";
 import { invalidateLidarrCaches } from "./invalidate";
 import { createLogger } from "../../logger";
 
+type AddAlbumOptions = {
+  /** Queue a Lidarr AlbumSearch as part of the add. */
+  search?: boolean;
+};
+
 const log = createLogger("lidarr-helpers");
 const upsertLock = new AsyncLock();
 
 const REFRESH_POLL_INTERVAL_MS = 1000;
 const REFRESH_MAX_WAIT_MS = 30000;
+const ALBUM_TRACKS_MAX_WAIT_MS = 60000;
 
 export async function waitForArtistRefresh(): Promise<void> {
   const deadline = Date.now() + REFRESH_MAX_WAIT_MS;
@@ -45,6 +51,47 @@ export async function waitForArtistRefresh(): Promise<void> {
   );
 }
 
+function albumHasTracks(album: LidarrAlbum | undefined): boolean {
+  if (!album) {
+    return false;
+  }
+
+  if ((album.statistics?.totalTrackCount ?? 0) > 0) {
+    return true;
+  }
+
+  return (album.releases ?? []).some(
+    (release) => (release.trackCount ?? 0) > 0
+  );
+}
+
+/**
+ * A just-added album has no releases and no tracks until Lidarr's refresh runs,
+ * and `/manualimport` can only match files against tracks that already exist.
+ * Scanning too early makes every file come back unmatched.
+ */
+export async function waitForAlbumTracks(albumId: number): Promise<boolean> {
+  const deadline = Date.now() + ALBUM_TRACKS_MAX_WAIT_MS;
+
+  while (Date.now() < deadline) {
+    const result = await lidarrGet<LidarrAlbum>(`/album/${albumId}`);
+
+    if (albumHasTracks(result.data)) {
+      return true;
+    }
+
+    log.info(`Waiting for Lidarr to populate tracks for album ${albumId}...`);
+    await new Promise((resolve) =>
+      setTimeout(resolve, REFRESH_POLL_INTERVAL_MS)
+    );
+  }
+
+  log.warn(
+    `Album ${albumId} still has no tracks after ${ALBUM_TRACKS_MAX_WAIT_MS}ms, continuing`
+  );
+  return false;
+}
+
 export const getAlbumByMbid = async (albumMbid: string) => {
   const result = await lidarrGet<LidarrAlbum[]>("/album/lookup", {
     term: `lidarr:${albumMbid}`,
@@ -56,14 +103,18 @@ export const getAlbumByMbid = async (albumMbid: string) => {
   return result.data[0];
 };
 
-const addAlbumToLidarr = async (albumMbid: string, artist: LidarrArtist) => {
+const addAlbumToLidarr = async (
+  albumMbid: string,
+  artist: LidarrArtist,
+  search: boolean
+) => {
   const album = await getAlbumByMbid(albumMbid);
 
   const addAlbumResult = await lidarrPost<LidarrAlbum>("/album", {
     ...album,
     artist,
     monitored: true,
-    addOptions: { searchForNewAlbum: true },
+    addOptions: { searchForNewAlbum: search },
   });
 
   if (addAlbumResult.status >= 300) {
@@ -141,9 +192,15 @@ export const getOrAddArtist = async (artistMbid: string) => {
   });
 };
 
+/**
+ * Adds the album to Lidarr if it is missing. Defaults to *not* searching: the
+ * manual-import flow already has the files, and a search there makes Lidarr
+ * grab a second copy alongside them. Callers that want a download ask for it.
+ */
 export const getOrAddAlbum = async (
   albumMbid: string,
-  artist: LidarrArtist
+  artist: LidarrArtist,
+  options: AddAlbumOptions = {}
 ) => {
   return upsertLock.acquire(`album:${albumMbid}`, async () => {
     // Check all albums in Lidarr, not just this artist's albums
@@ -159,7 +216,7 @@ export const getOrAddAlbum = async (
 
     return {
       wasAdded: true,
-      album: await addAlbumToLidarr(albumMbid, artist),
+      album: await addAlbumToLidarr(albumMbid, artist, options.search ?? false),
     };
   });
 };
