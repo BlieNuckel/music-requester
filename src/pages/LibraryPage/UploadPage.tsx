@@ -57,6 +57,7 @@ export default function UploadPage() {
     files,
     items,
     error,
+    pending,
     addFiles,
     removeFile,
     startUpload,
@@ -203,7 +204,9 @@ export default function UploadPage() {
       {step === "done" && (
         <div className="space-y-4 animate-slide-up">
           <div className="bg-emerald-400 text-black border-2 border-black rounded-xl p-4 text-sm font-medium shadow-cartoon-sm">
-            Files imported successfully!
+            {pending
+              ? "Files handed to Lidarr. It is still importing them, so give it a moment before checking your library."
+              : "Files imported successfully!"}
           </div>
           <Link
             to="/library/wanted"
@@ -216,7 +219,7 @@ export default function UploadPage() {
 
       {step === "error" && (
         <div className="space-y-3 animate-fade-in">
-          <div className="bg-rose-400 text-white border-2 border-black rounded-xl p-4 text-sm font-medium shadow-cartoon-sm">
+          <div className="bg-rose-400 text-white border-2 border-black rounded-xl p-4 text-sm font-medium shadow-cartoon-sm whitespace-pre-line">
             {error}
           </div>
           <button

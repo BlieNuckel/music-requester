@@ -101,6 +101,9 @@ describe("useManualImport", () => {
     await act(() => result.current.confirm([]));
 
     expect(result.current.step).toBe("done");
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body))).toEqual(
+      { items: [], uploadId: "u1" }
+    );
   });
 
   it("confirm transitions to error on failure", async () => {

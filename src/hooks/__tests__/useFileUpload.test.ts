@@ -123,8 +123,10 @@ describe("useFileUpload", () => {
   });
 
   it("confirms import", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ status: "success" }), { status: 200 })
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ status: "success", pending: false }), {
+        status: 200,
+      })
     );
 
     const { result } = renderHook(() => useFileUpload());
@@ -134,6 +136,57 @@ describe("useFileUpload", () => {
     });
 
     expect(result.current.step).toBe("done");
+    expect(result.current.pending).toBe(false);
+    expect(JSON.parse(String(fetchSpy.mock.calls[0][1]?.body))).toEqual({
+      items: [],
+      uploadId: null,
+    });
+  });
+
+  it("reports that Lidarr is still importing", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ status: "success", pending: true }), {
+        status: 200,
+      })
+    );
+
+    const { result } = renderHook(() => useFileUpload());
+
+    await act(async () => {
+      await result.current.confirm([]);
+    });
+
+    expect(result.current.step).toBe("done");
+    expect(result.current.pending).toBe(true);
+  });
+
+  it("surfaces the files Lidarr refused", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: "Lidarr could not match every file to a track.",
+          files: [
+            {
+              path: "/imports/album/mystery.flac",
+              reason: "Lidarr could not determine: track match",
+            },
+          ],
+        }),
+        { status: 400 }
+      )
+    );
+
+    const { result } = renderHook(() => useFileUpload());
+
+    await act(async () => {
+      await result.current.confirm([]);
+    });
+
+    expect(result.current.step).toBe("error");
+    expect(result.current.error).toContain("could not match every file");
+    expect(result.current.error).toContain(
+      "mystery.flac: Lidarr could not determine: track match"
+    );
   });
 
   it("cancels and cleans up", async () => {

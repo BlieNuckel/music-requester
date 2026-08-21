@@ -6,10 +6,13 @@ let mockExistsSync: any;
 let mockMkdirSync: any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let mockRmSync: any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let mockReaddirSync: any;
 
 const mockGetConfigValue = vi.fn();
 const mockScanUploadedFiles = vi.fn();
 const mockConfirmImport = vi.fn();
+const mockFindImportProblems = vi.fn();
 
 vi.mock("../../config", () => ({
   getConfigValue: (...args: unknown[]) => mockGetConfigValue(...args),
@@ -19,12 +22,14 @@ vi.mock("../../services/lidarr/import", () => ({
   ALLOWED_EXTENSIONS: [".flac", ".mp3", ".ogg", ".wav", ".m4a", ".aac"],
   scanUploadedFiles: (...args: unknown[]) => mockScanUploadedFiles(...args),
   confirmImport: (...args: unknown[]) => mockConfirmImport(...args),
+  findImportProblems: (...args: unknown[]) => mockFindImportProblems(...args),
 }));
 
 vi.mock("../../services/lidarr/helpers", () => ({
   getAlbumByMbid: vi.fn(),
   getOrAddArtist: vi.fn(),
   getOrAddAlbum: vi.fn(),
+  waitForAlbumTracks: vi.fn(),
 }));
 
 const { recordedPermissions } = vi.hoisted(() => ({
@@ -43,10 +48,14 @@ vi.mock("fs", () => ({
     existsSync: (p: string) => (mockExistsSync || vi.fn(() => true))(p),
     mkdirSync: (...args: unknown[]) => (mockMkdirSync || vi.fn())(...args),
     rmSync: (...args: unknown[]) => (mockRmSync || vi.fn())(...args),
+    readdirSync: (...args: unknown[]) =>
+      (mockReaddirSync || vi.fn(() => []))(...args),
   },
   existsSync: (p: string) => (mockExistsSync || vi.fn(() => true))(p),
   mkdirSync: (...args: unknown[]) => (mockMkdirSync || vi.fn())(...args),
   rmSync: (...args: unknown[]) => (mockRmSync || vi.fn())(...args),
+  readdirSync: (...args: unknown[]) =>
+    (mockReaddirSync || vi.fn(() => []))(...args),
 }));
 
 vi.mock("crypto", () => ({
@@ -101,7 +110,9 @@ beforeEach(() => {
   mockExistsSync = vi.fn(() => true);
   mockMkdirSync = vi.fn();
   mockRmSync = vi.fn();
+  mockReaddirSync = vi.fn(() => []);
   vi.clearAllMocks();
+  mockFindImportProblems.mockReturnValue([]);
 });
 
 describe("import route permissions", () => {
@@ -302,6 +313,15 @@ describe("POST /import/scan", () => {
   });
 });
 
+const confirmItem = {
+  path: "/imports/song.flac",
+  artist: { id: 1 },
+  album: { id: 10 },
+  albumReleaseId: 5,
+  tracks: [{ id: 1 }, { id: 2 }],
+  quality: { quality: { id: 7, name: "FLAC" } },
+};
+
 describe("POST /import/confirm", () => {
   it("returns 400 when items is empty", async () => {
     const res = await request(app).post("/import/confirm").send({ items: [] });
@@ -315,50 +335,88 @@ describe("POST /import/confirm", () => {
     expect(res.body.error).toContain("items array is required");
   });
 
-  it("returns 502 when Lidarr command fails", async () => {
-    mockConfirmImport.mockResolvedValue({ ok: false, status: 500 });
+  it("returns 502 with Lidarr's reason when the import fails", async () => {
+    mockConfirmImport.mockResolvedValue({ ok: false, error: "boom" });
 
     const res = await request(app)
       .post("/import/confirm")
-      .send({
-        items: [
-          {
-            path: "/imports/song.flac",
-            artist: { id: 1 },
-            album: { id: 10 },
-            albumReleaseId: 5,
-            tracks: [{ id: 1 }],
-            quality: { quality: { name: "FLAC" } },
-          },
-        ],
-      });
+      .send({ items: [confirmItem] });
+
     expect(res.status).toBe(502);
-    expect(res.body.error).toContain("manual import failed");
+    expect(res.body.error).toBe("boom");
+  });
+
+  it("refuses to import files Lidarr could not match", async () => {
+    mockFindImportProblems.mockReturnValue([
+      {
+        path: "/imports/mystery.flac",
+        reason: "Lidarr could not determine: track match",
+      },
+    ]);
+
+    const res = await request(app)
+      .post("/import/confirm")
+      .send({ items: [{ path: "/imports/mystery.flac" }] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.files).toEqual([
+      {
+        path: "/imports/mystery.flac",
+        reason: "Lidarr could not determine: track match",
+      },
+    ]);
+    expect(mockConfirmImport).not.toHaveBeenCalled();
   });
 
   it("returns success when import succeeds", async () => {
-    mockConfirmImport.mockResolvedValue({ ok: true, status: 200, data: {} });
+    mockConfirmImport.mockResolvedValue({ ok: true, pending: false });
 
     const res = await request(app)
       .post("/import/confirm")
-      .send({
-        items: [
-          {
-            path: "/imports/song.flac",
-            artist: { id: 1 },
-            album: { id: 10 },
-            albumReleaseId: 5,
-            tracks: [{ id: 1 }, { id: 2 }],
-            quality: { quality: { name: "FLAC" } },
-            indexerFlags: 0,
-            downloadId: "dl-1",
-            disableReleaseSwitching: false,
-          },
-        ],
-      });
+      .send({ items: [confirmItem] });
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ status: "success" });
+    expect(res.body).toEqual({ status: "success", pending: false });
+  });
+
+  it("cleans up the upload directory once the import completed", async () => {
+    mockGetConfigValue.mockReturnValue("/imports");
+    mockConfirmImport.mockResolvedValue({ ok: true, pending: false });
+
+    const res = await request(app)
+      .post("/import/confirm")
+      .send({ items: [confirmItem], uploadId: "album-123" });
+
+    expect(res.status).toBe(200);
+    expect(mockRmSync).toHaveBeenCalledWith(
+      expect.stringContaining("album-123"),
+      { recursive: true }
+    );
+  });
+
+  it("keeps the upload directory when audio files were left behind", async () => {
+    mockGetConfigValue.mockReturnValue("/imports");
+    mockConfirmImport.mockResolvedValue({ ok: true, pending: false });
+    mockReaddirSync.mockReturnValue(["skipped.flac"]);
+
+    const res = await request(app)
+      .post("/import/confirm")
+      .send({ items: [confirmItem], uploadId: "album-123" });
+
+    expect(res.status).toBe(200);
+    expect(mockRmSync).not.toHaveBeenCalled();
+  });
+
+  it("keeps the upload directory while Lidarr is still importing", async () => {
+    mockGetConfigValue.mockReturnValue("/imports");
+    mockConfirmImport.mockResolvedValue({ ok: true, pending: true });
+
+    const res = await request(app)
+      .post("/import/confirm")
+      .send({ items: [confirmItem], uploadId: "album-123" });
+
+    expect(res.body).toEqual({ status: "success", pending: true });
+    expect(mockRmSync).not.toHaveBeenCalled();
   });
 });
 
