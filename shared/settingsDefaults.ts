@@ -45,6 +45,16 @@ export type PromotedAlbumSettings = {
    * for listening that never happened.
    */
   maxTrackMinutesForWeight: number;
+  /** Width of one bucket in the per-artist listening series, in days. */
+  seriesBucketDays: number;
+  /** How far back that series runs, in days. */
+  seriesSpanDays: number;
+  /**
+   * How many trailing buckets count as "recent" when measuring momentum. An artist's
+   * recent average is compared against its own earlier buckets, so this is the only knob
+   * deciding whether a two-week surge reads as momentum or as noise.
+   */
+  momentumRecentBuckets: number;
 };
 
 export type PurchaseDecisionSettings = {
@@ -94,6 +104,9 @@ export const DEFAULT_PROMOTED_ALBUM: PromotedAlbumSettings = {
   minAvailableTracksForDistribution: 3,
   listeningWeight: 1,
   maxTrackMinutesForWeight: 0,
+  seriesBucketDays: 7,
+  seriesSpanDays: 182,
+  momentumRecentBuckets: 4,
 };
 
 export const DEFAULT_PURCHASE_DECISION: PurchaseDecisionSettings = {

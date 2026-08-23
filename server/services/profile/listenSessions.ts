@@ -1,5 +1,5 @@
 import { appendSignalEvents, getSignalEvents } from "../../db/userProfile";
-import { foldEpisodes } from "./listenHistory";
+import { foldEpisodes, reconstructListenEpisodes } from "./listenHistory";
 import type { PlexTrackSession } from "../../api/plex/sessions";
 import type { ListenEpisode, PlexListenHistoryPayload } from "./listenHistory";
 import type { UserSignalEvent } from "../../db/entity/UserSignalEvent";
@@ -292,4 +292,24 @@ export function mergeMeasuredEpisodes(
     );
   }
   return merged;
+}
+
+/**
+ * Both episode series as one, measured time replacing inferred wherever a session witnessed
+ * the play. The weighting deliberately cannot tell which it got — that is what makes the
+ * millisecond currency worth the trouble.
+ */
+export async function loadEpisodeSeries(
+  userId: number
+): Promise<Map<string, ListenEpisode>> {
+  return mergeMeasuredEpisodes(
+    reconstructListenEpisodes(
+      await getSignalEvents(userId, "plex_listen_history"),
+      Infinity
+    ),
+    reconstructMeasuredEpisodes(
+      await getSignalEvents(userId, "plex_listen_sessions"),
+      Infinity
+    )
+  );
 }

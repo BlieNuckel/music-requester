@@ -56,6 +56,9 @@ const baseConfig: PromotedAlbumConfig = {
   minAvailableTracksForDistribution: 0,
   listeningWeight: 1,
   maxTrackMinutesForWeight: 0,
+  seriesBucketDays: 7,
+  seriesSpanDays: 182,
+  momentumRecentBuckets: 4,
 };
 
 const plexArtists = [
@@ -96,6 +99,8 @@ async function createUser(token: string): Promise<number> {
   ])) as { id: number }[];
   return rows[rows.length - 1].id;
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 let userId: number;
 
@@ -143,6 +148,47 @@ describe("regenerateProfile", () => {
     const row = await getUserProfile(userId);
     expect(row).not.toBeNull();
     expect(parseDerivedProfile(row!.profile_json).genreVector).toHaveLength(1);
+  });
+
+  it("persists a listening series for the artists it ranks", async () => {
+    const now = Date.now();
+    await appendSignalEvent(userId, "plex_listen_history", {
+      episodes: [
+        {
+          ratingKey: "t1",
+          title: "track",
+          artistKey: "key-radiohead",
+          artistName: "Radiohead",
+          albumKey: "album",
+          albumTitle: "Album",
+          viewedAt: Math.floor((now - 3 * DAY_MS) / 1000),
+          startedAt: now - 3 * DAY_MS,
+          durationMs: 210_000,
+          listenedMs: 210_000,
+          measured: false,
+        },
+      ],
+    });
+
+    const profile = await regenerateProfile(userId, "token");
+
+    const radiohead = profile!.artistSeries.find((s) => s.name === "Radiohead");
+    expect(radiohead).toBeDefined();
+    expect(radiohead!.bucketMs).toBe(baseConfig.seriesBucketDays * DAY_MS);
+    expect(radiohead!.plays).toHaveLength(baseConfig.seriesSpanDays / 7);
+    const last = radiohead!.plays.length - 1;
+    expect(radiohead!.plays[last]).toBe(1);
+    expect(radiohead!.listenedMs[last]).toBe(210_000);
+
+    const stored = parseDerivedProfile(
+      (await getUserProfile(userId))!.profile_json
+    );
+    expect(stored.artistSeries.map((s) => s.name)).toContain("Radiohead");
+  });
+
+  it("leaves the series empty when nothing has been listened to", async () => {
+    const profile = await regenerateProfile(userId, "token");
+    expect(profile!.artistSeries).toEqual([]);
   });
 
   it("fetches tags for every top artist rather than a random few", async () => {

@@ -111,6 +111,50 @@ describe("RecommendationsSection — ratings backup toggle", () => {
     });
   });
 
+  it("edits the listening-series bucket width and span", () => {
+    const onChange = vi.fn();
+    render(
+      <RecommendationsSection
+        config={DEFAULT_PROMOTED_ALBUM}
+        onConfigChange={onChange}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText(/Listening Series Bucket/i), {
+      target: { value: "1" },
+    });
+    expect(onChange).toHaveBeenCalledWith({
+      ...DEFAULT_PROMOTED_ALBUM,
+      seriesBucketDays: 1,
+    });
+
+    fireEvent.change(screen.getByLabelText(/Listening Series Span/i), {
+      target: { value: "364" },
+    });
+    expect(onChange).toHaveBeenCalledWith({
+      ...DEFAULT_PROMOTED_ALBUM,
+      seriesSpanDays: 364,
+    });
+  });
+
+  it("edits the momentum window", () => {
+    const onChange = vi.fn();
+    render(
+      <RecommendationsSection
+        config={DEFAULT_PROMOTED_ALBUM}
+        onConfigChange={onChange}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText(/Momentum Window/i), {
+      target: { value: "8" },
+    });
+    expect(onChange).toHaveBeenCalledWith({
+      ...DEFAULT_PROMOTED_ALBUM,
+      momentumRecentBuckets: 8,
+    });
+  });
+
   it("edits the small-catalogue exemption", () => {
     const onChange = vi.fn();
     render(

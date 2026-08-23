@@ -177,6 +177,9 @@ const defaultPromotedAlbumConfig: PromotedAlbumConfig = {
   minAvailableTracksForDistribution: 0,
   listeningWeight: 1,
   maxTrackMinutesForWeight: 0,
+  seriesBucketDays: 7,
+  seriesSpanDays: 182,
+  momentumRecentBuckets: 4,
 };
 
 let userId: number;
