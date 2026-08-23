@@ -20,6 +20,9 @@ export type ProfileConfigInputs = {
   maxTrackMinutesForWeight: number;
   topArtistsCount: number;
   exploreCandidateCount: number;
+  seriesBucketDays: number;
+  seriesSpanDays: number;
+  momentumRecentBuckets: number;
 };
 
 /** A partial patch of the anti-repeat exploration memory; only provided fields are replaced. */
@@ -32,6 +35,7 @@ const EMPTY_DERIVED_PROFILE: DerivedProfile = {
   genreVector: [],
   artistTags: [],
   similarGraph: [],
+  artistSeries: [],
   knownAlbums: [],
   explorationHistory: { albums: [], artists: [] },
 };
@@ -54,6 +58,7 @@ export function parseDerivedProfile(json: string): DerivedProfile {
       genreVector: parsed.genreVector ?? [],
       artistTags: parsed.artistTags ?? [],
       similarGraph: parsed.similarGraph ?? [],
+      artistSeries: parsed.artistSeries ?? [],
       knownAlbums: parsed.knownAlbums ?? [],
       explorationHistory: {
         albums: parsed.explorationHistory?.albums ?? [],
@@ -79,6 +84,9 @@ export function computeConfigHash(inputs: ProfileConfigInputs): string {
     maxTrackMinutesForWeight: inputs.maxTrackMinutesForWeight,
     topArtistsCount: inputs.topArtistsCount,
     exploreCandidateCount: inputs.exploreCandidateCount,
+    seriesBucketDays: inputs.seriesBucketDays,
+    seriesSpanDays: inputs.seriesSpanDays,
+    momentumRecentBuckets: inputs.momentumRecentBuckets,
   });
   return createHash("sha256").update(stable).digest("hex");
 }

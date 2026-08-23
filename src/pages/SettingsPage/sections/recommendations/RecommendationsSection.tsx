@@ -293,6 +293,34 @@ export default function RecommendationsSection({
       />
 
       <NumberField
+        label="Listening Series Bucket (days)"
+        value={config.seriesBucketDays}
+        onChange={(v) => update("seriesBucketDays", v)}
+        min={1}
+        max={31}
+        step={1}
+        description="How wide one point on an artist's listening-over-time series is. 7 smooths day-to-day noise into a weekly rhythm; 1 shows every day but makes a quiet week look like a collapse."
+      />
+      <NumberField
+        label="Listening Series Span (days)"
+        value={config.seriesSpanDays}
+        onChange={(v) => update("seriesSpanDays", v)}
+        min={7}
+        max={730}
+        step={7}
+        description="How far back that series runs. It can only show listening tunearr has a record of, so a span longer than your Plex history simply starts empty rather than being wrong."
+      />
+      <NumberField
+        label="Momentum Window (buckets)"
+        value={config.momentumRecentBuckets}
+        onChange={(v) => update("momentumRecentBuckets", v)}
+        min={1}
+        max={26}
+        step={1}
+        description="How many recent buckets count as 'now' when deciding an artist is rising or fading. Each artist is compared against its own earlier buckets, so a small artist doubling registers as strongly as a big one. Fewer buckets reacts faster and mistakes a busy week for a trend."
+      />
+
+      <NumberField
         label="Top Artists Count"
         value={config.topArtistsCount}
         onChange={(v) => update("topArtistsCount", v)}

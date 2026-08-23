@@ -41,6 +41,19 @@ const SAMPLE_PROFILE: DerivedProfile = {
       ],
     },
   ],
+  artistSeries: [
+    {
+      name: "Slowdive",
+      bucketMs: 604800000,
+      startMs: 1_700_000_000_000,
+      plays: [0, 3, 5],
+      listenedMs: [0, 600_000, 1_000_000],
+      firstSeenMs: 1_700_604_800_000,
+      momentum: 1.6,
+      emerging: false,
+      decaying: false,
+    },
+  ],
   knownAlbums: ["slowdive::souvlaki"],
   explorationHistory: {
     albums: ["mbid-album-1", "mbid-album-2"],
@@ -60,6 +73,9 @@ const CONFIG_INPUTS = {
   maxTrackMinutesForWeight: 0,
   topArtistsCount: 10,
   exploreCandidateCount: 12,
+  seriesBucketDays: 7,
+  seriesSpanDays: 182,
+  momentumRecentBuckets: 4,
 };
 
 async function createUser(username: string): Promise<number> {
@@ -92,6 +108,7 @@ describe("serializeDerivedProfile / parseDerivedProfile", () => {
       genreVector: [],
       artistTags: [],
       similarGraph: [],
+      artistSeries: [],
       knownAlbums: [],
       explorationHistory: { albums: [], artists: [] },
     });
@@ -102,6 +119,7 @@ describe("serializeDerivedProfile / parseDerivedProfile", () => {
       genreVector: [],
       artistTags: [],
       similarGraph: [],
+      artistSeries: [],
       knownAlbums: [],
       explorationHistory: { albums: [], artists: [] },
     });
@@ -198,6 +216,7 @@ describe("upsertUserProfile / getUserProfile", () => {
       genreVector: [{ tag: "techno", weight: 9, fromArtists: ["Aphex Twin"] }],
       artistTags: [],
       similarGraph: [],
+      artistSeries: [],
       knownAlbums: [],
       explorationHistory: { albums: [], artists: [] },
     };

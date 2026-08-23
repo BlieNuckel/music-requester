@@ -13,6 +13,12 @@ import type { UserSignalEvent } from "../../db/entity/UserSignalEvent";
 import type { PlexRatedItem } from "../../api/plex/types";
 
 /** Payload of a `kind = "plex_rating"` event — maps 1:1 to a `PlexRatedItem`. */
+/** How much of an artist's window the two stored quantities each describe. */
+export type ArtistListenTotals = {
+  plays: number;
+  listenedMs: number;
+};
+
 export type PlexRatingPayload = {
   ratingKey: string;
   kind: PlexRatedItem["kind"];
@@ -671,4 +677,64 @@ export function captureDue(
   const last = events[events.length - 1];
   if (!last) return true;
   return now - Date.parse(last.recorded_at) >= intervalMs;
+}
+
+/**
+ * One artist's window reduced to the number the recommender ranks by, denominated in
+ * play-equivalents — one nominal-length play is `1` — so the play-denominated thresholds
+ * around it keep meaning roughly what they meant.
+ *
+ * `listeningWeight` chooses what "more" means, because the two stored quantities are
+ * different evidence and neither substitutes for the other. Plays count *decisions*: twenty
+ * plays of a three-minute track are twenty separate choices to hear it again. Listening time
+ * counts *exposure*: those twenty plays and one hour-long set are the same hour. At `1` an
+ * hour-long DJ set finally stops counting the same as a three-minute single; at `0` this is
+ * exactly the play ranking that predates listening time being captured at all.
+ *
+ * With no durations stored, exposure equals plays and the knob does nothing.
+ */
+export function toPlayEquivalents(
+  totals: ArtistListenTotals,
+  listeningWeight: number
+): number {
+  const exposure = totals.listenedMs / NOMINAL_TRACK_MS;
+  return totals.plays * (1 - listeningWeight) + exposure * listeningWeight;
+}
+
+/**
+ * Cumulative all-time plays *and* listening per artist at `cutoffMs`, merged across the
+ * track series and the legacy artist series. Both are monotonic and cumulative, so the
+ * higher of the two is the safe estimate on each quantity: it never under-counts a baseline
+ * (which would inflate a windowed delta), and it lets the track series take over on its own
+ * as the legacy series stops being written. Keyed by artist name, which is what the ratings
+ * series joins on and the only key the legacy series has.
+ *
+ * The legacy series is artist-level and carries no durations, so its counts enter as
+ * listening at the nominal length — numerically identical to how they compared before this
+ * became a listening merge.
+ */
+export function reconstructArtistTotals(
+  trackEvents: UserSignalEvent[],
+  legacyEvents: UserSignalEvent[],
+  cutoffMs: number,
+  capMs = 0
+): Map<string, ArtistListenTotals> {
+  const merged = new Map<string, ArtistListenTotals>();
+  for (const [name, plays] of reconstructPlayCounts(legacyEvents, cutoffMs)) {
+    merged.set(name, {
+      plays,
+      listenedMs: inferListenedMs(plays, undefined, capMs),
+    });
+  }
+
+  const tracks = reconstructTrackPlayCounts(trackEvents, cutoffMs);
+  for (const artist of rollupToArtists(tracks, undefined, capMs)) {
+    if (!artist.name) continue;
+    const known = merged.get(artist.name);
+    merged.set(artist.name, {
+      plays: Math.max(known?.plays ?? 0, artist.playCount),
+      listenedMs: Math.max(known?.listenedMs ?? 0, artist.listenedMs),
+    });
+  }
+  return merged;
 }

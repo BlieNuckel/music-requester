@@ -1,4 +1,10 @@
 import { loadArtistWeights, type ArtistWeight } from "./artistWeights";
+import {
+  attachSeriesSignals,
+  loadArtistSeries,
+  selectProfileSeries,
+  type ArtistSeriesOptions,
+} from "./artistSeries";
 import { buildSimilarGraph } from "./explore";
 import { loadKnownAlbums } from "./knownAlbums";
 import { getArtistTopTags } from "../api/lastfm/artists";
@@ -139,6 +145,20 @@ async function fetchTagResults(
   );
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The series knobs, resolved from config so both the derivation and the stored bucket width agree. */
+function seriesOptions(config: PromotedAlbumConfig): ArtistSeriesOptions {
+  return {
+    now: Date.now(),
+    bucketMs: config.seriesBucketDays * DAY_MS,
+    spanMs: config.seriesSpanDays * DAY_MS,
+    recentBuckets: config.momentumRecentBuckets,
+    capMs: Math.max(0, config.maxTrackMinutesForWeight) * 60_000,
+    listeningWeight: config.listeningWeight,
+  };
+}
+
 /**
  * Rebuild a user's derived profile from Plex top-artists + Last.fm tags and persist it.
  * Request-free (token in, profile out) so the Phase 3 scheduler can call it directly.
@@ -155,16 +175,20 @@ export async function regenerateProfile(
   plexToken: string
 ): Promise<DerivedProfile | null> {
   const config = getConfigValue("promotedAlbum");
-
-  const weighted = await loadArtistWeights(userId, plexToken, {
-    windowMs: config.playTrendWindowDays * 24 * 60 * 60 * 1000,
-    ratingWeight: config.ratingWeight,
-    distributionWeight: config.distributionWeight,
-    minPlaysForDistribution: config.minPlaysForDistribution,
-    minAvailableTracksForDistribution: config.minAvailableTracksForDistribution,
-    listeningWeight: config.listeningWeight,
-    maxTrackMinutesForWeight: config.maxTrackMinutesForWeight,
-  });
+  const series = await loadArtistSeries(userId, seriesOptions(config));
+  const weighted = attachSeriesSignals(
+    await loadArtistWeights(userId, plexToken, {
+      windowMs: config.playTrendWindowDays * 24 * 60 * 60 * 1000,
+      ratingWeight: config.ratingWeight,
+      distributionWeight: config.distributionWeight,
+      minPlaysForDistribution: config.minPlaysForDistribution,
+      minAvailableTracksForDistribution:
+        config.minAvailableTracksForDistribution,
+      listeningWeight: config.listeningWeight,
+      maxTrackMinutesForWeight: config.maxTrackMinutesForWeight,
+    }),
+    series
+  );
   if (weighted.length === 0) return null;
 
   const topArtists = [...weighted]
@@ -191,6 +215,12 @@ export async function regenerateProfile(
     genreVector,
     artistTags,
     similarGraph,
+    artistSeries: selectProfileSeries(
+      series,
+      topArtists.map((a) => a.name),
+      config.topArtistsCount,
+      config.seriesBucketDays * DAY_MS
+    ),
     knownAlbums: await loadKnownAlbums(userId),
     explorationHistory,
   };

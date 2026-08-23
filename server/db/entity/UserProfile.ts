@@ -34,6 +34,24 @@ export type SimilarGraphSeed = {
   candidates: SimilarGraphCandidate[];
 };
 
+/**
+ * One artist's listening over time as stored on the profile — the derived shape, not the
+ * raw episodes. Buckets are dense and chronological; see `artistSeries.ts` for how they are
+ * reconciled between the episode log and the cumulative counts.
+ */
+export type ProfileArtistSeries = {
+  name: string;
+  bucketMs: number;
+  /** Left edge of the first bucket, so a bucket's time is index * bucketMs from here. */
+  startMs: number;
+  plays: number[];
+  listenedMs: number[];
+  firstSeenMs: number | null;
+  momentum: number;
+  emerging: boolean;
+  decaying: boolean;
+};
+
 export type DerivedProfile = {
   genreVector: { tag: string; weight: number; fromArtists: string[] }[];
   artistTags: {
@@ -48,12 +66,18 @@ export type DerivedProfile = {
     availableTracks?: number;
   }[];
   similarGraph: SimilarGraphSeed[];
+  /**
+   * Listening over time for the artists worth keeping it for. Stored parallel-array rather
+   * than per-bucket objects: at 26 buckets an object per bucket triples the document for
+   * nothing, and both consumers read it as two series anyway.
+   */
+  artistSeries: ProfileArtistSeries[];
   /** Normalized `artist::album` keys the user already listens to — see `knownAlbums.ts`. */
   knownAlbums: string[];
   explorationHistory: { albums: string[]; artists: string[] };
 };
 
-export const DERIVED_PROFILE_SCHEMA_VERSION = 6;
+export const DERIVED_PROFILE_SCHEMA_VERSION = 7;
 
 /** Derived, regenerable cache — one row per user, the whole profile as one document. */
 @Entity("user_profiles")
