@@ -13,6 +13,7 @@ import {
   historyWatermark,
   ingestUserListenHistory,
   reconstructListenEpisodes,
+  rollupEpisodesToAlbums,
   rollupEpisodesToArtists,
   type ListenEpisode,
   type PlexListenHistoryPayload,
@@ -215,6 +216,109 @@ describe("historyCovers", () => {
 
   it("covers nothing when no episodes are stored", () => {
     expect(historyCovers(new Map(), 0)).toBe(false);
+  });
+});
+
+describe("rollupEpisodesToAlbums", () => {
+  it("sums listening per album and counts the plays behind it", () => {
+    const stored = reconstructListenEpisodes(
+      [
+        episodeEvent(
+          [
+            episode("1", "A", 1_770_000_000, {
+              albumKey: "alb1",
+              albumTitle: "One",
+              durationMs: 300_000,
+            }),
+            episode("2", "A", 1_770_010_000, {
+              albumKey: "alb1",
+              albumTitle: "One",
+              durationMs: 180_000,
+            }),
+            episode("3", "A", 1_770_020_000, {
+              albumKey: "alb2",
+              albumTitle: "Two",
+              durationMs: 180_000,
+            }),
+          ],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+
+    const [one, two] = rollupEpisodesToAlbums(stored);
+    expect(one).toMatchObject({
+      albumKey: "alb1",
+      title: "One",
+      artistName: "A",
+      playCount: 2,
+      listenedMs: 480_000,
+    });
+    expect(two).toMatchObject({ albumKey: "alb2", playCount: 1 });
+  });
+
+  it("counts an episode against the window it started in, not the one it committed in", () => {
+    const stored = reconstructListenEpisodes(
+      [
+        episodeEvent(
+          [
+            episode("set", "A", 1_770_000_000, {
+              albumKey: "alb1",
+              albumTitle: "One",
+              durationMs: 5_400_000,
+            }),
+          ],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+    const startedAt = 1_770_000_000 * 1000 - 5_400_000 / 2;
+
+    expect(rollupEpisodesToAlbums(stored, startedAt + 1)).toEqual([]);
+    expect(rollupEpisodesToAlbums(stored, startedAt)).toHaveLength(1);
+  });
+
+  it("caps what one episode contributes when a ceiling is given", () => {
+    const stored = reconstructListenEpisodes(
+      [
+        episodeEvent(
+          [
+            episode("set", "A", 1_770_000_000, {
+              albumKey: "alb1",
+              albumTitle: "One",
+              durationMs: 5_400_000,
+            }),
+          ],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+
+    expect(
+      rollupEpisodesToAlbums(stored, -Infinity, Infinity, 600_000)[0].listenedMs
+    ).toBe(600_000);
+  });
+
+  it("drops an episode with no album attribution at all", () => {
+    const stored = reconstructListenEpisodes(
+      [
+        episodeEvent(
+          [
+            episode("1", "A", 1_770_000_000, {
+              albumKey: "",
+              albumTitle: "",
+            }),
+          ],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+
+    expect(rollupEpisodesToAlbums(stored)).toEqual([]);
   });
 });
 

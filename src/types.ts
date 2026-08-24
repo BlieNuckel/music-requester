@@ -267,6 +267,8 @@ export interface GeocodedPlace {
 export interface ProfileDebugCounts {
   genres: number;
   artists: number;
+  taggedAlbums: number;
+  albumsWithOwnGenre: number;
   similarSeeds: number;
   similarCandidates: number;
   knownAlbums: number;

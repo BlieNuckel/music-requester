@@ -41,6 +41,16 @@ const SAMPLE_PROFILE: DerivedProfile = {
       ],
     },
   ],
+  albumTags: [
+    {
+      albumKey: "alb-souvlaki",
+      title: "Souvlaki",
+      artistName: "Slowdive",
+      weight: 30,
+      source: "lastfm-album" as const,
+      tags: [{ name: "shoegaze", count: 100 }],
+    },
+  ],
   artistSeries: [
     {
       name: "Slowdive",
@@ -76,6 +86,7 @@ const CONFIG_INPUTS = {
   seriesBucketDays: 7,
   seriesSpanDays: 182,
   momentumRecentBuckets: 4,
+  albumTagsPerArtist: 4,
 };
 
 async function createUser(username: string): Promise<number> {
@@ -108,6 +119,7 @@ describe("serializeDerivedProfile / parseDerivedProfile", () => {
       genreVector: [],
       artistTags: [],
       similarGraph: [],
+      albumTags: [],
       artistSeries: [],
       knownAlbums: [],
       explorationHistory: { albums: [], artists: [] },
@@ -119,6 +131,7 @@ describe("serializeDerivedProfile / parseDerivedProfile", () => {
       genreVector: [],
       artistTags: [],
       similarGraph: [],
+      albumTags: [],
       artistSeries: [],
       knownAlbums: [],
       explorationHistory: { albums: [], artists: [] },
@@ -216,6 +229,7 @@ describe("upsertUserProfile / getUserProfile", () => {
       genreVector: [{ tag: "techno", weight: 9, fromArtists: ["Aphex Twin"] }],
       artistTags: [],
       similarGraph: [],
+      albumTags: [],
       artistSeries: [],
       knownAlbums: [],
       explorationHistory: { albums: [], artists: [] },

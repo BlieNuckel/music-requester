@@ -50,6 +50,12 @@ export type PlexAlbumMetadata = {
   childCount?: number;
   parentRatingKey?: string;
   parentTitle?: string;
+  /**
+   * Genres as the Plex agent tagged the album. Absent on sections whose agent supplies
+   * none, and coarse where present (a handful of words like "Rock"), but it is the only
+   * genre source that covers the whole library for free.
+   */
+  Genre?: { tag: string }[];
 };
 
 export type PlexAlbumsResponse = {

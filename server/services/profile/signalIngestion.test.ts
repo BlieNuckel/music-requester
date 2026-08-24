@@ -40,7 +40,7 @@ import {
   NOMINAL_TRACK_MS,
 } from "./signalIngestion";
 import { initializeDatabase, closeDatabase, getDataSource } from "../../db";
-import { getSignalEvents } from "../../db/userProfile";
+import { appendSignalEvents, getSignalEvents } from "../../db/userProfile";
 import type { UserSignalEvent } from "../../db/entity/UserSignalEvent";
 
 function ratingEvent(
@@ -690,9 +690,68 @@ describe("rollupToAlbums", () => {
       Infinity
     );
     expect(rollupToAlbums(tracks)).toEqual([
-      { albumKey: "alb1", title: "One", artistName: "A", playCount: 10 },
-      { albumKey: "alb2", title: "Two", artistName: "A", playCount: 1 },
+      {
+        albumKey: "alb1",
+        title: "One",
+        artistKey: "ak-A",
+        artistName: "A",
+        playCount: 10,
+        listenedMs: 10 * NOMINAL_TRACK_MS,
+      },
+      {
+        albumKey: "alb2",
+        title: "Two",
+        artistKey: "ak-A",
+        artistName: "A",
+        playCount: 1,
+        listenedMs: NOMINAL_TRACK_MS,
+      },
     ]);
+  });
+
+  it("sums each track's own length into the album's listening time", () => {
+    const tracks = reconstructTrackPlayCounts(
+      [
+        trackPlaysEvent(
+          [
+            trackState("1", "A", 2, {
+              albumKey: "alb1",
+              albumTitle: "One",
+              durationMs: 300_000,
+            }),
+            trackState("2", "A", 1, {
+              albumKey: "alb1",
+              albumTitle: "One",
+              durationMs: 600_000,
+            }),
+          ],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+
+    expect(rollupToAlbums(tracks)[0].listenedMs).toBe(1_200_000);
+  });
+
+  it("caps what one play of a long track contributes, as the artist rollup does", () => {
+    const tracks = reconstructTrackPlayCounts(
+      [
+        trackPlaysEvent(
+          [
+            trackState("1", "A", 2, {
+              albumKey: "alb1",
+              albumTitle: "One",
+              durationMs: 3_600_000,
+            }),
+          ],
+          "2026-01-01T00:00:00.000Z"
+        ),
+      ],
+      Infinity
+    );
+
+    expect(rollupToAlbums(tracks, 600_000)[0].listenedMs).toBe(1_200_000);
   });
 
   it("drops tracks with no album attribution at all", () => {
@@ -849,6 +908,7 @@ describe("ingestion (with DB)", () => {
         artistKey: "art1",
         artistName: "Andromedik",
         trackCount: 11,
+        genres: [],
       },
     ]);
 
@@ -861,6 +921,77 @@ describe("ingestion (with DB)", () => {
     expect(payload.albums[0].trackCount).toBe(11);
   });
 
+  it("re-emits an album whose genres changed even though its track count did not", async () => {
+    const album = {
+      ratingKey: "alb1",
+      title: "Prologue",
+      artistKey: "art1",
+      artistName: "Andromedik",
+      trackCount: 11,
+      genres: ["Drum & Bass"],
+    };
+    mockGetAllAlbumTrackCounts.mockResolvedValueOnce([album]);
+    await ingestUserAlbumTracks(1, "tok");
+    mockGetAllAlbumTrackCounts.mockResolvedValueOnce([
+      { ...album, genres: ["Drum & Bass", "Electronic"] },
+    ]);
+    await ingestUserAlbumTracks(1, "tok");
+
+    const events = await getSignalEvents(1, "plex_album_tracks");
+    expect(events).toHaveLength(2);
+    const latest = JSON.parse(events[1].payload) as PlexAlbumTracksPayload;
+    expect(latest.albums[0].genres).toEqual(["Drum & Bass", "Electronic"]);
+  });
+
+  it("backfills genres onto an album stored before the field existed", async () => {
+    await appendSignalEvents(1, "plex_album_tracks", [
+      {
+        albums: [
+          {
+            ratingKey: "alb1",
+            title: "Prologue",
+            artistKey: "art1",
+            artistName: "Andromedik",
+            trackCount: 11,
+          },
+        ],
+      },
+    ]);
+
+    mockGetAllAlbumTrackCounts.mockResolvedValueOnce([
+      {
+        ratingKey: "alb1",
+        title: "Prologue",
+        artistKey: "art1",
+        artistName: "Andromedik",
+        trackCount: 11,
+        genres: ["Drum & Bass"],
+      },
+    ]);
+    await ingestUserAlbumTracks(1, "tok");
+
+    const events = await getSignalEvents(1, "plex_album_tracks");
+    expect(events).toHaveLength(2);
+  });
+
+  it("writes nothing for an album Plex has never tagged", async () => {
+    const album = {
+      ratingKey: "alb1",
+      title: "Prologue",
+      artistKey: "art1",
+      artistName: "Andromedik",
+      trackCount: 11,
+      genres: [],
+    };
+    mockGetAllAlbumTrackCounts.mockResolvedValue([album]);
+
+    await ingestUserAlbumTracks(1, "tok");
+    await ingestUserAlbumTracks(1, "tok");
+    await ingestUserAlbumTracks(1, "tok");
+
+    expect(await getSignalEvents(1, "plex_album_tracks")).toHaveLength(1);
+  });
+
   it("records a track count that went down as well as up", async () => {
     const album = {
       ratingKey: "alb1",
@@ -868,6 +999,7 @@ describe("ingestion (with DB)", () => {
       artistKey: "art1",
       artistName: "Andromedik",
       trackCount: 11,
+      genres: [],
     };
     mockGetAllAlbumTrackCounts.mockResolvedValueOnce([album]);
     await ingestUserAlbumTracks(1, "tok");

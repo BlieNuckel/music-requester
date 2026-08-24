@@ -10,6 +10,8 @@ export type AlbumTrackCount = {
   artistKey: string;
   artistName: string;
   trackCount: number;
+  /** Plex agent genres for the album; empty when the section's agent supplies none. */
+  genres: string[];
 };
 
 type AlbumPage = {
@@ -37,6 +39,7 @@ const mapAlbum = (raw: PlexAlbumMetadata): AlbumTrackCount => ({
   artistKey: raw.parentRatingKey ?? "",
   artistName: raw.parentTitle ?? "",
   trackCount: trackCountOf(raw),
+  genres: (raw.Genre ?? []).map((g) => g.tag).filter(Boolean),
 });
 
 async function fetchPage(
@@ -91,10 +94,11 @@ async function walkSection(
 }
 
 /**
- * Every album across every music section, with how many tracks it holds. This is what tells
- * an artist the library only has one track by apart from an artist whose other eleven tracks
- * were never played — the played-track sweep sees those two identically. Sections are walked
- * sequentially so a server with several music libraries doesn't get several concurrent sweeps.
+ * Every album across every music section, with how many tracks it holds and the genres the
+ * Plex agent tagged it with. This is what tells an artist the library only has one track by
+ * apart from an artist whose other eleven tracks were never played — the played-track sweep
+ * sees those two identically. Sections are walked sequentially so a server with several music
+ * libraries doesn't get several concurrent sweeps.
  */
 export async function getAllAlbumTrackCounts(
   plexToken: string

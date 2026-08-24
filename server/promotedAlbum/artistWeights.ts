@@ -7,10 +7,12 @@ import {
   reconstructTrackPlayCounts,
   reconstructArtistTotals,
   rollupToArtistCatalogue,
+  rollupToAlbums,
   rollupToArtists,
   toPlayEquivalents,
 } from "../services/profile/signalIngestion";
 import type {
+  AlbumPlayRollup,
   ArtistListenTotals,
   ArtistPlayRollup,
   PlexRatingPayload,
@@ -19,6 +21,7 @@ import type {
 
 import {
   historyCovers,
+  rollupEpisodesToAlbums,
   rollupEpisodesToArtists,
 } from "../services/profile/listenHistory";
 import { loadEpisodeSeries } from "../services/profile/listenSessions";
@@ -329,6 +332,43 @@ export function deriveArtistDistributions(
     }
   }
   return byName;
+}
+
+/**
+ * Per-album plays and listening over the same window the artist weights were measured over,
+ * from the same source those weights came from — episodes where history covers the window,
+ * the difference of two cumulative snapshots otherwise. `derivePlayWeights` is re-run rather
+ * than threaded through so both derivations settle the window from identical inputs by one
+ * rule: an album's share of its artist has to be measured over the span that artist's weight
+ * was measured over, or splitting the weight silently re-weights the artist instead.
+ */
+export function deriveAlbumWeights(
+  bundle: SignalBundle,
+  options: ArtistWeightOptions
+): AlbumPlayRollup[] {
+  const now = options.now ?? Date.now();
+  const capMs = Math.max(0, options.maxTrackMinutesForWeight) * 60_000;
+  const { trackEvents, legacyEvents, episodes } = bundle;
+
+  const { windowStart } = derivePlayWeights(
+    trackEvents,
+    legacyEvents,
+    episodes,
+    {
+      now,
+      windowMs: options.windowMs,
+      capMs,
+      listeningWeight: options.listeningWeight,
+    }
+  );
+
+  if (windowStart !== null && historyCovers(episodes, windowStart)) {
+    return rollupEpisodesToAlbums(episodes, windowStart, now, capMs);
+  }
+  return rollupToAlbums(
+    deriveWindowedTrackPlays(trackEvents, windowStart),
+    capMs
+  );
 }
 
 /**

@@ -32,6 +32,8 @@ import {
   loadProfileForRequest,
   normalizedTagWeights,
   buildGenreVector,
+  artistGenreUnits,
+  type GenreUnit,
 } from "./profileService";
 import type {
   BuiltAlbum,
@@ -40,6 +42,7 @@ import type {
   WithinTasteResult,
   WithinTasteTrace,
   TraceArtistEntry,
+  TraceArtistTagContribution,
   TraceAlbumPoolInfo,
   TraceSelectionReason,
   TraceWeightedTag,
@@ -193,20 +196,74 @@ export function promotedAlbumCacheExpiry(
   return resultCache.expiresAt(userId, now);
 }
 
+/** A profile's albums indexed by the artist whose weight they carry a share of. */
+function groupAlbumsByArtist(
+  albumTags: DerivedProfile["albumTags"]
+): Map<string, GenreUnit[]> {
+  const byArtist = new Map<string, GenreUnit[]>();
+  for (const album of albumTags) {
+    const existing = byArtist.get(album.artistName);
+    if (existing) existing.push(album);
+    else byArtist.set(album.artistName, [album]);
+  }
+  return byArtist;
+}
+
+/**
+ * One artist's tag contributions as they actually reached the vector — summed across that
+ * artist's albums, because the album is what carries the weight now. `rawCount` is the
+ * highest count the tag was seen with, which is all the trace does with it.
+ *
+ * An artist with no stored albums falls back to its own tags, which is both the pre-album
+ * shape and what the vector itself falls back to.
+ */
+function tagContributions(
+  artist: DerivedProfile["artistTags"][number],
+  albums: GenreUnit[] | undefined
+): TraceArtistTagContribution[] {
+  const units: GenreUnit[] =
+    albums && albums.length > 0
+      ? albums
+      : [
+          {
+            artistName: artist.name,
+            weight: artist.viewCount,
+            tags: artist.tags,
+          },
+        ];
+
+  const merged = new Map<string, TraceArtistTagContribution>();
+  for (const unit of units) {
+    const weights = normalizedTagWeights(unit.tags, unit.weight);
+    for (const [index, tag] of unit.tags.entries()) {
+      const key = tag.name.toLowerCase();
+      const existing = merged.get(key);
+      if (existing) {
+        existing.weight += weights[index];
+        existing.rawCount = Math.max(existing.rawCount, tag.count);
+      } else {
+        merged.set(key, {
+          tagName: tag.name,
+          rawCount: tag.count,
+          weight: weights[index],
+        });
+      }
+    }
+  }
+  return Array.from(merged.values());
+}
+
 function buildTraceFromProfile(inputs: TraceInputs): WithinTasteTrace {
   const { profile, sampledNames, vector, chosenTag } = inputs;
 
+  const albumsByArtistName = groupAlbumsByArtist(profile.albumTags);
+
   const plexArtists: TraceArtistEntry[] = profile.artistTags.map((a) => {
-    const weights = normalizedTagWeights(a.tags, a.viewCount);
     return {
       name: a.name,
       viewCount: a.viewCount,
       picked: sampledNames.has(a.name),
-      tagContributions: a.tags.map((t, index) => ({
-        tagName: t.name,
-        rawCount: t.count,
-        weight: weights[index],
-      })),
+      tagContributions: tagContributions(a, albumsByArtistName.get(a.name)),
       distinctTracksPlayed: a.distinctTracksPlayed,
       topTrackShare: a.topTrackShare,
       distributionFactor: a.distributionFactor,
@@ -245,6 +302,20 @@ function sampleArtists(
   rng: Rng
 ): DerivedProfile["artistTags"] {
   return weightedRandomPick(artistTags, (a) => a.viewCount, count, rng);
+}
+
+/**
+ * What this pick's vector is summed from: the sampled artists' albums, since that is where
+ * genre attaches. The artists themselves stand in for a profile stored before album tags
+ * existed — the vector that comes out is then exactly the one that profile was built from.
+ */
+function sampledGenreUnits(
+  profile: DerivedProfile,
+  sampled: DerivedProfile["artistTags"]
+): GenreUnit[] {
+  const names = new Set(sampled.map((a) => a.name));
+  const albums = profile.albumTags.filter((a) => names.has(a.artistName));
+  return albums.length > 0 ? albums : artistGenreUnits(sampled);
 }
 
 /**
@@ -365,8 +436,9 @@ async function buildWithinTasteFromProfile(
     config.pickedArtistsCount,
     rng
   );
+  const units = sampledGenreUnits(profile, sampled);
   const vector =
-    sampled.length > 0 ? buildGenreVector(sampled) : profile.genreVector;
+    units.length > 0 ? buildGenreVector(units) : profile.genreVector;
 
   const weightedTags: WeightedTag[] = vector.map((g) => ({
     name: g.tag,

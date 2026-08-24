@@ -55,6 +55,13 @@ export type PromotedAlbumSettings = {
    * deciding whether a two-week surge reads as momentum or as noise.
    */
   momentumRecentBuckets: number;
+  /**
+   * How many of each top artist's albums get a Last.fm tag lookup, most-listened first.
+   * Bounded per artist rather than globally so one dominant artist can't spend the whole
+   * budget; albums past the cut fall back to their Plex agent genre, then to artist tags.
+   * `0` turns the Last.fm album lookups off and leaves genre resolution to Plex.
+   */
+  albumTagsPerArtist: number;
 };
 
 export type PurchaseDecisionSettings = {
@@ -107,6 +114,7 @@ export const DEFAULT_PROMOTED_ALBUM: PromotedAlbumSettings = {
   seriesBucketDays: 7,
   seriesSpanDays: 182,
   momentumRecentBuckets: 4,
+  albumTagsPerArtist: 4,
 };
 
 export const DEFAULT_PURCHASE_DECISION: PurchaseDecisionSettings = {

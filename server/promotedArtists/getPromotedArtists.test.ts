@@ -9,6 +9,9 @@ const mockGetConfigValue = vi.fn();
 
 vi.mock("../promotedAlbum/artistWeights", () => ({
   loadArtistWeights: (...args: unknown[]) => mockLoadArtistWeights(...args),
+  loadSignalBundle: async () => ({ albumEvents: [] }),
+  deriveArtistWeights: () => [],
+  deriveAlbumWeights: () => [],
 }));
 
 vi.mock("../api/lastfm/artists", () => ({
@@ -81,6 +84,7 @@ const baseConfig: PromotedAlbumConfig = {
   seriesBucketDays: 7,
   seriesSpanDays: 182,
   momentumRecentBuckets: 4,
+  albumTagsPerArtist: 4,
 };
 
 const TOP_ARTISTS = [

@@ -53,8 +53,46 @@ describe("getAllAlbumTrackCounts", () => {
         artistKey: "art1",
         artistName: "Andromedik",
         trackCount: 12,
+        genres: [],
       },
     ]);
+  });
+
+  it("carries the album's Plex genres through", async () => {
+    mockFetch.mockResolvedValueOnce(musicSection).mockResolvedValueOnce(
+      okResponse({
+        MediaContainer: {
+          totalSize: 1,
+          Metadata: [
+            {
+              ...rawAlbum(1, 12),
+              Genre: [{ tag: "Drum & Bass" }, { tag: "Electronic" }],
+            },
+          ],
+        },
+      })
+    );
+
+    const result = await getAllAlbumTrackCounts("tok");
+
+    expect(result[0].genres).toEqual(["Drum & Bass", "Electronic"]);
+  });
+
+  it("drops a genre tag with no name rather than storing an empty one", async () => {
+    mockFetch.mockResolvedValueOnce(musicSection).mockResolvedValueOnce(
+      okResponse({
+        MediaContainer: {
+          totalSize: 1,
+          Metadata: [
+            { ...rawAlbum(1, 12), Genre: [{ tag: "" }, { tag: "Rock" }] },
+          ],
+        },
+      })
+    );
+
+    const result = await getAllAlbumTrackCounts("tok");
+
+    expect(result[0].genres).toEqual(["Rock"]);
   });
 
   it("falls back to childCount when leafCount is absent", async () => {

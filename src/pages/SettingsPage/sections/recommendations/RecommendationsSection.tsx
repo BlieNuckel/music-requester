@@ -347,6 +347,15 @@ export default function RecommendationsSection({
         description="Maximum number of tags to use per artist after filtering generic tags."
       />
 
+      <NumberField
+        label="Album Tag Lookups per Artist"
+        value={config.albumTagsPerArtist}
+        onChange={(v) => update("albumTagsPerArtist", v)}
+        min={0}
+        max={20}
+        description="Genre is read from the album rather than the artist, so an acoustic or live record stops dragging a whole artist into the wrong tag. This is how many of each artist's albums get the richer Last.fm tags, most-listened first; the rest use the genres Plex already has. Set to 0 to use Plex genres only."
+      />
+
       <div className="grid grid-cols-2 gap-3">
         <NumberField
           label="Deep Page Min"

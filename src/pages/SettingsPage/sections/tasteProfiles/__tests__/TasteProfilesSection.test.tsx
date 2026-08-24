@@ -22,6 +22,8 @@ function entry(overrides: Partial<ProfileDebugEntry> = {}): ProfileDebugEntry {
       counts: {
         genres: 12,
         artists: 40,
+        taggedAlbums: 96,
+        albumsWithOwnGenre: 71,
         similarSeeds: 3,
         similarCandidates: 36,
         knownAlbums: 210,
@@ -105,6 +107,18 @@ describe("TasteProfilesSection", () => {
     await screen.findByText("lasse");
     expect(screen.getByText("Known albums")).toBeInTheDocument();
     expect(screen.getByText("210")).toBeInTheDocument();
+  });
+
+  it("shows how many stored albums carry a genre of their own", async () => {
+    respond([entry()]);
+
+    render(<TasteProfilesSection />);
+
+    await screen.findByText("lasse");
+    expect(screen.getByText("Tagged albums")).toBeInTheDocument();
+    expect(screen.getByText("96")).toBeInTheDocument();
+    expect(screen.getByText("Own genre")).toBeInTheDocument();
+    expect(screen.getByText("71")).toBeInTheDocument();
   });
 
   it("says so when a user has no derived profile yet", async () => {
