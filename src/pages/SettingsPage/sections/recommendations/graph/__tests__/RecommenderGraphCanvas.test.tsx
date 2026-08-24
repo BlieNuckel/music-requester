@@ -5,16 +5,40 @@ import { DEFAULT_PROMOTED_ALBUM } from "@/context/promotedAlbumDefaults";
 import { makeGraph, makeNode } from "./fixtures";
 
 const graph = makeGraph(
-  [makeNode({ id: "a" }), makeNode({ id: "b", title: "One-hit discount" })],
-  [{ id: "a->b", from: "a", to: "b", kind: "data" }]
+  [
+    makeNode({ id: "a", flow: "spotlight", spendsBudget: true }),
+    makeNode({ id: "b", flow: "spotlight", title: "One-hit discount" }),
+    makeNode({
+      id: "profileDocument",
+      flow: "profile",
+      title: "Stored profile",
+    }),
+  ],
+  [
+    { id: "a->b", from: "a", to: "b", kind: "data" },
+    {
+      id: "profileDocument->a",
+      from: "profileDocument",
+      to: "a",
+      kind: "data",
+    },
+  ]
 );
 
 function renderCanvas() {
   render(
     <RecommenderParamsContext.Provider
-      value={{ config: DEFAULT_PROMOTED_ALBUM, update: vi.fn() }}
+      value={{
+        config: DEFAULT_PROMOTED_ALBUM,
+        update: vi.fn(),
+        openFlow: vi.fn(),
+      }}
     >
-      <RecommenderGraphCanvas graph={graph} layout="authored" />
+      <RecommenderGraphCanvas
+        graph={graph}
+        flow="spotlight"
+        layout={{ direction: "LR", spacing: "comfortable" }}
+      />
     </RecommenderParamsContext.Provider>
   );
 }
@@ -30,6 +54,21 @@ describe("RecommenderGraphCanvas", () => {
     renderCanvas();
 
     expect(screen.getByText("One-hit discount")).toBeInTheDocument();
+  });
+
+  it("introduces the flow it is showing", () => {
+    renderCanvas();
+
+    expect(
+      screen.getByText(/how one set of album recommendations is picked/i)
+    ).toBeInTheDocument();
+  });
+
+  it("draws a node from another flow as a boundary reference", () => {
+    renderCanvas();
+
+    expect(screen.getByText("Stored profile")).toBeInTheDocument();
+    expect(screen.getByText("Open that flow")).toBeInTheDocument();
   });
 
   it("explains what the edge kinds mean", () => {

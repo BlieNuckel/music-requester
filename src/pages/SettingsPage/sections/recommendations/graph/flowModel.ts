@@ -1,14 +1,17 @@
 import { MarkerType } from "@xyflow/react";
-import { layoutPositions, type LayoutMode } from "./autoLayout";
+import { autoLayout } from "./autoLayout";
+import type { LayoutOptions } from "./autoLayout";
+import { selectFlow } from "./flowSelection";
 import type { Edge, Node } from "@xyflow/react";
 import type {
   EdgeKind,
+  FlowId,
   GraphEdge,
   GraphNode,
   RecommenderGraph,
 } from "@shared/recommenderGraph";
 
-export type RecommenderNodeData = { node: GraphNode };
+export type RecommenderNodeData = { node: GraphNode; external: boolean };
 export type RecommenderFlowNode = Node<RecommenderNodeData>;
 
 type EdgeStyle = { stroke: string; dash?: string };
@@ -55,27 +58,28 @@ export function toFlowEdges(edges: GraphEdge[]): Edge[] {
   });
 }
 
-export function toFlowNodes(
-  graph: RecommenderGraph,
-  mode: LayoutMode
-): RecommenderFlowNode[] {
-  const positions = layoutPositions(graph.nodes, graph.edges, mode);
-
-  return graph.nodes.map((node) => ({
-    id: node.id,
-    type: "recommenderNode",
-    position: positions.get(node.id) ?? node.position,
-    data: { node },
-  }));
-}
-
 /**
- * Node positions are dragged for a look at the layout, not saved: they belong to the
- * declared graph, and a per-user copy of them would be one more thing to keep in sync.
+ * One flow as a canvas. Positions are computed per flow rather than globally, so a chart is
+ * laid out against its own depth instead of against the longest chain in the whole app.
+ *
+ * Node positions can be dragged for a look, but are not saved: they belong to the declared
+ * graph, and a per-user copy of them would be one more thing to keep in sync.
  */
 export function buildFlow(
   graph: RecommenderGraph,
-  mode: LayoutMode
+  flow: FlowId,
+  layout?: LayoutOptions
 ): { nodes: RecommenderFlowNode[]; edges: Edge[] } {
-  return { nodes: toFlowNodes(graph, mode), edges: toFlowEdges(graph.edges) };
+  const selection = selectFlow(graph, flow);
+  const positions = autoLayout(selection.nodes, selection.edges, layout);
+
+  return {
+    nodes: selection.nodes.map((entry) => ({
+      id: entry.node.id,
+      type: "recommenderNode",
+      position: positions.get(entry.node.id) ?? { x: 0, y: 0 },
+      data: entry,
+    })),
+    edges: toFlowEdges(selection.edges),
+  };
 }

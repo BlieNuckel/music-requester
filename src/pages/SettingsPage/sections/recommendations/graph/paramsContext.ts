@@ -1,5 +1,6 @@
 import { createContext, useContext } from "react";
 import type { PromotedAlbumSettings } from "@/context/settingsContextDef";
+import type { FlowId } from "@shared/recommenderGraph";
 
 export type ParamKey = keyof PromotedAlbumSettings;
 
@@ -9,6 +10,8 @@ export type ParamValue = string | number | boolean | string[];
 export type RecommenderParams = {
   config: PromotedAlbumSettings;
   update: (key: ParamKey, value: ParamValue) => void;
+  /** Follow a boundary node into the flow that owns it. */
+  openFlow: (flow: FlowId) => void;
 };
 
 /**

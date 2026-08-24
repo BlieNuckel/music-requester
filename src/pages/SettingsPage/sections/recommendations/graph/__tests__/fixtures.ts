@@ -35,7 +35,7 @@ export function makeNode(partial: Partial<GraphNode> = {}): GraphNode {
     scope: "profile",
     kind: "step",
     summary: "Scales each artist's weight by how highly you rate them.",
-    position: { x: 0, y: 0 },
+    flow: "profile",
     params: [ratingWeightParam],
     usesParams: [],
     spendsBudget: false,

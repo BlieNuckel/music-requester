@@ -3,6 +3,7 @@ import { buildRecommenderGraph, profileScopeParamKeys } from "./graph";
 import { NODE_REGISTRY } from "./nodes";
 import { PARAMS, PARAM_KEYS } from "./params";
 import { DEFAULT_PROMOTED_ALBUM } from "../../shared/settingsDefaults";
+import { FLOWS } from "../../shared/recommenderGraph";
 
 /**
  * The knobs `computeConfigHash` (server/db/userProfile.ts) currently folds into a stored
@@ -128,6 +129,35 @@ describe("recommender graph registry", () => {
     expect(structural.length).toBeGreaterThan(0);
     for (const node of structural) {
       expect(node.note).toBeTruthy();
+    }
+  });
+
+  it("puts every node in a declared flow, and leaves no flow empty", () => {
+    const declared = new Set(FLOWS.map((flow) => flow.id));
+    const used = new Set(NODE_REGISTRY.map((node) => node.flow));
+
+    for (const flow of used) expect(declared.has(flow)).toBe(true);
+    for (const flow of declared) expect(used.has(flow)).toBe(true);
+  });
+
+  it("keeps each flow small enough to read as one chart", () => {
+    for (const flow of FLOWS) {
+      const size = NODE_REGISTRY.filter((n) => n.flow === flow.id).length;
+      expect(size).toBeGreaterThan(0);
+      expect(size).toBeLessThanOrEqual(25);
+    }
+  });
+
+  it("connects every flow but the first to something upstream", () => {
+    const flowOf = new Map(NODE_REGISTRY.map((node) => [node.id, node.flow]));
+    const { edges } = buildRecommenderGraph();
+
+    for (const flow of FLOWS.filter((entry) => entry.id !== "ingestion")) {
+      const incoming = edges.filter(
+        (edge) =>
+          flowOf.get(edge.to) === flow.id && flowOf.get(edge.from) !== flow.id
+      );
+      expect(incoming.length).toBeGreaterThan(0);
     }
   });
 

@@ -2,7 +2,12 @@ import { useState } from "react";
 import { Handle, Position } from "@xyflow/react";
 import ParamControl from "./ParamControl";
 import { parseFormula, reachableParamKeys } from "./formula";
-import { NODE_SCOPE_LABELS, SCOPE_EFFECT } from "@shared/recommenderGraph";
+import { useRecommenderParams } from "./paramsContext";
+import {
+  FLOWS,
+  NODE_SCOPE_LABELS,
+  SCOPE_EFFECT,
+} from "@shared/recommenderGraph";
 import type { NodeKind, NodeScope, ParamDef } from "@shared/recommenderGraph";
 import type { RecommenderNodeData } from "./flowModel";
 import type { NodeProps } from "@xyflow/react";
@@ -23,7 +28,7 @@ const KIND_BADGE: Partial<Record<NodeKind, string>> = {
   fallback: "in order",
   quota: "quota",
   store: "stored",
-  source: "external",
+  source: "external service",
   output: "shown",
 };
 
@@ -72,6 +77,33 @@ function UsedParams({ params }: { params: ParamDef[] }) {
           also uses {param.label.toLowerCase()}
         </span>
       ))}
+    </div>
+  );
+}
+
+/**
+ * A node belonging to another flow, drawn as a reference rather than redrawn in full: this
+ * chart needs to say where its inputs come from without becoming the neighbouring chart.
+ */
+export function ExternalCard({ node }: NodeCardProps) {
+  const { openFlow } = useRecommenderParams();
+  const flow = FLOWS.find((entry) => entry.id === node.flow);
+
+  return (
+    <div className="w-[220px] rounded-xl border-2 border-dashed border-gray-400 bg-gray-50 dark:bg-gray-900 px-3 py-2 space-y-1">
+      <span className="block text-[10px] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+        {flow?.label ?? "elsewhere"}
+      </span>
+      <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300">
+        {node.title}
+      </h3>
+      <button
+        type="button"
+        onClick={() => openFlow(node.flow)}
+        className="text-[11px] font-bold text-gray-500 dark:text-gray-400 hover:text-amber-600"
+      >
+        Open that flow
+      </button>
     </div>
   );
 }
@@ -170,7 +202,11 @@ export default function RecommenderNode({
   return (
     <>
       <Handle type="target" position={Position.Left} />
-      <NodeCard node={data.node} />
+      {data.external ? (
+        <ExternalCard node={data.node} />
+      ) : (
+        <NodeCard node={data.node} />
+      )}
       <Handle type="source" position={Position.Right} />
     </>
   );

@@ -17,6 +17,48 @@ import type { PromotedAlbumSettings } from "./settingsDefaults";
 export type NodeScope = "ingest" | "profile" | "pick" | "serve";
 
 /**
+ * Which chart a node belongs to. One canvas holding every node was drawn first and was
+ * unreadable: the flows share nodes but not shape, so they read as one tangle rather than
+ * as four pipelines. A node belongs to exactly one flow and appears in the others as a
+ * boundary reference.
+ */
+export type FlowId = "ingestion" | "profile" | "spotlight" | "artists";
+
+export type FlowDef = {
+  id: FlowId;
+  label: string;
+  /** One sentence on what this flow produces, shown above its canvas. */
+  summary: string;
+};
+
+export const FLOWS: FlowDef[] = [
+  {
+    id: "ingestion",
+    label: "Plex ingestion",
+    summary:
+      "What we read from Plex and how it lands in the append-only signal log. Everything else reads the log, never Plex.",
+  },
+  {
+    id: "profile",
+    label: "Taste profile",
+    summary:
+      "How the log becomes one weighted picture of your taste: what you listen to, how broadly, what it is tagged as, and who sits next to it.",
+  },
+  {
+    id: "spotlight",
+    label: "Spotlight carousel",
+    summary:
+      "How one set of album recommendations is picked, across three sources tried in order until one answers.",
+  },
+  {
+    id: "artists",
+    label: "Promoted artists",
+    summary:
+      "How the artist grid is picked, off the same weighted artist set the profile ranks.",
+  },
+];
+
+/**
  * What a node *is*, which decides how it draws. `repeat`, `fallback` and `quota` exist
  * because the pick flow is not a DAG: drawn as plain steps they would imply that everything
  * runs once, in parallel, which is the opposite of what the code does.
@@ -65,8 +107,7 @@ export type GraphNode = {
   kind: NodeKind;
   /** One or two sentences. The paragraph belongs on the params, not here. */
   summary: string;
-  /** Authored layout position. The canvas can ignore these and lay out automatically. */
-  position: { x: number; y: number };
+  flow: FlowId;
   /** Params this node owns, resolved from the shared definitions. */
   params: ParamDef[];
   /** Params owned elsewhere that also change what this node does. */

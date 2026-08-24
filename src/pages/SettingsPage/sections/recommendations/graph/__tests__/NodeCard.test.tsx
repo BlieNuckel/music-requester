@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { NodeCard } from "../NodeCard";
+import { ExternalCard, NodeCard } from "../NodeCard";
 import { RecommenderParamsContext } from "../paramsContext";
 import { DEFAULT_PROMOTED_ALBUM } from "@/context/promotedAlbumDefaults";
 import { listeningWeightParam, makeNode } from "./fixtures";
@@ -11,13 +11,38 @@ function renderCard(
   config: PromotedAlbumSettings = DEFAULT_PROMOTED_ALBUM
 ) {
   const update = vi.fn();
+  const openFlow = vi.fn();
   render(
-    <RecommenderParamsContext.Provider value={{ config, update }}>
+    <RecommenderParamsContext.Provider value={{ config, update, openFlow }}>
       <NodeCard node={node} />
     </RecommenderParamsContext.Provider>
   );
   return update;
 }
+
+describe("ExternalCard", () => {
+  it("names the flow that owns the node rather than repeating its knobs", () => {
+    const openFlow = vi.fn();
+    render(
+      <RecommenderParamsContext.Provider
+        value={{
+          config: DEFAULT_PROMOTED_ALBUM,
+          update: vi.fn(),
+          openFlow,
+        }}
+      >
+        <ExternalCard node={makeNode({ title: "Stored profile" })} />
+      </RecommenderParamsContext.Provider>
+    );
+
+    expect(screen.getByText("Stored profile")).toBeInTheDocument();
+    expect(screen.getByText("Taste profile")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Rating weight")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /open that flow/i }));
+    expect(openFlow).toHaveBeenCalledWith("profile");
+  });
+});
 
 describe("NodeCard", () => {
   it("renders the node's title, scope and summary", () => {

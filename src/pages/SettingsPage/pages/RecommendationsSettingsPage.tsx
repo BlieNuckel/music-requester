@@ -9,8 +9,9 @@ import RecommenderToolbar from "../sections/recommendations/graph/RecommenderToo
 import { applyParamChange } from "../sections/recommendations/graph/paramCoupling";
 import { RecommenderParamsContext } from "../sections/recommendations/graph/paramsContext";
 import { useRecommenderGraph } from "../sections/recommendations/graph/useRecommenderGraph";
-import type { LayoutMode } from "../sections/recommendations/graph/autoLayout";
 import type { RecommenderView } from "../sections/recommendations/graph/RecommenderToolbar";
+import type { LayoutOptions } from "../sections/recommendations/graph/autoLayout";
+import type { FlowId } from "@shared/recommenderGraph";
 
 /**
  * The canvas pulls in the flow library, which is a third of the app's bundle and is only
@@ -38,7 +39,11 @@ export default function RecommendationsSettingsPage() {
   );
   const { data: graph, loading, error } = useRecommenderGraph();
   const [view, setView] = useState<RecommenderView>("graph");
-  const [layout, setLayout] = useState<LayoutMode>("authored");
+  const [flow, setFlow] = useState<FlowId>("spotlight");
+  const [layout, setLayout] = useState<LayoutOptions>({
+    direction: "LR",
+    spacing: "comfortable",
+  });
 
   const config = fields.promotedAlbum ?? DEFAULT_PROMOTED_ALBUM;
   const params = useMemo(
@@ -48,6 +53,7 @@ export default function RecommendationsSettingsPage() {
         key: Parameters<typeof applyParamChange>[1],
         value: Parameters<typeof applyParamChange>[2]
       ) => updateField("promotedAlbum", applyParamChange(config, key, value)),
+      openFlow: setFlow,
     }),
     [config, updateField]
   );
@@ -66,6 +72,8 @@ export default function RecommendationsSettingsPage() {
       <RecommenderToolbar
         view={view}
         onViewChange={setView}
+        flow={flow}
+        onFlowChange={setFlow}
         layout={layout}
         onLayoutChange={setLayout}
         onReset={() =>
@@ -85,10 +93,14 @@ export default function RecommendationsSettingsPage() {
             <Suspense
               fallback={<Skeleton className="h-[420px] w-full rounded-xl" />}
             >
-              <RecommenderGraphCanvas graph={graph} layout={layout} />
+              <RecommenderGraphCanvas
+                graph={graph}
+                flow={flow}
+                layout={layout}
+              />
             </Suspense>
           ) : (
-            <RecommenderListView graph={graph} />
+            <RecommenderListView graph={graph} flow={flow} />
           )}
         </RecommenderParamsContext.Provider>
       )}

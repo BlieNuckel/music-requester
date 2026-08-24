@@ -1,8 +1,12 @@
 import ParamControl from "./ParamControl";
 import { NODE_SCOPE_LABELS, SCOPE_EFFECT } from "@shared/recommenderGraph";
-import type { GraphNode, RecommenderGraph } from "@shared/recommenderGraph";
+import type {
+  FlowId,
+  GraphNode,
+  RecommenderGraph,
+} from "@shared/recommenderGraph";
 
-type RecommenderListViewProps = { graph: RecommenderGraph };
+type RecommenderListViewProps = { graph: RecommenderGraph; flow: FlowId };
 
 function NodeSection({ node }: { node: GraphNode }) {
   return (
@@ -49,8 +53,19 @@ function NodeSection({ node }: { node: GraphNode }) {
  */
 export default function RecommenderListView({
   graph,
+  flow,
 }: RecommenderListViewProps) {
-  const withParams = graph.nodes.filter((node) => node.params.length > 0);
+  const withParams = graph.nodes.filter(
+    (node) => node.flow === flow && node.params.length > 0
+  );
+
+  if (withParams.length === 0) {
+    return (
+      <p className="text-sm text-gray-500 dark:text-gray-400">
+        Nothing to configure in this flow.
+      </p>
+    );
+  }
 
   return (
     <div className="space-y-4">

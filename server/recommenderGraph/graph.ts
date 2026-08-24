@@ -57,7 +57,7 @@ function toNode(
     scope: node.scope,
     kind: node.kind,
     summary: node.summary,
-    position: node.position,
+    flow: node.flow,
     params: (node.params ?? []).map((key) => PARAMS[key]),
     usesParams: toUsedParams(node, owners),
     spendsBudget: node.spendsBudget ?? false,

@@ -39,32 +39,43 @@ describe("toFlowEdges", () => {
 describe("buildFlow", () => {
   const graph = makeGraph(
     [
-      makeNode({ id: "a", position: { x: 5, y: 6 } }),
-      makeNode({ id: "b", position: { x: 7, y: 8 } }),
+      makeNode({ id: "a", flow: "spotlight" }),
+      makeNode({ id: "b", flow: "spotlight", title: "One-hit discount" }),
+      makeNode({ id: "outside", flow: "profile" }),
     ],
-    [{ id: "a->b", from: "a", to: "b", kind: "data" }]
+    [
+      { id: "a->b", from: "a", to: "b", kind: "data" },
+      { id: "outside->a", from: "outside", to: "a", kind: "data" },
+    ]
   );
 
   it("renders every node through the custom node type", () => {
-    const flow = buildFlow(graph, "authored");
+    const flow = buildFlow(graph, "spotlight");
 
-    expect(flow.nodes).toHaveLength(2);
+    expect(flow.nodes).toHaveLength(3);
     expect(flow.nodes.every((node) => node.type === "recommenderNode")).toBe(
       true
     );
   });
 
-  it("passes the node itself through as flow data", () => {
-    const flow = buildFlow(graph, "authored");
+  it("passes the node and its boundary status through as flow data", () => {
+    const flow = buildFlow(graph, "spotlight");
+    const outside = flow.nodes.find((node) => node.id === "outside");
 
     expect(flow.nodes[0].data.node.title).toBe("Rating boost");
+    expect(outside?.data.external).toBe(true);
   });
 
-  it("honours the authored positions, and replaces them in auto mode", () => {
-    expect(buildFlow(graph, "authored").nodes[0].position).toEqual({
-      x: 5,
-      y: 6,
-    });
-    expect(buildFlow(graph, "auto").nodes[0].position).toEqual({ x: 0, y: 0 });
+  it("lays the flow out from its own edges", () => {
+    const flow = buildFlow(graph, "spotlight");
+    const [a, b] = ["a", "b"].map((id) =>
+      flow.nodes.find((node) => node.id === id)!
+    );
+
+    expect(b.position.x).toBeGreaterThan(a.position.x);
+  });
+
+  it("leaves out the flows it was not asked for", () => {
+    expect(buildFlow(graph, "artists").nodes).toEqual([]);
   });
 });

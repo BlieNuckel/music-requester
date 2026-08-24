@@ -2,13 +2,15 @@ import { useMemo } from "react";
 import { Background, Controls, MiniMap, ReactFlow } from "@xyflow/react";
 import RecommenderNode from "./NodeCard";
 import { buildFlow } from "./flowModel";
-import type { LayoutMode } from "./autoLayout";
-import type { RecommenderGraph } from "@shared/recommenderGraph";
+import { FLOWS } from "@shared/recommenderGraph";
+import type { LayoutOptions } from "./autoLayout";
+import type { FlowId, RecommenderGraph } from "@shared/recommenderGraph";
 import "@xyflow/react/dist/style.css";
 
 type RecommenderGraphCanvasProps = {
   graph: RecommenderGraph;
-  layout: LayoutMode;
+  flow: FlowId;
+  layout: LayoutOptions;
 };
 
 type LegendEntry = { label: string; className: string; note: string };
@@ -33,7 +35,11 @@ const LEGEND: LegendEntry[] = [
   },
 ];
 
-function Legend({ graph }: { graph: RecommenderGraph }) {
+function Legend({ graph, flow }: Omit<RecommenderGraphCanvasProps, "layout">) {
+  const spendsBudget = graph.nodes.some(
+    (node) => node.flow === flow && node.spendsBudget
+  );
+
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-gray-500 dark:text-gray-400">
       {LEGEND.map((entry) => (
@@ -43,37 +49,52 @@ function Legend({ graph }: { graph: RecommenderGraph }) {
           <span>{entry.note}</span>
         </span>
       ))}
-      {graph.budgets.map((budget) => (
-        <span key={budget.id} title={budget.description}>
-          <span className="font-bold">budget</span> {budget.amount}{" "}
-          {budget.label.toLowerCase()}, shared by every source
-        </span>
-      ))}
+      <span className="flex items-center gap-2">
+        <span className="w-6 border-t-2 border-dashed border-gray-400" />
+        <span>dashed box: a step owned by another flow</span>
+      </span>
+      {spendsBudget &&
+        graph.budgets.map((budget) => (
+          <span key={budget.id} title={budget.description}>
+            <span className="font-bold">budget</span> {budget.amount}{" "}
+            {budget.label.toLowerCase()}, shared by every source
+          </span>
+        ))}
     </div>
   );
 }
 
 /**
- * The pipeline as a pan-and-zoom canvas. Nodes are uncontrolled, so dragging one is free
- * and switching layout remounts the flow with fresh positions: dragged positions are for
- * looking at the graph, not something the app remembers.
+ * One flow as a pan-and-zoom canvas. Nodes are uncontrolled, so dragging one is free and
+ * switching flow remounts the canvas with a fresh layout: dragged positions are for looking
+ * at the graph, not something the app remembers.
  */
 export default function RecommenderGraphCanvas({
   graph,
+  flow,
   layout,
 }: RecommenderGraphCanvasProps) {
-  const flow = useMemo(() => buildFlow(graph, layout), [graph, layout]);
+  const built = useMemo(
+    () => buildFlow(graph, flow, layout),
+    [graph, flow, layout]
+  );
+  const definition = FLOWS.find((entry) => entry.id === flow);
 
   return (
     <div className="space-y-3">
+      {definition && (
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          {definition.summary}
+        </p>
+      )}
       <div
         data-testid="recommender-canvas"
         className="h-[70vh] min-h-[420px] rounded-xl border-2 border-black overflow-hidden bg-gray-50 dark:bg-gray-900"
       >
         <ReactFlow
-          key={layout}
-          defaultNodes={flow.nodes}
-          defaultEdges={flow.edges}
+          key={`${flow}:${layout.direction}:${layout.spacing}`}
+          defaultNodes={built.nodes}
+          defaultEdges={built.edges}
           nodeTypes={nodeTypes}
           fitView
           minZoom={0.1}
@@ -84,7 +105,7 @@ export default function RecommenderGraphCanvas({
           <MiniMap pannable zoomable />
         </ReactFlow>
       </div>
-      <Legend graph={graph} />
+      <Legend graph={graph} flow={flow} />
     </div>
   );
 }

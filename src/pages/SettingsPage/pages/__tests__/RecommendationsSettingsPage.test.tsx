@@ -20,7 +20,7 @@ const graph: RecommenderGraph = {
       scope: "profile",
       kind: "step",
       summary: "Scales each artist's weight by how highly you rate them.",
-      position: { x: 0, y: 0 },
+      flow: "spotlight",
       params: [
         {
           key: "ratingWeight",
@@ -112,17 +112,43 @@ describe("RecommendationsSettingsPage", () => {
     );
   });
 
-  it("offers the layout switch only where there is a layout", async () => {
+  it("shows one flow at a time and switches between them", async () => {
     render(<RecommendationsSettingsPage />);
     await screen.findByText("Rating boost");
 
-    expect(screen.getByRole("group", { name: "Layout" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Plex ingestion" }));
+
+    expect(screen.queryByText("Rating boost")).not.toBeInTheDocument();
+    expect(screen.getByText(/what we read from plex/i)).toBeInTheDocument();
+  });
+
+  it("offers layout controls only where there is a layout", async () => {
+    render(<RecommendationsSettingsPage />);
+    await screen.findByText("Rating boost");
+
+    expect(
+      screen.getByRole("group", { name: "Direction" })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Spacing" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "List" }));
 
     expect(
-      screen.queryByRole("group", { name: "Layout" })
+      screen.queryByRole("group", { name: "Direction" })
     ).not.toBeInTheDocument();
+  });
+
+  it("relays the graph out when the direction changes", async () => {
+    render(<RecommendationsSettingsPage />);
+    await screen.findByText("Rating boost");
+
+    fireEvent.click(screen.getByRole("button", { name: "Down" }));
+
+    expect(screen.getByRole("button", { name: "Down" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    expect(screen.getByText("Rating boost")).toBeInTheDocument();
   });
 
   it("resets every knob to its default", async () => {

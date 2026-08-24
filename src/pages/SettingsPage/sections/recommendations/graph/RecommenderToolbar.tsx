@@ -1,12 +1,16 @@
-import type { LayoutMode } from "./autoLayout";
+import { FLOWS } from "@shared/recommenderGraph";
+import type { LayoutDirection, LayoutOptions, Spacing } from "./autoLayout";
+import type { FlowId } from "@shared/recommenderGraph";
 
 export type RecommenderView = "graph" | "list";
 
 type RecommenderToolbarProps = {
   view: RecommenderView;
   onViewChange: (view: RecommenderView) => void;
-  layout: LayoutMode;
-  onLayoutChange: (layout: LayoutMode) => void;
+  flow: FlowId;
+  onFlowChange: (flow: FlowId) => void;
+  layout: LayoutOptions;
+  onLayoutChange: (layout: LayoutOptions) => void;
   onReset: () => void;
 };
 
@@ -17,9 +21,20 @@ const VIEWS: Choice<RecommenderView>[] = [
   { value: "list", label: "List" },
 ];
 
-const LAYOUTS: Choice<LayoutMode>[] = [
-  { value: "authored", label: "Authored" },
-  { value: "auto", label: "Auto" },
+const FLOW_CHOICES: Choice<FlowId>[] = FLOWS.map((flow) => ({
+  value: flow.id,
+  label: flow.label,
+}));
+
+const DIRECTIONS: Choice<LayoutDirection>[] = [
+  { value: "LR", label: "Across" },
+  { value: "TB", label: "Down" },
+];
+
+const SPACINGS: Choice<Spacing>[] = [
+  { value: "compact", label: "Tight" },
+  { value: "comfortable", label: "Normal" },
+  { value: "roomy", label: "Loose" },
 ];
 
 function Switch<T extends string>({
@@ -66,6 +81,8 @@ function Switch<T extends string>({
 export default function RecommenderToolbar({
   view,
   onViewChange,
+  flow,
+  onFlowChange,
   layout,
   onLayoutChange,
   onReset,
@@ -73,18 +90,32 @@ export default function RecommenderToolbar({
   return (
     <div className="flex flex-wrap items-center gap-3">
       <Switch
+        label="Flow"
+        choices={FLOW_CHOICES}
+        value={flow}
+        onChange={onFlowChange}
+      />
+      <Switch
         label="View"
         choices={VIEWS}
         value={view}
         onChange={onViewChange}
       />
       {view === "graph" && (
-        <Switch
-          label="Layout"
-          choices={LAYOUTS}
-          value={layout}
-          onChange={onLayoutChange}
-        />
+        <>
+          <Switch
+            label="Direction"
+            choices={DIRECTIONS}
+            value={layout.direction}
+            onChange={(direction) => onLayoutChange({ ...layout, direction })}
+          />
+          <Switch
+            label="Spacing"
+            choices={SPACINGS}
+            value={layout.spacing}
+            onChange={(spacing) => onLayoutChange({ ...layout, spacing })}
+          />
+        </>
       )}
       <button
         type="button"

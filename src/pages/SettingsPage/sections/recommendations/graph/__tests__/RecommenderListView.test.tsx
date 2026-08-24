@@ -7,11 +7,12 @@ import type { RecommenderGraph } from "@shared/recommenderGraph";
 
 function renderList(graph: RecommenderGraph) {
   const update = vi.fn();
+  const openFlow = vi.fn();
   render(
     <RecommenderParamsContext.Provider
-      value={{ config: DEFAULT_PROMOTED_ALBUM, update }}
+      value={{ config: DEFAULT_PROMOTED_ALBUM, update, openFlow }}
     >
-      <RecommenderListView graph={graph} />
+      <RecommenderListView graph={graph} flow="profile" />
     </RecommenderParamsContext.Provider>
   );
   return update;
