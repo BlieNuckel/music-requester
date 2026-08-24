@@ -71,7 +71,7 @@ const baseConfig: PromotedAlbumConfig = {
 const plexArtists = [
   { name: "Radiohead", viewCount: 100, thumb: "", genres: [] },
 ];
-const tags = [{ name: "alternative", count: 100 }];
+const tags = [{ name: "alternative rock", count: 100 }];
 
 async function createUser(token: string): Promise<number> {
   const ds = getDataSource();

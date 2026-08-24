@@ -49,6 +49,13 @@ const SAMPLE_PROFILE: DerivedProfile = {
       weight: 30,
       source: "lastfm-album" as const,
       tags: [{ name: "shoegaze", count: 100 }],
+      otherTags: [
+        {
+          name: "british",
+          canonical: "United Kingdom",
+          class: "region" as const,
+        },
+      ],
     },
   ],
   artistSeries: [

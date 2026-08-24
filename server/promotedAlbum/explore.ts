@@ -20,6 +20,7 @@ import type {
   TraceSelectionReason,
   TraceSimilarArtist,
 } from "./types";
+import { classifyTag, foldTag } from "../genres/classify";
 
 type GraphSeedArtist = { name: string; viewCount: number };
 
@@ -55,6 +56,12 @@ async function safeTopTags(
   }
 }
 
+/**
+ * The genres two artists are compared on. Canonicalized, and non-genres left out entirely:
+ * `jaccard` measures set overlap on exact strings, so before this a seed tagged `DnB` and a
+ * candidate tagged `Drum and bass` scored zero overlap and the explore/personal split was
+ * being decided by which spelling each artist happened to attract.
+ */
 function buildGenreSet(
   tags: { name: string; count: number }[],
   genericTags: Set<string>,
@@ -62,7 +69,9 @@ function buildGenreSet(
 ): Set<string> {
   const set = new Set<string>();
   for (const t of tags) {
-    const name = t.name.toLowerCase();
+    const classified = classifyTag(t.name);
+    if (classified.class !== "genre") continue;
+    const name = foldTag(classified.canonical);
     if (genericTags.has(name)) continue;
     set.add(name);
     if (set.size >= limit) break;

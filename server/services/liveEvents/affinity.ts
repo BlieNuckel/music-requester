@@ -2,6 +2,7 @@ import { parseDerivedProfile } from "../../db/userProfile";
 import { getUserProfile } from "../../db/userProfile";
 import { parseGenres } from "../../db/liveEvents";
 import type { HydratedLiveEvent } from "../../db/liveEvents";
+import { classifyTag, foldTag } from "../../genres/classify";
 
 export type GenreWeights = Map<string, number>;
 
@@ -13,10 +14,15 @@ export type ScoredEvent = {
 
 /**
  * JamBase uses slugs (`indie-rock`), the taste profile uses Last.fm-style tags
- * (`indie rock`). Comparing them needs one shape.
+ * (`indie rock`). Comparing them needs one shape, and it has to be the *same* shape the
+ * genre vector was canonicalized with or an event tagged `drum-and-bass` will not match a
+ * profile that stores `drum and bass`.
  */
 export function normalizeGenre(genre: string): string {
-  return genre.toLowerCase().replace(/[-_]+/g, " ").trim();
+  const classified = classifyTag(genre);
+  return foldTag(
+    classified.class === "genre" ? classified.canonical : classified.name
+  );
 }
 
 /**

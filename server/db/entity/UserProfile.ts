@@ -61,6 +61,19 @@ export type ProfileArtistSeries = {
 export type AlbumTagSource = "lastfm-album" | "plex-album" | "artist";
 
 /**
+ * A tag that is not a genre, kept rather than discarded. `region` and `era` are recognised
+ * classes and candidates for their own input vectors later; `unknown` is what neither
+ * vocabulary claimed. None of them carry weight into {@link DerivedProfile.genreVector} —
+ * a recommender that draws `nigerian` and asks Last.fm for albums tagged with it is
+ * recommending by nationality while believing it recommends by genre.
+ */
+export type ClassifiedOtherTag = {
+  name: string;
+  canonical: string;
+  class: "region" | "era" | "unknown";
+};
+
+/**
  * One album's genres and the weight they carry into {@link DerivedProfile.genreVector}.
  *
  * `weight` is the album's *share of its artist's weight*, not an independent measure:
@@ -78,7 +91,10 @@ export type ProfileAlbumTags = {
   artistName: string;
   weight: number;
   source: AlbumTagSource;
+  /** Genres only, under their canonical names. This is what the vector is summed from. */
   tags: { name: string; count: number }[];
+  /** What the album was also tagged with, gathered across every source tried. */
+  otherTags: ClassifiedOtherTag[];
 };
 
 export type DerivedProfile = {
@@ -111,7 +127,7 @@ export type DerivedProfile = {
   explorationHistory: { albums: string[]; artists: string[] };
 };
 
-export const DERIVED_PROFILE_SCHEMA_VERSION = 8;
+export const DERIVED_PROFILE_SCHEMA_VERSION = 9;
 
 /** Derived, regenerable cache — one row per user, the whole profile as one document. */
 @Entity("user_profiles")

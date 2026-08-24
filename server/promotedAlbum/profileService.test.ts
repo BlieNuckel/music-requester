@@ -80,8 +80,20 @@ const plexArtists = [
   { name: "Bjork", viewCount: 50, thumb: "", genres: [] },
 ];
 
+/** Real MusicBrainz genres — the classifier drops anything the vocabulary doesn't know. */
+const GENRE_FIXTURES = [
+  "shoegaze",
+  "dream pop",
+  "techno",
+  "drone",
+  "ambient",
+  "jazz",
+  "funk",
+  "disco",
+];
+
 const tags = [
-  { name: "alternative", count: 100 },
+  { name: "alternative rock", count: 100 },
   { name: "seen live", count: 90 },
 ];
 
@@ -145,7 +157,7 @@ describe("regenerateProfile", () => {
 
     expect(profile!.genreVector).toEqual([
       {
-        tag: "alternative",
+        tag: "alternative rock",
         weight: 100 + 50,
         fromArtists: ["Radiohead", "Bjork"],
       },
@@ -154,12 +166,12 @@ describe("regenerateProfile", () => {
       {
         name: "Radiohead",
         viewCount: 100,
-        tags: [{ name: "alternative", count: 100 }],
+        tags: [{ name: "alternative rock", count: 100 }],
       },
       {
         name: "Bjork",
         viewCount: 50,
-        tags: [{ name: "alternative", count: 100 }],
+        tags: [{ name: "alternative rock", count: 100 }],
       },
     ]);
 
@@ -216,7 +228,14 @@ describe("regenerateProfile", () => {
     }));
     mockDeriveArtistWeights.mockReturnValue(many);
     mockGetArtistTopTags.mockImplementation((name: string) =>
-      Promise.resolve([{ name: `tag-${name}`, count: 100 }])
+      Promise.resolve([
+        {
+          name: GENRE_FIXTURES[
+            Number(name.split(" ")[1]) % GENRE_FIXTURES.length
+          ],
+          count: 100,
+        },
+      ])
     );
 
     const profile = await regenerateProfile(userId, "token");
@@ -438,17 +457,17 @@ describe("regenerateProfile album genres", () => {
       albumRollup("unplugged", "Radiohead", 1),
     ]);
     mockGetArtistTopTags.mockResolvedValue([
-      { name: "alternative", count: 100 },
+      { name: "alternative rock", count: 100 },
     ]);
     mockAlbumEvents.mockReturnValue(
-      catalogueEvent([{ ratingKey: "unplugged", genres: ["Acoustic"] }])
+      catalogueEvent([{ ratingKey: "unplugged", genres: ["Folk"] }])
     );
 
     const profile = await regenerateProfile(userId, "token");
 
     expect(profile!.genreVector).toEqual([
-      { tag: "alternative", weight: 90, fromArtists: ["Radiohead"] },
-      { tag: "Acoustic", weight: 10, fromArtists: ["Radiohead"] },
+      { tag: "alternative rock", weight: 90, fromArtists: ["Radiohead"] },
+      { tag: "folk", weight: 10, fromArtists: ["Radiohead"] },
     ]);
   });
 
@@ -512,13 +531,13 @@ describe("regenerateProfile album genres", () => {
     ]);
     mockDeriveAlbumWeights.mockReturnValue([]);
     mockGetArtistTopTags.mockResolvedValue([
-      { name: "alternative", count: 100 },
+      { name: "alternative rock", count: 100 },
     ]);
 
     const profile = await regenerateProfile(userId, "token");
 
     expect(profile!.genreVector).toEqual([
-      { tag: "alternative", weight: 100, fromArtists: ["Radiohead"] },
+      { tag: "alternative rock", weight: 100, fromArtists: ["Radiohead"] },
     ]);
     expect(profile!.albumTags[0]).toMatchObject({
       albumKey: "",
@@ -573,7 +592,11 @@ describe("loadFreshProfile", () => {
     const profile = await loadFreshProfile(userId, "token", baseConfig);
 
     expect(profile!.genreVector).toEqual([
-      { tag: "alternative", weight: 150, fromArtists: ["Radiohead", "Bjork"] },
+      {
+        tag: "alternative rock",
+        weight: 150,
+        fromArtists: ["Radiohead", "Bjork"],
+      },
     ]);
   });
 

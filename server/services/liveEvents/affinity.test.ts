@@ -35,6 +35,17 @@ describe("normalizeGenre", () => {
     expect(normalizeGenre("Indie_Rock")).toBe("indie rock");
     expect(normalizeGenre("  Shoegaze ")).toBe("shoegaze");
   });
+
+  it("canonicalizes so an event and a profile spelled differently still match", () => {
+    // JamBase says drum-and-bass, the profile stores what MusicBrainz calls it. Before the
+    // shared vocabulary these were two strings and the event silently failed to match.
+    expect(normalizeGenre("drum-and-bass")).toBe(normalizeGenre("DnB"));
+    expect(normalizeGenre("hip-hop")).toBe(normalizeGenre("rap"));
+  });
+
+  it("leaves a slug no vocabulary claims alone rather than inventing a match", () => {
+    expect(normalizeGenre("tribute-act")).toBe("tribute act");
+  });
 });
 
 describe("buildGenreWeights", () => {

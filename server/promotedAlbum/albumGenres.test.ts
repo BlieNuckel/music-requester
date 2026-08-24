@@ -11,6 +11,7 @@ import {
   buildAlbumTags,
   fetchAlbumTags,
   plexAlbumGenres,
+  partitionTags,
   resolveAlbumTags,
   selectTagTargets,
   type AlbumTag,
@@ -221,9 +222,58 @@ describe("fetchAlbumTags", () => {
   });
 });
 
+describe("partitionTags", () => {
+  it("splits genres from everything else", () => {
+    const result = partitionTags(
+      [
+        { name: "shoegaze", count: 100 },
+        { name: "nigerian", count: 90 },
+        { name: "2024", count: 80 },
+        { name: "rutracker", count: 70 },
+      ],
+      "A",
+      options()
+    );
+
+    expect(result.genres).toEqual([{ name: "shoegaze", count: 100 }]);
+    expect(result.other.map((t) => [t.canonical, t.class])).toEqual([
+      ["Nigeria", "region"],
+      ["2024", "era"],
+      ["rutracker", "unknown"],
+    ]);
+  });
+
+  it("leaves a generic tag out of both halves", () => {
+    const result = partitionTags(
+      [
+        { name: "seen live", count: 100 },
+        { name: "shoegaze", count: 90 },
+      ],
+      "A",
+      options({ genericTags: new Set(["seen live"]) })
+    );
+
+    expect(result.genres).toEqual([{ name: "shoegaze", count: 90 }]);
+    expect(result.other).toEqual([]);
+  });
+
+  it("gives a genre no weight twice when two spellings arrive", () => {
+    const result = partitionTags(
+      [
+        { name: "DnB", count: 100 },
+        { name: "drum n bass", count: 60 },
+      ],
+      "A",
+      options()
+    );
+
+    expect(result.genres).toEqual([{ name: "drum and bass", count: 100 }]);
+  });
+});
+
 describe("resolveAlbumTags", () => {
   const target = album("alb1", "A", 4);
-  const fallback: AlbumTag[] = [{ name: "artist tag", count: 100 }];
+  const fallback: AlbumTag[] = [{ name: "shoegaze", count: 100 }];
 
   it("prefers the Last.fm album tags", () => {
     const resolved = resolveAlbumTags(
@@ -234,28 +284,24 @@ describe("resolveAlbumTags", () => {
       options()
     );
 
-    expect(resolved).toEqual({
-      source: "lastfm-album",
-      tags: [{ name: "post-rock", count: 100 }],
-    });
+    expect(resolved.source).toBe("lastfm-album");
+    expect(resolved.tags).toEqual([{ name: "post-rock", count: 100 }]);
   });
 
   it("falls back to the Plex album genre, weighting each genre equally", () => {
     const resolved = resolveAlbumTags(
       target,
       new Map(),
-      new Map([["alb1", ["Folk", "Acoustic"]]]),
+      new Map([["alb1", ["Folk", "Bluegrass"]]]),
       fallback,
       options()
     );
 
-    expect(resolved).toEqual({
-      source: "plex-album",
-      tags: [
-        { name: "Folk", count: 1 },
-        { name: "Acoustic", count: 1 },
-      ],
-    });
+    expect(resolved.source).toBe("plex-album");
+    expect(resolved.tags).toEqual([
+      { name: "folk", count: 1 },
+      { name: "bluegrass", count: 1 },
+    ]);
   });
 
   it("falls back to the artist's tags when the album has none of its own", () => {
@@ -267,19 +313,130 @@ describe("resolveAlbumTags", () => {
       options()
     );
 
-    expect(resolved).toEqual({ source: "artist", tags: fallback });
+    expect(resolved.source).toBe("artist");
+    expect(resolved.tags).toEqual(fallback);
   });
 
-  it("skips a source that survives generic filtering with nothing left", () => {
+  it("canonicalizes a genre to its MusicBrainz spelling", () => {
     const resolved = resolveAlbumTags(
       target,
-      new Map([["alb1", [{ name: "seen live", count: 100 }]]]),
-      new Map([["alb1", ["Rock"]]]),
+      new Map([["alb1", [{ name: "DnB", count: 100 }]]]),
+      new Map(),
       fallback,
-      options({ genericTags: new Set(["seen live"]) })
+      options()
+    );
+
+    expect(resolved.tags).toEqual([{ name: "drum and bass", count: 100 }]);
+  });
+
+  it("counts two spellings of one genre once, at the higher count", () => {
+    const resolved = resolveAlbumTags(
+      target,
+      new Map([
+        [
+          "alb1",
+          [
+            { name: "Hip-Hop", count: 40 },
+            { name: "hip hop", count: 90 },
+          ],
+        ],
+      ]),
+      new Map(),
+      fallback,
+      options()
+    );
+
+    expect(resolved.tags).toEqual([{ name: "hip hop", count: 90 }]);
+  });
+
+  it("skips a source carrying no genre at all", () => {
+    const resolved = resolveAlbumTags(
+      target,
+      new Map([["alb1", [{ name: "nigerian", count: 100 }]]]),
+      new Map([["alb1", ["Folk"]]]),
+      fallback,
+      options()
     );
 
     expect(resolved.source).toBe("plex-album");
+  });
+
+  it("keeps the non-genre tags of every source it tried, not just the winner", () => {
+    const resolved = resolveAlbumTags(
+      target,
+      new Map([["alb1", [{ name: "nigerian", count: 100 }]]]),
+      new Map([["alb1", ["Folk"]]]),
+      fallback,
+      options()
+    );
+
+    expect(resolved.other).toEqual([
+      { name: "nigerian", canonical: "Nigeria", class: "region" },
+    ]);
+  });
+
+  it("classifies a year tag as era rather than dropping it", () => {
+    const resolved = resolveAlbumTags(
+      target,
+      new Map([
+        [
+          "alb1",
+          [
+            { name: "2024", count: 100 },
+            { name: "post-rock", count: 80 },
+          ],
+        ],
+      ]),
+      new Map(),
+      fallback,
+      options()
+    );
+
+    expect(resolved.tags).toEqual([{ name: "post-rock", count: 80 }]);
+    expect(resolved.other).toEqual([
+      { name: "2024", canonical: "2024", class: "era" },
+    ]);
+  });
+
+  it("drops a tag that is just the artist's own name", () => {
+    const resolved = resolveAlbumTags(
+      album("alb1", "Mac Miller", 4),
+      new Map([
+        [
+          "alb1",
+          [
+            { name: "Mac Miller", count: 100 },
+            { name: "jazz rap", count: 90 },
+          ],
+        ],
+      ]),
+      new Map(),
+      fallback,
+      options()
+    );
+
+    expect(resolved.tags).toEqual([{ name: "jazz rap", count: 90 }]);
+    expect(resolved.other).toEqual([]);
+  });
+
+  it("blocks a generic tag by its canonical name, whichever spelling arrived", () => {
+    const resolved = resolveAlbumTags(
+      target,
+      new Map([
+        [
+          "alb1",
+          [
+            { name: "rap", count: 100 },
+            { name: "jazz", count: 90 },
+          ],
+        ],
+      ]),
+      new Map(),
+      fallback,
+      options({ genericTags: new Set(["hip hop"]) })
+    );
+
+    expect(resolved.tags).toEqual([{ name: "jazz", count: 90 }]);
   });
 
   it("keeps at most tagsPerAlbum tags", () => {
@@ -301,92 +458,6 @@ describe("resolveAlbumTags", () => {
     );
 
     expect(resolved.tags.map((t) => t.name)).toEqual(["shoegaze", "dream pop"]);
-  });
-
-  it("drops a tag carrying a year, which is a release date rather than a genre", () => {
-    const resolved = resolveAlbumTags(
-      target,
-      new Map([
-        [
-          "alb1",
-          [
-            { name: "2024", count: 100 },
-            { name: "best of 2011", count: 90 },
-            { name: "post-rock", count: 80 },
-          ],
-        ],
-      ]),
-      new Map(),
-      fallback,
-      options()
-    );
-
-    expect(resolved.tags.map((t) => t.name)).toEqual(["post-rock"]);
-  });
-
-  it("drops a tag that is just the artist's own name", () => {
-    const resolved = resolveAlbumTags(
-      album("alb1", "Mac Miller", 4),
-      new Map([
-        [
-          "alb1",
-          [
-            { name: "Mac Miller", count: 100 },
-            { name: "jazz rap", count: 90 },
-          ],
-        ],
-      ]),
-      new Map(),
-      fallback,
-      options()
-    );
-
-    expect(resolved.tags.map((t) => t.name)).toEqual(["jazz rap"]);
-  });
-
-  it("falls through to the next source when only dated tags survive", () => {
-    const resolved = resolveAlbumTags(
-      target,
-      new Map([["alb1", [{ name: "2024", count: 100 }]]]),
-      new Map([["alb1", ["Folk"]]]),
-      fallback,
-      options()
-    );
-
-    expect(resolved.source).toBe("plex-album");
-  });
-
-  it("keeps a real genre that merely looks numeric-adjacent", () => {
-    const resolved = resolveAlbumTags(
-      target,
-      new Map([["alb1", [{ name: "trip-hop", count: 100 }]]]),
-      new Map(),
-      fallback,
-      options()
-    );
-
-    expect(resolved.tags.map((t) => t.name)).toEqual(["trip-hop"]);
-  });
-
-  it("leaves the artist fallback untouched by the album-only filters", () => {
-    const resolved = resolveAlbumTags(
-      album("alb1", "Mac Miller", 4),
-      new Map(),
-      new Map(),
-      [
-        { name: "2024", count: 100 },
-        { name: "Mac Miller", count: 90 },
-      ],
-      options()
-    );
-
-    expect(resolved).toEqual({
-      source: "artist",
-      tags: [
-        { name: "2024", count: 100 },
-        { name: "Mac Miller", count: 90 },
-      ],
-    });
   });
 });
 
@@ -429,6 +500,7 @@ describe("buildAlbumTags", () => {
         weight: 100,
         source: "artist",
         tags: [{ name: "rock", count: 100 }],
+        otherTags: [],
       },
     ]);
   });
@@ -469,7 +541,7 @@ describe("buildAlbumTags", () => {
     const vector = buildGenreVector(built);
     expect(vector).toEqual([
       { tag: "metal", weight: 90, fromArtists: ["A"] },
-      { tag: "Folk", weight: 10, fromArtists: ["A"] },
+      { tag: "folk", weight: 10, fromArtists: ["A"] },
     ]);
   });
 
