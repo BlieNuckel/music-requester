@@ -1,0 +1,62 @@
+import ParamControl from "./ParamControl";
+import { NODE_SCOPE_LABELS, SCOPE_EFFECT } from "@shared/recommenderGraph";
+import type { GraphNode, RecommenderGraph } from "@shared/recommenderGraph";
+
+type RecommenderListViewProps = { graph: RecommenderGraph };
+
+function NodeSection({ node }: { node: GraphNode }) {
+  return (
+    <section className="space-y-3 pt-4 border-t-2 border-dashed border-gray-200 dark:border-gray-700">
+      <div>
+        <div className="flex items-baseline gap-2">
+          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">
+            {node.title}
+          </h3>
+          <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+            {NODE_SCOPE_LABELS[node.scope]}
+          </span>
+        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          {node.summary}
+        </p>
+      </div>
+
+      {node.params.map((param) => (
+        <div key={param.key} className="space-y-1">
+          {param.kind !== "boolean" && (
+            <span className="block text-sm font-medium text-gray-600 dark:text-gray-400">
+              {param.label}
+            </span>
+          )}
+          <ParamControl param={param} variant="block" />
+          <p className="text-xs text-gray-400 dark:text-gray-500">
+            {param.description}
+          </p>
+        </div>
+      ))}
+
+      <p className="text-[11px] font-medium text-gray-400 dark:text-gray-500">
+        {SCOPE_EFFECT[node.scope]}
+      </p>
+    </section>
+  );
+}
+
+/**
+ * The same knobs as the canvas, from the same registry, as a plain form. A pan-and-zoom
+ * canvas is the wrong tool on a narrow screen or with a screen reader, and keeping a second
+ * hand-written list is what this whole change is getting rid of.
+ */
+export default function RecommenderListView({
+  graph,
+}: RecommenderListViewProps) {
+  const withParams = graph.nodes.filter((node) => node.params.length > 0);
+
+  return (
+    <div className="space-y-4">
+      {withParams.map((node) => (
+        <NodeSection key={node.id} node={node} />
+      ))}
+    </div>
+  );
+}

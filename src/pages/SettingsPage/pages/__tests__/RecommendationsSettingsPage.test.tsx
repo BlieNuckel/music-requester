@@ -1,0 +1,151 @@
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import RecommendationsSettingsPage from "../RecommendationsSettingsPage";
+import { DEFAULT_PROMOTED_ALBUM } from "@/context/promotedAlbumDefaults";
+import type { AppSettings } from "@/context/settingsContextDef";
+import type { RecommenderGraph } from "@shared/recommenderGraph";
+
+const { mockUseSettings } = vi.hoisted(() => ({
+  mockUseSettings: vi.fn(),
+}));
+
+vi.mock("@/context/useSettings", () => ({
+  useSettings: () => mockUseSettings(),
+}));
+
+const graph: RecommenderGraph = {
+  nodes: [
+    {
+      id: "ratingMultiplier",
+      title: "Rating boost",
+      scope: "profile",
+      kind: "step",
+      summary: "Scales each artist's weight by how highly you rate them.",
+      position: { x: 0, y: 0 },
+      params: [
+        {
+          key: "ratingWeight",
+          kind: "int",
+          label: "Rating weight",
+          min: 0,
+          max: 3,
+          step: 0.1,
+          formula: "weight x (1 + {ratingWeight} x stars/10)",
+          description: "How much your ratings boost an artist.",
+        },
+      ],
+      usesParams: [],
+      spendsBudget: false,
+    },
+  ],
+  edges: [],
+  budgets: [],
+};
+
+const savePartialSettings = vi.fn().mockResolvedValue(undefined);
+
+function setSettings(isLoading = false) {
+  mockUseSettings.mockReturnValue({
+    settings: { promotedAlbum: DEFAULT_PROMOTED_ALBUM } as AppSettings,
+    isLoading,
+    savePartialSettings,
+  });
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  setSettings();
+  globalThis.fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => graph,
+  }) as unknown as typeof fetch;
+});
+
+describe("RecommendationsSettingsPage", () => {
+  it("renders the graph once it loads", async () => {
+    render(<RecommendationsSettingsPage />);
+
+    expect(await screen.findByText("Rating boost")).toBeInTheDocument();
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "/api/recommendations/graph",
+      expect.anything()
+    );
+  });
+
+  it("waits for the settings before rendering anything editable", () => {
+    setSettings(true);
+    render(<RecommendationsSettingsPage />);
+
+    expect(screen.queryByText("Rating boost")).not.toBeInTheDocument();
+  });
+
+  it("saves an edit made on a node", async () => {
+    render(<RecommendationsSettingsPage />);
+
+    fireEvent.change(await screen.findByLabelText("Rating weight"), {
+      target: { value: "2" },
+    });
+
+    await waitFor(() =>
+      expect(savePartialSettings).toHaveBeenCalledWith({
+        promotedAlbum: { ...DEFAULT_PROMOTED_ALBUM, ratingWeight: 2 },
+      })
+    );
+  });
+
+  it("switches to the list view and keeps editing the same knob", async () => {
+    render(<RecommendationsSettingsPage />);
+    await screen.findByText("Rating boost");
+
+    fireEvent.click(screen.getByRole("button", { name: "List" }));
+
+    expect(
+      screen.getByText(/how much your ratings boost/i)
+    ).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Rating weight"), {
+      target: { value: "1" },
+    });
+
+    await waitFor(() =>
+      expect(savePartialSettings).toHaveBeenCalledWith({
+        promotedAlbum: { ...DEFAULT_PROMOTED_ALBUM, ratingWeight: 1 },
+      })
+    );
+  });
+
+  it("offers the layout switch only where there is a layout", async () => {
+    render(<RecommendationsSettingsPage />);
+    await screen.findByText("Rating boost");
+
+    expect(screen.getByRole("group", { name: "Layout" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "List" }));
+
+    expect(
+      screen.queryByRole("group", { name: "Layout" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("resets every knob to its default", async () => {
+    render(<RecommendationsSettingsPage />);
+    await screen.findByText("Rating boost");
+
+    fireEvent.click(screen.getByRole("button", { name: /reset to defaults/i }));
+
+    await waitFor(() =>
+      expect(savePartialSettings).toHaveBeenCalledWith({
+        promotedAlbum: DEFAULT_PROMOTED_ALBUM,
+      })
+    );
+  });
+
+  it("says so when the graph cannot be loaded", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue({ ok: false }) as unknown as typeof fetch;
+    render(<RecommendationsSettingsPage />);
+
+    expect(
+      await screen.findByText(/could not load the recommender graph/i)
+    ).toBeInTheDocument();
+  });
+});
