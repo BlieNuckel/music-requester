@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import RecommendationsSettingsPage from "../RecommendationsSettingsPage";
 import { DEFAULT_PROMOTED_ALBUM } from "@/context/promotedAlbumDefaults";
 import type { AppSettings } from "@/context/settingsContextDef";
+import { ThemeContext } from "@/context/themeContextDef";
 import type { RecommenderGraph } from "@shared/recommenderGraph";
 
 const { mockUseSettings } = vi.hoisted(() => ({
@@ -60,9 +61,24 @@ beforeEach(() => {
   }) as unknown as typeof fetch;
 });
 
+function renderPage() {
+  return render(
+    <ThemeContext.Provider
+      value={{
+        theme: "dark",
+        actualTheme: "dark",
+        setTheme: vi.fn(),
+        isLoading: false,
+      }}
+    >
+      <RecommendationsSettingsPage />
+    </ThemeContext.Provider>
+  );
+}
+
 describe("RecommendationsSettingsPage", () => {
   it("renders the graph once it loads", async () => {
-    render(<RecommendationsSettingsPage />);
+    renderPage();
 
     expect(await screen.findByText("Rating boost")).toBeInTheDocument();
     expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -73,13 +89,13 @@ describe("RecommendationsSettingsPage", () => {
 
   it("waits for the settings before rendering anything editable", () => {
     setSettings(true);
-    render(<RecommendationsSettingsPage />);
+    renderPage();
 
     expect(screen.queryByText("Rating boost")).not.toBeInTheDocument();
   });
 
   it("saves an edit made on a node", async () => {
-    render(<RecommendationsSettingsPage />);
+    renderPage();
 
     fireEvent.change(await screen.findByLabelText("Rating weight"), {
       target: { value: "2" },
@@ -93,7 +109,7 @@ describe("RecommendationsSettingsPage", () => {
   });
 
   it("switches to the list view and keeps editing the same knob", async () => {
-    render(<RecommendationsSettingsPage />);
+    renderPage();
     await screen.findByText("Rating boost");
 
     fireEvent.click(screen.getByRole("button", { name: "List" }));
@@ -113,7 +129,7 @@ describe("RecommendationsSettingsPage", () => {
   });
 
   it("shows one flow at a time and switches between them", async () => {
-    render(<RecommendationsSettingsPage />);
+    renderPage();
     await screen.findByText("Rating boost");
 
     fireEvent.click(screen.getByRole("button", { name: "Plex ingestion" }));
@@ -123,7 +139,7 @@ describe("RecommendationsSettingsPage", () => {
   });
 
   it("offers layout controls only where there is a layout", async () => {
-    render(<RecommendationsSettingsPage />);
+    renderPage();
     await screen.findByText("Rating boost");
 
     expect(
@@ -139,7 +155,7 @@ describe("RecommendationsSettingsPage", () => {
   });
 
   it("relays the graph out when the direction changes", async () => {
-    render(<RecommendationsSettingsPage />);
+    renderPage();
     await screen.findByText("Rating boost");
 
     fireEvent.click(screen.getByRole("button", { name: "Down" }));
@@ -152,7 +168,7 @@ describe("RecommendationsSettingsPage", () => {
   });
 
   it("resets every knob to its default", async () => {
-    render(<RecommendationsSettingsPage />);
+    renderPage();
     await screen.findByText("Rating boost");
 
     fireEvent.click(screen.getByRole("button", { name: /reset to defaults/i }));
@@ -168,7 +184,7 @@ describe("RecommendationsSettingsPage", () => {
     globalThis.fetch = vi
       .fn()
       .mockResolvedValue({ ok: false }) as unknown as typeof fetch;
-    render(<RecommendationsSettingsPage />);
+    renderPage();
 
     expect(
       await screen.findByText(/could not load the recommender graph/i)

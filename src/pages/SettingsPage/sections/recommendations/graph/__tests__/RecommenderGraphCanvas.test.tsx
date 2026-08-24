@@ -3,6 +3,8 @@ import RecommenderGraphCanvas from "../RecommenderGraphCanvas";
 import { RecommenderParamsContext } from "../paramsContext";
 import { DEFAULT_PROMOTED_ALBUM } from "@/context/promotedAlbumDefaults";
 import { makeGraph, makeNode } from "./fixtures";
+import { ThemeContext } from "@/context/themeContextDef";
+import type { ActualTheme } from "@/context/themeContextDef";
 
 const graph = makeGraph(
   [
@@ -25,21 +27,30 @@ const graph = makeGraph(
   ]
 );
 
-function renderCanvas() {
-  render(
-    <RecommenderParamsContext.Provider
+function renderCanvas(actualTheme: ActualTheme = "light") {
+  return render(
+    <ThemeContext.Provider
       value={{
-        config: DEFAULT_PROMOTED_ALBUM,
-        update: vi.fn(),
-        openFlow: vi.fn(),
+        theme: actualTheme,
+        actualTheme,
+        setTheme: vi.fn(),
+        isLoading: false,
       }}
     >
-      <RecommenderGraphCanvas
-        graph={graph}
-        flow="spotlight"
-        layout={{ direction: "LR", spacing: "comfortable" }}
-      />
-    </RecommenderParamsContext.Provider>
+      <RecommenderParamsContext.Provider
+        value={{
+          config: DEFAULT_PROMOTED_ALBUM,
+          update: vi.fn(),
+          openFlow: vi.fn(),
+        }}
+      >
+        <RecommenderGraphCanvas
+          graph={graph}
+          flow="spotlight"
+          layout={{ direction: "LR", spacing: "comfortable" }}
+        />
+      </RecommenderParamsContext.Provider>
+    </ThemeContext.Provider>
   );
 }
 
@@ -69,6 +80,12 @@ describe("RecommenderGraphCanvas", () => {
 
     expect(screen.getByText("Stored profile")).toBeInTheDocument();
     expect(screen.getByText("Open that flow")).toBeInTheDocument();
+  });
+
+  it("follows the app's theme rather than staying light", () => {
+    const { container } = renderCanvas("dark");
+
+    expect(container.querySelector(".react-flow.dark")).toBeInTheDocument();
   });
 
   it("explains what the edge kinds mean", () => {

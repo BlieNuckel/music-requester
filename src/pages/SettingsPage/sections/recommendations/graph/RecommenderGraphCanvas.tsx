@@ -2,8 +2,10 @@ import { useMemo } from "react";
 import { Background, Controls, MiniMap, ReactFlow } from "@xyflow/react";
 import RecommenderNode from "./NodeCard";
 import { buildFlow } from "./flowModel";
+import { useTheme } from "@/context/useTheme";
 import { FLOWS } from "@shared/recommenderGraph";
 import type { LayoutOptions } from "./autoLayout";
+import type { ActualTheme } from "@/context/themeContextDef";
 import type { FlowId, RecommenderGraph } from "@shared/recommenderGraph";
 import "@xyflow/react/dist/style.css";
 
@@ -16,6 +18,15 @@ type RecommenderGraphCanvasProps = {
 type LegendEntry = { label: string; className: string; note: string };
 
 const nodeTypes = { recommenderNode: RecommenderNode };
+
+/**
+ * The flow library's `colorMode` themes the canvas chrome, but the minimap paints its own
+ * surface and would stay a white rectangle in the dark theme.
+ */
+const MINIMAP_COLORS: Record<ActualTheme, Record<string, string>> = {
+  light: { bg: "#f9fafb", mask: "rgba(15, 23, 42, 0.08)", node: "#d1d5db" },
+  dark: { bg: "#111827", mask: "rgba(0, 0, 0, 0.45)", node: "#4b5563" },
+};
 
 const LEGEND: LegendEntry[] = [
   {
@@ -79,6 +90,8 @@ export default function RecommenderGraphCanvas({
     [graph, flow, layout]
   );
   const definition = FLOWS.find((entry) => entry.id === flow);
+  const { actualTheme } = useTheme();
+  const minimap = MINIMAP_COLORS[actualTheme];
 
   return (
     <div className="space-y-3">
@@ -96,13 +109,20 @@ export default function RecommenderGraphCanvas({
           defaultNodes={built.nodes}
           defaultEdges={built.edges}
           nodeTypes={nodeTypes}
+          colorMode={actualTheme}
           fitView
           minZoom={0.1}
           proOptions={{ hideAttribution: false }}
         >
           <Background />
           <Controls />
-          <MiniMap pannable zoomable />
+          <MiniMap
+            pannable
+            zoomable
+            bgColor={minimap.bg}
+            maskColor={minimap.mask}
+            nodeColor={minimap.node}
+          />
         </ReactFlow>
       </div>
       <Legend graph={graph} flow={flow} />
