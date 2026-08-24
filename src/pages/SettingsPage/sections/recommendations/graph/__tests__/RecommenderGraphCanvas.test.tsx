@@ -5,6 +5,7 @@ import { DEFAULT_PROMOTED_ALBUM } from "@/context/promotedAlbumDefaults";
 import { makeGraph, makeNode } from "./fixtures";
 import { ThemeContext } from "@/context/themeContextDef";
 import type { ActualTheme } from "@/context/themeContextDef";
+import type { LayoutOptions } from "../autoLayout";
 
 const graph = makeGraph(
   [
@@ -27,7 +28,10 @@ const graph = makeGraph(
   ]
 );
 
-function renderCanvas(actualTheme: ActualTheme = "light") {
+function renderCanvas(
+  actualTheme: ActualTheme = "light",
+  layout: LayoutOptions = { direction: "LR", spacing: "comfortable" }
+) {
   return render(
     <ThemeContext.Provider
       value={{
@@ -47,7 +51,7 @@ function renderCanvas(actualTheme: ActualTheme = "light") {
         <RecommenderGraphCanvas
           graph={graph}
           flow="spotlight"
-          layout={{ direction: "LR", spacing: "comfortable" }}
+          layout={layout}
         />
       </RecommenderParamsContext.Provider>
     </ThemeContext.Provider>
@@ -86,6 +90,20 @@ describe("RecommenderGraphCanvas", () => {
     const { container } = renderCanvas("dark");
 
     expect(container.querySelector(".react-flow.dark")).toBeInTheDocument();
+  });
+
+  it("moves the connectors to the facing sides when the flow runs downwards", () => {
+    const { container } = renderCanvas("light", {
+      direction: "TB",
+      spacing: "comfortable",
+    });
+
+    expect(
+      container.querySelector(".react-flow__handle-bottom")
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(".react-flow__handle-left")
+    ).not.toBeInTheDocument();
   });
 
   it("explains what the edge kinds mean", () => {

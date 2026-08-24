@@ -1,6 +1,6 @@
-import { MarkerType } from "@xyflow/react";
+import { MarkerType, Position } from "@xyflow/react";
 import { autoLayout } from "./autoLayout";
-import type { LayoutOptions } from "./autoLayout";
+import type { LayoutDirection, LayoutOptions } from "./autoLayout";
 import { selectFlow } from "./flowSelection";
 import type { Edge, Node } from "@xyflow/react";
 import type {
@@ -11,7 +11,12 @@ import type {
   RecommenderGraph,
 } from "@shared/recommenderGraph";
 
-export type RecommenderNodeData = { node: GraphNode; external: boolean };
+export type RecommenderNodeData = {
+  node: GraphNode;
+  external: boolean;
+  /** Which way this flow runs, so a card attaches its edges on the facing sides. */
+  direction: LayoutDirection;
+};
 export type RecommenderFlowNode = Node<RecommenderNodeData>;
 
 type EdgeStyle = { stroke: string; dash?: string };
@@ -23,6 +28,15 @@ const EDGE_STYLES: Record<EdgeKind, EdgeStyle> = {
 };
 
 const ORDINALS = ["1st", "2nd", "3rd", "4th", "5th"];
+
+/** Where a card's edges leave and arrive, following the direction the flow is laid out in. */
+export const HANDLE_SIDES: Record<
+  LayoutDirection,
+  { source: Position; target: Position }
+> = {
+  LR: { source: Position.Right, target: Position.Left },
+  TB: { source: Position.Bottom, target: Position.Top },
+};
 
 /**
  * A fallback edge's label says where it sits in the order, because the order is the whole
@@ -72,13 +86,17 @@ export function buildFlow(
 ): { nodes: RecommenderFlowNode[]; edges: Edge[] } {
   const selection = selectFlow(graph, flow);
   const positions = autoLayout(selection.nodes, selection.edges, layout);
+  const direction = layout?.direction ?? "LR";
+  const sides = HANDLE_SIDES[direction];
 
   return {
     nodes: selection.nodes.map((entry) => ({
       id: entry.node.id,
       type: "recommenderNode",
       position: positions.get(entry.node.id) ?? { x: 0, y: 0 },
-      data: entry,
+      sourcePosition: sides.source,
+      targetPosition: sides.target,
+      data: { ...entry, direction },
     })),
     edges: toFlowEdges(selection.edges),
   };

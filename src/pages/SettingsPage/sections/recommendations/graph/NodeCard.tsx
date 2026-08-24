@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Handle, Position } from "@xyflow/react";
+import { Handle } from "@xyflow/react";
 import ParamControl from "./ParamControl";
 import { parseFormula, reachableParamKeys } from "./formula";
 import { useRecommenderParams } from "./paramsContext";
@@ -9,6 +9,7 @@ import {
   SCOPE_EFFECT,
 } from "@shared/recommenderGraph";
 import type { NodeKind, NodeScope, ParamDef } from "@shared/recommenderGraph";
+import { HANDLE_SIDES } from "./flowModel";
 import type { RecommenderNodeData } from "./flowModel";
 import type { NodeProps } from "@xyflow/react";
 
@@ -199,15 +200,17 @@ export function NodeCard({ node }: NodeCardProps) {
 export default function RecommenderNode({
   data,
 }: NodeProps & { data: RecommenderNodeData }) {
+  const sides = HANDLE_SIDES[data.direction];
+
   return (
     <>
-      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={sides.target} />
       {data.external ? (
         <ExternalCard node={data.node} />
       ) : (
         <NodeCard node={data.node} />
       )}
-      <Handle type="source" position={Position.Right} />
+      <Handle type="source" position={sides.source} />
     </>
   );
 }

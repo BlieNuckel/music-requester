@@ -75,6 +75,31 @@ describe("buildFlow", () => {
     expect(b.position.x).toBeGreaterThan(a.position.x);
   });
 
+  it("attaches edges to the sides that face along the flow", () => {
+    const across = buildFlow(graph, "spotlight", {
+      direction: "LR",
+      spacing: "comfortable",
+    }).nodes[0];
+    const down = buildFlow(graph, "spotlight", {
+      direction: "TB",
+      spacing: "comfortable",
+    }).nodes[0];
+
+    expect(across.sourcePosition).toBe("right");
+    expect(across.targetPosition).toBe("left");
+    expect(down.sourcePosition).toBe("bottom");
+    expect(down.targetPosition).toBe("top");
+  });
+
+  it("tells each card which way the flow runs", () => {
+    expect(
+      buildFlow(graph, "spotlight", {
+        direction: "TB",
+        spacing: "compact",
+      }).nodes[0].data.direction
+    ).toBe("TB");
+  });
+
   it("leaves out the flows it was not asked for", () => {
     expect(buildFlow(graph, "artists").nodes).toEqual([]);
   });
