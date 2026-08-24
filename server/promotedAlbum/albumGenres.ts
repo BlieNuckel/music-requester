@@ -149,6 +149,39 @@ const keepTags = (
   tags.filter((t) => !genericTags.has(t.name.toLowerCase())).slice(0, limit);
 
 /**
+ * A tag carrying a year — `2011`, `best of 2011`, `2024 albums` — is a release date or a
+ * listing, never a genre. Last.fm's album vocabulary is full of both, and they rank high
+ * enough to take a top-five slot outright. No real genre name contains a year.
+ */
+const isDatedTag = (name: string): boolean => /\b(19|20)\d{2}\b/.test(name);
+
+/**
+ * The same filtering plus the two noise classes that only appear once tags are read per
+ * album: the release year, and the artist's own name. Both are common enough in Last.fm's
+ * album vocabulary to win a top-five slot outright, and an album left with nothing after
+ * this falls through to the next source rather than contributing a year to the genre vector.
+ */
+const keepAlbumTags = (
+  tags: AlbumTag[],
+  artistName: string,
+  genericTags: Set<string>,
+  limit: number
+): AlbumTag[] => {
+  const self = artistName.trim().toLowerCase();
+  return tags
+    .filter((t) => {
+      const name = t.name.trim().toLowerCase();
+      return (
+        name.length > 0 &&
+        !genericTags.has(name) &&
+        !isDatedTag(name) &&
+        name !== self
+      );
+    })
+    .slice(0, limit);
+};
+
+/**
  * Plex genres carried as tags. Every genre gets the same count because Plex ranks nothing —
  * an equal count makes {@link normalizedTagWeights} split the album's weight evenly, which
  * is the only honest reading of an unordered list.
@@ -171,8 +204,9 @@ export function resolveAlbumTags(
 ): ResolvedTags {
   const { genericTags, tagsPerAlbum } = options;
 
-  const fromLastfm = keepTags(
+  const fromLastfm = keepAlbumTags(
     lastfm.get(album.albumKey) ?? [],
+    album.artistName,
     genericTags,
     tagsPerAlbum
   );
@@ -180,8 +214,9 @@ export function resolveAlbumTags(
     return { tags: fromLastfm, source: "lastfm-album" };
   }
 
-  const fromPlex = keepTags(
+  const fromPlex = keepAlbumTags(
     asTags(plex.get(album.albumKey) ?? []),
+    album.artistName,
     genericTags,
     tagsPerAlbum
   );

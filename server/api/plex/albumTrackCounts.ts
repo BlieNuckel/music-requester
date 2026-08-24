@@ -9,6 +9,12 @@ export type AlbumTrackCount = {
   title: string;
   artistKey: string;
   artistName: string;
+  /**
+   * Tracks the album holds, or `0` where the section listing reports neither `leafCount`
+   * nor `childCount` — which some PMS versions never do. `0` therefore means "unknown",
+   * not "empty"; every consumer treats the count as a floor that other evidence can only
+   * push up, so an unknown one is inert rather than wrong.
+   */
   trackCount: number;
   /** Plex agent genres for the album; empty when the section's agent supplies none. */
   genres: string[];
@@ -58,7 +64,6 @@ async function fetchPage(
   const metadata = container?.Metadata ?? [];
   const items = metadata
     .filter((raw) => raw.parentTitle || raw.parentRatingKey)
-    .filter((raw) => trackCountOf(raw) > 0)
     .map(mapAlbum);
 
   return {
@@ -95,10 +100,15 @@ async function walkSection(
 
 /**
  * Every album across every music section, with how many tracks it holds and the genres the
- * Plex agent tagged it with. This is what tells an artist the library only has one track by
- * apart from an artist whose other eleven tracks were never played — the played-track sweep
+ * Plex agent tagged it with. The count is what tells an artist the library only has one track
+ * by apart from an artist whose other eleven tracks were never played — the played-track sweep
  * sees those two identically. Sections are walked sequentially so a server with several music
  * libraries doesn't get several concurrent sweeps.
+ *
+ * An album whose count the listing doesn't report is kept rather than dropped. Some PMS
+ * versions omit `leafCount` from the section listing entirely (it is only on the per-album
+ * read), and dropping those albums returned an empty sweep on such a server — taking the
+ * genres down with it, which the listing *does* carry.
  */
 export async function getAllAlbumTrackCounts(
   plexToken: string

@@ -118,14 +118,13 @@ describe("getAllAlbumTrackCounts", () => {
     expect(result[0].trackCount).toBe(7);
   });
 
-  it("drops albums with no track count or no artist attribution", async () => {
+  it("drops an album with no artist attribution", async () => {
     mockFetch.mockResolvedValueOnce(musicSection).mockResolvedValueOnce(
       okResponse({
         MediaContainer: {
-          totalSize: 3,
+          totalSize: 2,
           Metadata: [
             rawAlbum(1, 5),
-            { ratingKey: "2", title: "Countless", parentTitle: "Andromedik" },
             { ratingKey: "3", title: "Orphan", leafCount: 4 },
           ],
         },
@@ -135,6 +134,38 @@ describe("getAllAlbumTrackCounts", () => {
     const result = await getAllAlbumTrackCounts("tok");
 
     expect(result.map((a) => a.ratingKey)).toEqual(["1"]);
+  });
+
+  it("keeps an album whose track count the listing does not report", async () => {
+    mockFetch.mockResolvedValueOnce(musicSection).mockResolvedValueOnce(
+      okResponse({
+        MediaContainer: {
+          totalSize: 1,
+          Metadata: [
+            {
+              ratingKey: "2",
+              title: "Countless",
+              parentRatingKey: "art1",
+              parentTitle: "Andromedik",
+              Genre: [{ tag: "DnB" }],
+            },
+          ],
+        },
+      })
+    );
+
+    const result = await getAllAlbumTrackCounts("tok");
+
+    expect(result).toEqual([
+      {
+        ratingKey: "2",
+        title: "Countless",
+        artistKey: "art1",
+        artistName: "Andromedik",
+        trackCount: 0,
+        genres: ["DnB"],
+      },
+    ]);
   });
 
   it("walks the whole listing rather than stopping at unplayed albums", async () => {
