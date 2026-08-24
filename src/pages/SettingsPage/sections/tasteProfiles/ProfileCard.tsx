@@ -32,6 +32,7 @@ function profileFacts(entry: ProfileDebugEntry) {
     { label: "Artists", value: profile.counts.artists },
     { label: "Tagged albums", value: profile.counts.taggedAlbums },
     { label: "Own genre", value: profile.counts.albumsWithOwnGenre },
+    { label: "No genre", value: profile.counts.genrelessAlbums },
     { label: "Similar seeds", value: profile.counts.similarSeeds },
     { label: "Similar candidates", value: profile.counts.similarCandidates },
     { label: "Known albums", value: profile.counts.knownAlbums },
@@ -109,6 +110,24 @@ export default function ProfileCard({ entry }: ProfileCardProps) {
                     className="text-xs px-2 py-0.5 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200"
                   >
                     {genre.tag} · {Math.round(genre.weight)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {profile && profile.topOtherTags.length > 0 && (
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">
+                Recognised but not a genre
+              </p>
+              <ul className="flex flex-wrap gap-1.5">
+                {profile.topOtherTags.map((other) => (
+                  <li
+                    key={other.tag}
+                    className="text-xs px-2 py-0.5 rounded-lg border border-sky-300 dark:border-sky-700 bg-sky-100 dark:bg-sky-900/30 text-sky-800 dark:text-sky-200"
+                  >
+                    {other.tag} · {other.tagClass} · {Math.round(other.weight)}
                   </li>
                 ))}
               </ul>

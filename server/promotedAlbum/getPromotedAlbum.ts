@@ -209,6 +209,10 @@ function groupAlbumsByArtist(
   return byArtist;
 }
 
+/** Whether a set of units can put anything in the vector at all. */
+const carriesGenres = (units: GenreUnit[]): boolean =>
+  units.some((unit) => unit.tags.length > 0);
+
 /**
  * One artist's tag contributions as they actually reached the vector — summed across that
  * artist's albums, because the album is what carries the weight now. `rawCount` is the
@@ -222,7 +226,7 @@ function tagContributions(
   albums: GenreUnit[] | undefined
 ): TraceArtistTagContribution[] {
   const units: GenreUnit[] =
-    albums && albums.length > 0
+    albums && carriesGenres(albums)
       ? albums
       : [
           {
@@ -308,6 +312,10 @@ function sampleArtists(
  * What this pick's vector is summed from: the sampled artists' albums, since that is where
  * genre attaches. The artists themselves stand in for a profile stored before album tags
  * existed — the vector that comes out is then exactly the one that profile was built from.
+ *
+ * The test is whether the albums carry genres, not whether they exist. An album resolving to
+ * no genre is still stored — it carries what else we know about it — and counting those rows
+ * as a usable sample would suppress the artist fallback and hand back an empty vector.
  */
 function sampledGenreUnits(
   profile: DerivedProfile,
@@ -315,7 +323,7 @@ function sampledGenreUnits(
 ): GenreUnit[] {
   const names = new Set(sampled.map((a) => a.name));
   const albums = profile.albumTags.filter((a) => names.has(a.artistName));
-  return albums.length > 0 ? albums : artistGenreUnits(sampled);
+  return carriesGenres(albums) ? albums : artistGenreUnits(sampled);
 }
 
 /**
@@ -436,9 +444,8 @@ async function buildWithinTasteFromProfile(
     config.pickedArtistsCount,
     rng
   );
-  const units = sampledGenreUnits(profile, sampled);
-  const vector =
-    units.length > 0 ? buildGenreVector(units) : profile.genreVector;
+  const sampledVector = buildGenreVector(sampledGenreUnits(profile, sampled));
+  const vector = sampledVector.length > 0 ? sampledVector : profile.genreVector;
 
   const weightedTags: WeightedTag[] = vector.map((g) => ({
     name: g.tag,

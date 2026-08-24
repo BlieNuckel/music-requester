@@ -20,7 +20,7 @@ import {
   mergeMeasuredEpisodes,
   reconstructMeasuredEpisodes,
 } from "./listenSessions";
-import type { UserProfile } from "../../db/entity/UserProfile";
+import type { DerivedProfile, UserProfile } from "../../db/entity/UserProfile";
 import type { UserSignalEvent } from "../../db/entity/UserSignalEvent";
 
 /** Sizes of the derived document, which is what "is it building" comes down to. */
@@ -31,6 +31,11 @@ export type ProfileDebugCounts = {
   taggedAlbums: number;
   /** How many of those resolved to genres of their own rather than inheriting the artist's. */
   albumsWithOwnGenre: number;
+  /**
+   * Albums carrying weight but no genre — the classifier recognised nothing, and neither did
+   * the artist fallback. This is what genre cleaning costs: their weight reaches no tag.
+   */
+  genrelessAlbums: number;
   similarSeeds: number;
   similarCandidates: number;
   knownAlbums: number;
@@ -49,6 +54,8 @@ export type ProfileDebugProfile = {
   stale: boolean;
   counts: ProfileDebugCounts;
   topGenres: { tag: string; weight: number }[];
+  /** What the non-genre residue consists of, so the cost above is legible rather than a number. */
+  topOtherTags: { tag: string; weight: number; tagClass: string }[];
   topArtists: { name: string; viewCount: number }[];
 };
 
@@ -174,6 +181,40 @@ function foldPlexState(events: UserSignalEvent[]): ProfileDebugPlex {
   };
 }
 
+/**
+ * The non-genre tags by the album weight sitting behind them. An album counts once per
+ * distinct canonical, so an album tagged `nigerian` and `2024` lends its weight to both —
+ * this measures which residue is worth a second look, not a distribution that sums to
+ * anything.
+ */
+function topOtherTags(
+  albumTags: DerivedProfile["albumTags"]
+): ProfileDebugProfile["topOtherTags"] {
+  const byCanonical = new Map<
+    string,
+    { tag: string; weight: number; tagClass: string }
+  >();
+
+  for (const album of albumTags) {
+    for (const tag of new Map(
+      album.otherTags.map((other) => [other.canonical, other])
+    ).values()) {
+      const existing = byCanonical.get(tag.canonical);
+      if (existing) existing.weight += album.weight;
+      else
+        byCanonical.set(tag.canonical, {
+          tag: tag.canonical || tag.name,
+          weight: album.weight,
+          tagClass: tag.class,
+        });
+    }
+  }
+
+  return [...byCanonical.values()]
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, TOP_LIST_SIZE);
+}
+
 function summarizeProfile(
   row: UserProfile,
   currentConfigHash: string
@@ -198,6 +239,9 @@ function summarizeProfile(
       albumsWithOwnGenre: profile.albumTags.filter(
         (album) => album.source !== "artist"
       ).length,
+      genrelessAlbums: profile.albumTags.filter(
+        (album) => album.tags.length === 0
+      ).length,
       similarSeeds: profile.similarGraph.length,
       similarCandidates: profile.similarGraph.reduce(
         (sum, seed) => sum + seed.candidates.length,
@@ -210,6 +254,7 @@ function summarizeProfile(
     topGenres: profile.genreVector
       .slice(0, TOP_LIST_SIZE)
       .map(({ tag, weight }) => ({ tag, weight })),
+    topOtherTags: topOtherTags(profile.albumTags),
     topArtists: [...profile.artistTags]
       .sort((a, b) => b.viewCount - a.viewCount)
       .slice(0, TOP_LIST_SIZE)

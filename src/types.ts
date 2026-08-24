@@ -269,6 +269,7 @@ export interface ProfileDebugCounts {
   artists: number;
   taggedAlbums: number;
   albumsWithOwnGenre: number;
+  genrelessAlbums: number;
   similarSeeds: number;
   similarCandidates: number;
   knownAlbums: number;
@@ -286,6 +287,7 @@ export interface ProfileDebugProfile {
   stale: boolean;
   counts: ProfileDebugCounts;
   topGenres: { tag: string; weight: number }[];
+  topOtherTags: { tag: string; weight: number; tagClass: string }[];
   topArtists: { name: string; viewCount: number }[];
 }
 

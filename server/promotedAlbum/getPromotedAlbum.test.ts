@@ -1161,6 +1161,41 @@ describe("getPromotedAlbums", () => {
       expect(wt(albums[0]).tag).toBe("alternative rock");
     });
 
+    it("falls back to artist tags when every stored album resolved to no genre", async () => {
+      mockDeriveArtistWeights.mockReturnValue(plexArtists);
+      mockGetArtistTopTags.mockResolvedValue(tags);
+      mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
+      mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
+
+      await seedProfile(userId);
+      const row = await getDataSource().query(
+        "SELECT profile_json FROM user_profiles WHERE user_id = ?",
+        [userId]
+      );
+      const stored = JSON.parse(
+        (row as { profile_json: string }[])[0].profile_json
+      );
+      const genreless = stored.albumTags.map(
+        (album: Record<string, unknown>) => ({
+          ...album,
+          tags: [],
+          otherTags: [
+            { name: "nigerian", canonical: "Nigeria", class: "region" },
+          ],
+        })
+      );
+      await getDataSource().query(
+        "UPDATE user_profiles SET profile_json = ? WHERE user_id = ?",
+        [JSON.stringify({ ...stored, albumTags: genreless }), userId]
+      );
+      clearPromotedAlbumCache();
+
+      const { albums } = await getPromotedAlbums(userId, true, 1);
+
+      expect(albums).toHaveLength(1);
+      expect(wt(albums[0]).tag).toBe("alternative rock");
+    });
+
     it("chosenTag name matches result tag", async () => {
       mockDeriveArtistWeights.mockReturnValue(plexArtists);
       mockGetArtistTopTags.mockResolvedValue(tags);

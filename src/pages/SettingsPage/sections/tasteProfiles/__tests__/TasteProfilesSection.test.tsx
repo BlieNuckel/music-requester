@@ -24,6 +24,7 @@ function entry(overrides: Partial<ProfileDebugEntry> = {}): ProfileDebugEntry {
         artists: 40,
         taggedAlbums: 96,
         albumsWithOwnGenre: 71,
+        genrelessAlbums: 4,
         similarSeeds: 3,
         similarCandidates: 36,
         knownAlbums: 210,
@@ -31,6 +32,10 @@ function entry(overrides: Partial<ProfileDebugEntry> = {}): ProfileDebugEntry {
         exploredArtists: 8,
       },
       topGenres: [{ tag: "shoegaze", weight: 120.4 }],
+      topOtherTags: [
+        { tag: "Nigeria", weight: 48.6, tagClass: "region" },
+        { tag: "2024", weight: 12.2, tagClass: "era" },
+      ],
       topArtists: [{ name: "Slowdive", viewCount: 90 }],
     },
     signals: [
@@ -119,6 +124,8 @@ describe("TasteProfilesSection", () => {
     expect(screen.getByText("96")).toBeInTheDocument();
     expect(screen.getByText("Own genre")).toBeInTheDocument();
     expect(screen.getByText("71")).toBeInTheDocument();
+    expect(screen.getByText("No genre")).toBeInTheDocument();
+    expect(screen.getByText("4")).toBeInTheDocument();
   });
 
   it("says so when a user has no derived profile yet", async () => {
@@ -160,6 +167,19 @@ describe("TasteProfilesSection", () => {
     expect(screen.getByText(/shoegaze/)).toBeInTheDocument();
     expect(screen.getByText(/Slowdive/)).toBeInTheDocument();
     expect(screen.getByText(/4 events/)).toBeInTheDocument();
+  });
+
+  it("shows what was recognised but kept out of the genre vector", async () => {
+    respond([entry()]);
+
+    render(<TasteProfilesSection />);
+
+    await screen.findByText("lasse");
+    await userEvent.click(screen.getByRole("button", { name: "Show detail" }));
+
+    expect(screen.getByText("Recognised but not a genre")).toBeInTheDocument();
+    expect(screen.getByText(/Nigeria · region/)).toBeInTheDocument();
+    expect(screen.getByText(/2024 · era/)).toBeInTheDocument();
   });
 
   it("calls out a poll that recorded nothing", async () => {
