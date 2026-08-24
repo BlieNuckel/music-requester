@@ -155,6 +155,24 @@ describe("RecommendationsSection — ratings backup toggle", () => {
     });
   });
 
+  it("edits how many albums per artist get a Last.fm tag lookup", () => {
+    const onChange = vi.fn();
+    render(
+      <RecommendationsSection
+        config={DEFAULT_PROMOTED_ALBUM}
+        onConfigChange={onChange}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText(/Album Tag Lookups per Artist/i), {
+      target: { value: "0" },
+    });
+    expect(onChange).toHaveBeenCalledWith({
+      ...DEFAULT_PROMOTED_ALBUM,
+      albumTagsPerArtist: 0,
+    });
+  });
+
   it("edits the small-catalogue exemption", () => {
     const onChange = vi.fn();
     render(

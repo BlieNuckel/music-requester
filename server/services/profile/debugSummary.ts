@@ -27,6 +27,10 @@ import type { UserSignalEvent } from "../../db/entity/UserSignalEvent";
 export type ProfileDebugCounts = {
   genres: number;
   artists: number;
+  /** Albums the vector is summed from. */
+  taggedAlbums: number;
+  /** How many of those resolved to genres of their own rather than inheriting the artist's. */
+  albumsWithOwnGenre: number;
   similarSeeds: number;
   similarCandidates: number;
   knownAlbums: number;
@@ -190,6 +194,10 @@ function summarizeProfile(
     counts: {
       genres: profile.genreVector.length,
       artists: profile.artistTags.length,
+      taggedAlbums: profile.albumTags.length,
+      albumsWithOwnGenre: profile.albumTags.filter(
+        (album) => album.source !== "artist"
+      ).length,
       similarSeeds: profile.similarGraph.length,
       similarCandidates: profile.similarGraph.reduce(
         (sum, seed) => sum + seed.candidates.length,

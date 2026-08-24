@@ -52,6 +52,35 @@ export type ProfileArtistSeries = {
   decaying: boolean;
 };
 
+/**
+ * Where an album's genres were resolved from, in the order they are tried. `artist` means
+ * the album had none of its own and inherited its artist's tags — the pre-album behaviour,
+ * kept as the fallback because Plex agent genres are frequently one coarse word or missing
+ * entirely, and the Last.fm artist tags are what give the vector its texture.
+ */
+export type AlbumTagSource = "lastfm-album" | "plex-album" | "artist";
+
+/**
+ * One album's genres and the weight they carry into {@link DerivedProfile.genreVector}.
+ *
+ * `weight` is the album's *share of its artist's weight*, not an independent measure:
+ * `artistWeight × (album play-equivalents / artist play-equivalents)`. An artist therefore
+ * still contributes exactly its play weight to the vector, now divided across its records
+ * by how much each was actually listened to — so an acoustic record pulls only its own
+ * share into the wrong tag instead of the artist's whole catalogue.
+ *
+ * An artist whose listening lands on no album at all (the legacy artist-level series carries
+ * no album) gets one entry with an empty `albumKey` holding its whole weight.
+ */
+export type ProfileAlbumTags = {
+  albumKey: string;
+  title: string;
+  artistName: string;
+  weight: number;
+  source: AlbumTagSource;
+  tags: { name: string; count: number }[];
+};
+
 export type DerivedProfile = {
   genreVector: { tag: string; weight: number; fromArtists: string[] }[];
   artistTags: {
@@ -67,6 +96,11 @@ export type DerivedProfile = {
   }[];
   similarGraph: SimilarGraphSeed[];
   /**
+   * The genre-bearing unit. `artistTags` still carries what Last.fm says about each artist
+   * (and the weighting evidence behind `viewCount`), but the vector is summed from here.
+   */
+  albumTags: ProfileAlbumTags[];
+  /**
    * Listening over time for the artists worth keeping it for. Stored parallel-array rather
    * than per-bucket objects: at 26 buckets an object per bucket triples the document for
    * nothing, and both consumers read it as two series anyway.
@@ -77,7 +111,7 @@ export type DerivedProfile = {
   explorationHistory: { albums: string[]; artists: string[] };
 };
 
-export const DERIVED_PROFILE_SCHEMA_VERSION = 7;
+export const DERIVED_PROFILE_SCHEMA_VERSION = 8;
 
 /** Derived, regenerable cache — one row per user, the whole profile as one document. */
 @Entity("user_profiles")

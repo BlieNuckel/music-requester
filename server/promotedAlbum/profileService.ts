@@ -1,4 +1,18 @@
-import { loadArtistWeights, type ArtistWeight } from "./artistWeights";
+import {
+  deriveAlbumWeights,
+  deriveArtistWeights,
+  loadSignalBundle,
+  type ArtistWeight,
+  type ArtistWeightOptions,
+  type SignalBundle,
+} from "./artistWeights";
+import {
+  albumsByArtist,
+  buildAlbumTags,
+  fetchAlbumTags,
+  plexAlbumGenres,
+  selectTagTargets,
+} from "./albumGenres";
 import {
   attachSeriesSignals,
   loadArtistSeries,
@@ -35,10 +49,31 @@ type TagResultEntry = {
 export type ProfileLoad =
   { status: "ready"; profile: DerivedProfile } | { status: "building" };
 
+/** Everything {@link buildProfileAlbumTags} needs, gathered rather than passed one by one. */
+type AlbumTagInputs = {
+  bundle: SignalBundle;
+  topArtists: ArtistWeight[];
+  artistTags: DerivedProfile["artistTags"];
+  config: PromotedAlbumConfig;
+  weightOptions: ArtistWeightOptions;
+  genericTags: Set<string>;
+};
+
 type TagAccumulator = {
   displayName: string;
   weight: number;
   fromArtists: Set<string>;
+};
+
+/**
+ * The minimal shape the vector is summed from: something carrying tags, a weight, and the
+ * artist it belongs to. Albums are what the profile stores; artists satisfy it too, which is
+ * how a profile written before album tags existed still builds a vector.
+ */
+export type GenreUnit = {
+  artistName: string;
+  weight: number;
+  tags: { name: string; count: number }[];
 };
 
 /**
@@ -71,30 +106,44 @@ export function normalizedTagWeights(
   return counts.map((count) => (count / mass) * viewCount);
 }
 
+/** A profile's artists as genre units, for reading a profile stored before album tags. */
+export function artistGenreUnits(
+  artistTags: DerivedProfile["artistTags"]
+): GenreUnit[] {
+  return artistTags.map((artist) => ({
+    artistName: artist.name,
+    weight: artist.viewCount,
+    tags: artist.tags,
+  }));
+}
+
 /**
- * Merge a set of artists' tags into one weighted vector, each artist contributing exactly
- * its play weight. Exported because selection builds the same vector from a per-pick sample
- * of the stored artists — one definition keeps the vector a recommendation is drawn from
- * identical in shape to the one stored on the profile.
+ * Merge a set of genre units into one weighted vector, each contributing exactly its weight.
+ * Exported because selection builds the same vector from a per-pick sample of the stored
+ * artists' albums — one definition keeps the vector a recommendation is drawn from identical
+ * in shape to the one stored on the profile.
+ *
+ * `fromArtists` stays keyed on the artist even now that albums are the unit: it answers "who
+ * put this tag in my vector", and no consumer has ever wanted the record rather than the name.
  */
 export function buildGenreVector(
-  artistTags: DerivedProfile["artistTags"]
+  units: GenreUnit[]
 ): DerivedProfile["genreVector"] {
   const tagMap = new Map<string, TagAccumulator>();
 
-  for (const { name, viewCount, tags } of artistTags) {
-    const weights = normalizedTagWeights(tags, viewCount);
+  for (const { artistName, weight, tags } of units) {
+    const weights = normalizedTagWeights(tags, weight);
     for (const [index, tag] of tags.entries()) {
       const key = tag.name.toLowerCase();
       const existing = tagMap.get(key);
       if (existing) {
         existing.weight += weights[index];
-        existing.fromArtists.add(name);
+        existing.fromArtists.add(artistName);
       } else {
         tagMap.set(key, {
           displayName: tag.name,
           weight: weights[index],
-          fromArtists: new Set([name]),
+          fromArtists: new Set([artistName]),
         });
       }
     }
@@ -107,28 +156,57 @@ export function buildGenreVector(
   }));
 }
 
-function buildProfileArtifacts(
+function buildArtistTags(
   tagResults: TagResultEntry[],
   genericTags: Set<string>,
   tagsPerArtist: number
-): Pick<DerivedProfile, "genreVector" | "artistTags"> {
-  const artistTags: DerivedProfile["artistTags"] = tagResults.map(
-    ({ artist, tags }) => ({
-      name: artist.name,
-      viewCount: artist.viewCount,
-      tags: tags
-        .filter((t) => !genericTags.has(t.name.toLowerCase()))
-        .slice(0, tagsPerArtist),
-      distinctTracksPlayed: artist.distinctTracksPlayed,
-      topTrackShare: artist.topTrackShare,
-      distributionFactor: artist.distributionFactor,
-      ratingBreadth: artist.ratingBreadth,
-      ratingMultiplier: artist.ratingMultiplier,
-      availableTracks: artist.availableTracks,
-    })
+): DerivedProfile["artistTags"] {
+  return tagResults.map(({ artist, tags }) => ({
+    name: artist.name,
+    viewCount: artist.viewCount,
+    tags: tags
+      .filter((t) => !genericTags.has(t.name.toLowerCase()))
+      .slice(0, tagsPerArtist),
+    distinctTracksPlayed: artist.distinctTracksPlayed,
+    topTrackShare: artist.topTrackShare,
+    distributionFactor: artist.distributionFactor,
+    ratingBreadth: artist.ratingBreadth,
+    ratingMultiplier: artist.ratingMultiplier,
+    availableTracks: artist.availableTracks,
+  }));
+}
+
+/**
+ * The albums of the top artists, tagged and weighted, ready to be summed into the vector.
+ * The Last.fm fan-out is bounded per artist by `albumTagsPerArtist`; every other album
+ * resolves off the Plex genres the catalogue sweep already captured, at no request cost.
+ */
+async function buildProfileAlbumTags(
+  inputs: AlbumTagInputs
+): Promise<DerivedProfile["albumTags"]> {
+  const { bundle, topArtists, artistTags, config, weightOptions, genericTags } =
+    inputs;
+
+  const byArtist = albumsByArtist(
+    topArtists,
+    deriveAlbumWeights(bundle, weightOptions),
+    config.listeningWeight
+  );
+  const lastfm = await fetchAlbumTags(
+    selectTagTargets(byArtist, config.albumTagsPerArtist)
   );
 
-  return { genreVector: buildGenreVector(artistTags), artistTags };
+  return buildAlbumTags(
+    byArtist,
+    artistTags,
+    lastfm,
+    plexAlbumGenres(bundle.albumEvents),
+    {
+      tagsPerAlbum: config.tagsPerArtist,
+      genericTags,
+      listeningWeight: config.listeningWeight,
+    }
+  );
 }
 
 async function fetchTagResults(
@@ -146,6 +224,19 @@ async function fetchTagResults(
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The weighting knobs, resolved once so the album split is measured over the same window. */
+function artistWeightOptions(config: PromotedAlbumConfig): ArtistWeightOptions {
+  return {
+    windowMs: config.playTrendWindowDays * DAY_MS,
+    ratingWeight: config.ratingWeight,
+    distributionWeight: config.distributionWeight,
+    minPlaysForDistribution: config.minPlaysForDistribution,
+    minAvailableTracksForDistribution: config.minAvailableTracksForDistribution,
+    listeningWeight: config.listeningWeight,
+    maxTrackMinutesForWeight: config.maxTrackMinutesForWeight,
+  };
+}
 
 /** The series knobs, resolved from config so both the derivation and the stored bucket width agree. */
 function seriesOptions(config: PromotedAlbumConfig): ArtistSeriesOptions {
@@ -175,18 +266,11 @@ export async function regenerateProfile(
   plexToken: string
 ): Promise<DerivedProfile | null> {
   const config = getConfigValue("promotedAlbum");
+  const weightOptions = artistWeightOptions(config);
+  const bundle = await loadSignalBundle(userId, plexToken);
   const series = await loadArtistSeries(userId, seriesOptions(config));
   const weighted = attachSeriesSignals(
-    await loadArtistWeights(userId, plexToken, {
-      windowMs: config.playTrendWindowDays * 24 * 60 * 60 * 1000,
-      ratingWeight: config.ratingWeight,
-      distributionWeight: config.distributionWeight,
-      minPlaysForDistribution: config.minPlaysForDistribution,
-      minAvailableTracksForDistribution:
-        config.minAvailableTracksForDistribution,
-      listeningWeight: config.listeningWeight,
-      maxTrackMinutesForWeight: config.maxTrackMinutesForWeight,
-    }),
+    deriveArtistWeights(bundle, weightOptions),
     series
   );
   if (weighted.length === 0) return null;
@@ -197,11 +281,20 @@ export async function regenerateProfile(
 
   const tagResults = await fetchTagResults(topArtists);
   const genericTags = new Set(config.genericTags.map((t) => t.toLowerCase()));
-  const { genreVector, artistTags } = buildProfileArtifacts(
+  const artistTags = buildArtistTags(
     tagResults,
     genericTags,
     config.tagsPerArtist
   );
+  const albumTags = await buildProfileAlbumTags({
+    bundle,
+    topArtists,
+    artistTags,
+    config,
+    weightOptions,
+    genericTags,
+  });
+  const genreVector = buildGenreVector(albumTags);
   if (genreVector.length === 0) return null;
 
   const similarGraph = await buildSimilarGraph(topArtists, config);
@@ -214,6 +307,7 @@ export async function regenerateProfile(
   const profile: DerivedProfile = {
     genreVector,
     artistTags,
+    albumTags,
     similarGraph,
     artistSeries: selectProfileSeries(
       series,

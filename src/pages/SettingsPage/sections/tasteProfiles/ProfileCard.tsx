@@ -30,6 +30,8 @@ function profileFacts(entry: ProfileDebugEntry) {
   return [
     { label: "Genres", value: profile.counts.genres },
     { label: "Artists", value: profile.counts.artists },
+    { label: "Tagged albums", value: profile.counts.taggedAlbums },
+    { label: "Own genre", value: profile.counts.albumsWithOwnGenre },
     { label: "Similar seeds", value: profile.counts.similarSeeds },
     { label: "Similar candidates", value: profile.counts.similarCandidates },
     { label: "Known albums", value: profile.counts.knownAlbums },

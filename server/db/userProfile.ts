@@ -23,6 +23,7 @@ export type ProfileConfigInputs = {
   seriesBucketDays: number;
   seriesSpanDays: number;
   momentumRecentBuckets: number;
+  albumTagsPerArtist: number;
 };
 
 /** A partial patch of the anti-repeat exploration memory; only provided fields are replaced. */
@@ -35,6 +36,7 @@ const EMPTY_DERIVED_PROFILE: DerivedProfile = {
   genreVector: [],
   artistTags: [],
   similarGraph: [],
+  albumTags: [],
   artistSeries: [],
   knownAlbums: [],
   explorationHistory: { albums: [], artists: [] },
@@ -58,6 +60,7 @@ export function parseDerivedProfile(json: string): DerivedProfile {
       genreVector: parsed.genreVector ?? [],
       artistTags: parsed.artistTags ?? [],
       similarGraph: parsed.similarGraph ?? [],
+      albumTags: parsed.albumTags ?? [],
       artistSeries: parsed.artistSeries ?? [],
       knownAlbums: parsed.knownAlbums ?? [],
       explorationHistory: {
@@ -87,6 +90,7 @@ export function computeConfigHash(inputs: ProfileConfigInputs): string {
     seriesBucketDays: inputs.seriesBucketDays,
     seriesSpanDays: inputs.seriesSpanDays,
     momentumRecentBuckets: inputs.momentumRecentBuckets,
+    albumTagsPerArtist: inputs.albumTagsPerArtist,
   });
   return createHash("sha256").update(stable).digest("hex");
 }

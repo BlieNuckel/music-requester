@@ -1,13 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { PromotedAlbumConfig } from "../../config";
 
-const mockLoadArtistWeights = vi.fn();
+const mockLoadSignalBundle = vi.fn();
+const mockDeriveArtistWeights = vi.fn();
+const mockDeriveAlbumWeights = vi.fn();
 const mockGetArtistTopTags = vi.fn();
 const mockGetConfigValue = vi.fn();
 const mockBuildSimilarGraph = vi.fn().mockResolvedValue([]);
 
 vi.mock("../../promotedAlbum/artistWeights", () => ({
-  loadArtistWeights: (...args: unknown[]) => mockLoadArtistWeights(...args),
+  loadSignalBundle: async (...args: unknown[]) => {
+    await mockLoadSignalBundle(...args);
+    return { albumEvents: [] };
+  },
+  deriveArtistWeights: (...args: unknown[]) => mockDeriveArtistWeights(...args),
+  deriveAlbumWeights: (...args: unknown[]) => mockDeriveAlbumWeights(...args),
 }));
 
 vi.mock("../../promotedAlbum/explore", () => ({
@@ -58,6 +65,7 @@ const baseConfig: PromotedAlbumConfig = {
   seriesBucketDays: 7,
   seriesSpanDays: 182,
   momentumRecentBuckets: 4,
+  albumTagsPerArtist: 4,
 };
 
 const plexArtists = [
@@ -98,7 +106,9 @@ beforeEach(async () => {
   vi.clearAllMocks();
   vi.spyOn(Math, "random").mockReturnValue(0.1);
   mockGetConfigValue.mockReturnValue(baseConfig);
-  mockLoadArtistWeights.mockResolvedValue(plexArtists);
+  mockLoadSignalBundle.mockResolvedValue(undefined);
+  mockDeriveArtistWeights.mockReturnValue(plexArtists);
+  mockDeriveAlbumWeights.mockReturnValue([]);
   mockGetArtistTopTags.mockResolvedValue(tags);
   await initializeDatabase(":memory:");
   now = Date.now();
@@ -123,13 +133,16 @@ describe("runProfileRegenOnce", () => {
     await stampProfile(fresh, now, now);
     await stampProfile(staleDormant, now - 2 * DAY_MS, now - 30 * DAY_MS);
 
-    mockLoadArtistWeights.mockClear();
+    mockLoadSignalBundle.mockClear();
     await runProfileRegenOnce(now);
 
-    expect(mockLoadArtistWeights).toHaveBeenCalledTimes(1);
-    expect(mockLoadArtistWeights).toHaveBeenCalledWith(
+    expect(mockLoadSignalBundle).toHaveBeenCalledTimes(1);
+    expect(mockLoadSignalBundle).toHaveBeenCalledWith(
       expect.any(Number),
-      "stale-active",
+      "stale-active"
+    );
+    expect(mockDeriveArtistWeights).toHaveBeenCalledWith(
+      expect.anything(),
       expect.objectContaining({
         windowMs: 90 * 24 * 60 * 60 * 1000,
         ratingWeight: 0.5,
@@ -146,18 +159,18 @@ describe("runProfileRegenOnce", () => {
       ...baseConfig,
       backgroundRegenEnabled: false,
     });
-    mockLoadArtistWeights.mockClear();
+    mockLoadSignalBundle.mockClear();
 
     await runProfileRegenOnce(now);
-    expect(mockLoadArtistWeights).not.toHaveBeenCalled();
+    expect(mockLoadSignalBundle).not.toHaveBeenCalled();
   });
 
   it("skips users without a profile row (never used discovery)", async () => {
     await createUser("no-profile");
-    mockLoadArtistWeights.mockClear();
+    mockLoadSignalBundle.mockClear();
 
     await runProfileRegenOnce(now);
-    expect(mockLoadArtistWeights).not.toHaveBeenCalled();
+    expect(mockLoadSignalBundle).not.toHaveBeenCalled();
   });
 
   it("does not double-regenerate when a live request holds the in-flight guard", async () => {
@@ -166,8 +179,8 @@ describe("runProfileRegenOnce", () => {
     await stampProfile(userId, now - 2 * DAY_MS, now);
 
     let resolveTop: (v: unknown) => void = () => {};
-    mockLoadArtistWeights.mockClear();
-    mockLoadArtistWeights.mockImplementation(
+    mockLoadSignalBundle.mockClear();
+    mockLoadSignalBundle.mockImplementation(
       () =>
         new Promise((resolve) => {
           resolveTop = resolve;
@@ -176,13 +189,13 @@ describe("runProfileRegenOnce", () => {
 
     const live = loadFreshProfile(userId, "stale-active", baseConfig);
     await vi.waitFor(() =>
-      expect(mockLoadArtistWeights).toHaveBeenCalledTimes(1)
+      expect(mockLoadSignalBundle).toHaveBeenCalledTimes(1)
     );
 
     const tick = runProfileRegenOnce(now);
     resolveTop(plexArtists);
     await Promise.all([live, tick]);
 
-    expect(mockLoadArtistWeights).toHaveBeenCalledTimes(1);
+    expect(mockLoadSignalBundle).toHaveBeenCalledTimes(1);
   });
 });

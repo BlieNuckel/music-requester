@@ -1,13 +1,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { PromotedAlbumConfig } from "../config";
 
-const mockLoadArtistWeights = vi.fn();
+const mockLoadSignalBundle = vi.fn();
+const mockAlbumEvents = vi.fn();
+const mockGetAlbumTopTags = vi.fn();
+const mockDeriveArtistWeights = vi.fn();
+const mockDeriveAlbumWeights = vi.fn();
 const mockGetArtistTopTags = vi.fn();
 const mockGetConfigValue = vi.fn();
 const mockBuildSimilarGraph = vi.fn();
 
 vi.mock("./artistWeights", () => ({
-  loadArtistWeights: (...args: unknown[]) => mockLoadArtistWeights(...args),
+  loadSignalBundle: async (...args: unknown[]) => {
+    await mockLoadSignalBundle(...args);
+    return { albumEvents: mockAlbumEvents() };
+  },
+  deriveArtistWeights: (...args: unknown[]) => mockDeriveArtistWeights(...args),
+  deriveAlbumWeights: (...args: unknown[]) => mockDeriveAlbumWeights(...args),
 }));
 
 vi.mock("./explore", () => ({
@@ -16,6 +25,10 @@ vi.mock("./explore", () => ({
 
 vi.mock("../api/lastfm/artists", () => ({
   getArtistTopTags: (...args: unknown[]) => mockGetArtistTopTags(...args),
+}));
+
+vi.mock("../api/lastfm/albums", () => ({
+  getAlbumTopTags: (...args: unknown[]) => mockGetAlbumTopTags(...args),
 }));
 
 vi.mock("../config", () => ({
@@ -59,6 +72,7 @@ const baseConfig: PromotedAlbumConfig = {
   seriesBucketDays: 7,
   seriesSpanDays: 182,
   momentumRecentBuckets: 4,
+  albumTagsPerArtist: 4,
 };
 
 const plexArtists = [
@@ -108,7 +122,11 @@ beforeEach(async () => {
   vi.clearAllMocks();
   vi.spyOn(Math, "random").mockReturnValue(0.1);
   mockGetConfigValue.mockReturnValue(baseConfig);
-  mockLoadArtistWeights.mockResolvedValue(plexArtists);
+  mockLoadSignalBundle.mockResolvedValue(undefined);
+  mockDeriveArtistWeights.mockReturnValue(plexArtists);
+  mockDeriveAlbumWeights.mockReturnValue([]);
+  mockAlbumEvents.mockReturnValue([]);
+  mockGetAlbumTopTags.mockResolvedValue([]);
   mockGetArtistTopTags.mockResolvedValue(tags);
   mockBuildSimilarGraph.mockResolvedValue(sampleGraph);
   await initializeDatabase(":memory:");
@@ -196,7 +214,7 @@ describe("regenerateProfile", () => {
       name: `Artist ${i}`,
       viewCount: 100 - i,
     }));
-    mockLoadArtistWeights.mockResolvedValue(many);
+    mockDeriveArtistWeights.mockReturnValue(many);
     mockGetArtistTopTags.mockImplementation((name: string) =>
       Promise.resolve([{ name: `tag-${name}`, count: 100 }])
     );
@@ -210,7 +228,7 @@ describe("regenerateProfile", () => {
 
   it("still caps the artists it covers at topArtistsCount", async () => {
     mockGetConfigValue.mockReturnValue({ ...baseConfig, topArtistsCount: 3 });
-    mockLoadArtistWeights.mockResolvedValue(
+    mockDeriveArtistWeights.mockReturnValue(
       Array.from({ length: 8 }, (_, i) => ({
         name: `Artist ${i}`,
         viewCount: 100 - i,
@@ -227,7 +245,7 @@ describe("regenerateProfile", () => {
   });
 
   it("gives artists of equal play weight equal influence however Last.fm tagged them", async () => {
-    mockLoadArtistWeights.mockResolvedValue([
+    mockDeriveArtistWeights.mockReturnValue([
       { name: "Broadly Tagged", viewCount: 100 },
       { name: "Thinly Tagged", viewCount: 100 },
     ]);
@@ -257,7 +275,7 @@ describe("regenerateProfile", () => {
   });
 
   it("keeps an artist in the vector when every tag count is zero", async () => {
-    mockLoadArtistWeights.mockResolvedValue([
+    mockDeriveArtistWeights.mockReturnValue([
       { name: "Untagged", viewCount: 60 },
     ]);
     mockGetArtistTopTags.mockResolvedValue([
@@ -274,7 +292,7 @@ describe("regenerateProfile", () => {
   });
 
   it("persists the play-distribution and rating stats carried by the weight set", async () => {
-    mockLoadArtistWeights.mockResolvedValue([
+    mockDeriveArtistWeights.mockReturnValue([
       {
         name: "Radiohead",
         viewCount: 60,
@@ -360,27 +378,176 @@ describe("regenerateProfile", () => {
   });
 });
 
+describe("regenerateProfile album genres", () => {
+  function albumRollup(
+    albumKey: string,
+    artistName: string,
+    playCount: number
+  ) {
+    return {
+      albumKey,
+      title: albumKey,
+      artistKey: `ak-${artistName}`,
+      artistName,
+      playCount,
+      listenedMs: playCount * 210_000,
+    };
+  }
+
+  function catalogueEvent(albums: { ratingKey: string; genres: string[] }[]) {
+    return [
+      {
+        payload: JSON.stringify({
+          albums: albums.map((a) => ({
+            ratingKey: a.ratingKey,
+            title: a.ratingKey,
+            artistKey: "ak-Radiohead",
+            artistName: "Radiohead",
+            trackCount: 10,
+            genres: a.genres,
+          })),
+        }),
+        recorded_at: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+  }
+
+  it("stores each album with its share of the artist's weight", async () => {
+    mockDeriveArtistWeights.mockReturnValue([
+      { name: "Radiohead", viewCount: 100 },
+    ]);
+    mockDeriveAlbumWeights.mockReturnValue([
+      albumRollup("kid-a", "Radiohead", 8),
+      albumRollup("in-rainbows", "Radiohead", 2),
+    ]);
+
+    const profile = await regenerateProfile(userId, "token");
+
+    expect(profile!.albumTags.map((a) => [a.albumKey, a.weight])).toEqual([
+      ["kid-a", 80],
+      ["in-rainbows", 20],
+    ]);
+  });
+
+  it("lets one record's own genre into the vector without dragging the artist along", async () => {
+    mockDeriveArtistWeights.mockReturnValue([
+      { name: "Radiohead", viewCount: 100 },
+    ]);
+    mockDeriveAlbumWeights.mockReturnValue([
+      albumRollup("kid-a", "Radiohead", 9),
+      albumRollup("unplugged", "Radiohead", 1),
+    ]);
+    mockGetArtistTopTags.mockResolvedValue([
+      { name: "alternative", count: 100 },
+    ]);
+    mockAlbumEvents.mockReturnValue(
+      catalogueEvent([{ ratingKey: "unplugged", genres: ["Acoustic"] }])
+    );
+
+    const profile = await regenerateProfile(userId, "token");
+
+    expect(profile!.genreVector).toEqual([
+      { tag: "alternative", weight: 90, fromArtists: ["Radiohead"] },
+      { tag: "Acoustic", weight: 10, fromArtists: ["Radiohead"] },
+    ]);
+  });
+
+  it("prefers a Last.fm album tag over the Plex genre", async () => {
+    mockDeriveArtistWeights.mockReturnValue([
+      { name: "Radiohead", viewCount: 100 },
+    ]);
+    mockDeriveAlbumWeights.mockReturnValue([
+      albumRollup("kid-a", "Radiohead", 10),
+    ]);
+    mockAlbumEvents.mockReturnValue(
+      catalogueEvent([{ ratingKey: "kid-a", genres: ["Rock"] }])
+    );
+    mockGetAlbumTopTags.mockResolvedValue([{ name: "art rock", count: 100 }]);
+
+    const profile = await regenerateProfile(userId, "token");
+
+    expect(mockGetAlbumTopTags).toHaveBeenCalledWith("Radiohead", "kid-a");
+    expect(profile!.albumTags[0]).toMatchObject({
+      source: "lastfm-album",
+      tags: [{ name: "art rock", count: 100 }],
+    });
+  });
+
+  it("spends album lookups only on the most-listened albums per artist", async () => {
+    mockGetConfigValue.mockReturnValue({
+      ...baseConfig,
+      albumTagsPerArtist: 1,
+    });
+    mockDeriveArtistWeights.mockReturnValue([
+      { name: "Radiohead", viewCount: 100 },
+    ]);
+    mockDeriveAlbumWeights.mockReturnValue([
+      albumRollup("kid-a", "Radiohead", 9),
+      albumRollup("amnesiac", "Radiohead", 1),
+    ]);
+
+    await regenerateProfile(userId, "token");
+
+    expect(mockGetAlbumTopTags).toHaveBeenCalledTimes(1);
+    expect(mockGetAlbumTopTags).toHaveBeenCalledWith("Radiohead", "kid-a");
+  });
+
+  it("spends nothing on Last.fm when the album lookup knob is off", async () => {
+    mockGetConfigValue.mockReturnValue({
+      ...baseConfig,
+      albumTagsPerArtist: 0,
+    });
+    mockDeriveAlbumWeights.mockReturnValue([
+      albumRollup("kid-a", "Radiohead", 9),
+    ]);
+
+    await regenerateProfile(userId, "token");
+
+    expect(mockGetAlbumTopTags).not.toHaveBeenCalled();
+  });
+
+  it("keeps an artist whose listening lands on no album in the vector", async () => {
+    mockDeriveArtistWeights.mockReturnValue([
+      { name: "Radiohead", viewCount: 100 },
+    ]);
+    mockDeriveAlbumWeights.mockReturnValue([]);
+    mockGetArtistTopTags.mockResolvedValue([
+      { name: "alternative", count: 100 },
+    ]);
+
+    const profile = await regenerateProfile(userId, "token");
+
+    expect(profile!.genreVector).toEqual([
+      { tag: "alternative", weight: 100, fromArtists: ["Radiohead"] },
+    ]);
+    expect(profile!.albumTags[0]).toMatchObject({
+      albumKey: "",
+      source: "artist",
+    });
+  });
+});
+
 describe("loadFreshProfile", () => {
   it("serves a fresh profile from the DB without re-fanning-out", async () => {
     await regenerateProfile(userId, "token");
-    mockLoadArtistWeights.mockClear();
+    mockLoadSignalBundle.mockClear();
     mockGetArtistTopTags.mockClear();
 
     const profile = await loadFreshProfile(userId, "token", baseConfig);
     expect(profile!.genreVector).toHaveLength(1);
-    expect(mockLoadArtistWeights).not.toHaveBeenCalled();
+    expect(mockLoadSignalBundle).not.toHaveBeenCalled();
     expect(mockGetArtistTopTags).not.toHaveBeenCalled();
   });
 
   it("regenerates when the config hash no longer matches", async () => {
     await regenerateProfile(userId, "token");
-    mockLoadArtistWeights.mockClear();
+    mockLoadSignalBundle.mockClear();
 
     const changedConfig = { ...baseConfig, tagsPerArtist: 2 };
     mockGetConfigValue.mockReturnValue(changedConfig);
 
     await loadFreshProfile(userId, "token", changedConfig);
-    expect(mockLoadArtistWeights).toHaveBeenCalledTimes(1);
+    expect(mockLoadSignalBundle).toHaveBeenCalledTimes(1);
   });
 
   it("regenerates when the stored schema_version is stale", async () => {
@@ -389,10 +556,10 @@ describe("loadFreshProfile", () => {
       "UPDATE user_profiles SET schema_version = 0 WHERE user_id = ?",
       [userId]
     );
-    mockLoadArtistWeights.mockClear();
+    mockLoadSignalBundle.mockClear();
 
     await loadFreshProfile(userId, "token", baseConfig);
-    expect(mockLoadArtistWeights).toHaveBeenCalledTimes(1);
+    expect(mockLoadSignalBundle).toHaveBeenCalledTimes(1);
   });
 
   it("serves the stored profile when a regeneration produces no genres", async () => {
@@ -418,7 +585,7 @@ describe("loadFreshProfile", () => {
 
   it("in-flight guard prevents concurrent double-regeneration", async () => {
     let resolveTop: (v: unknown) => void = () => {};
-    mockLoadArtistWeights.mockImplementation(
+    mockLoadSignalBundle.mockImplementation(
       () =>
         new Promise((resolve) => {
           resolveTop = resolve;
@@ -429,12 +596,12 @@ describe("loadFreshProfile", () => {
     const p2 = loadFreshProfile(userId, "token", baseConfig);
 
     await vi.waitFor(() =>
-      expect(mockLoadArtistWeights).toHaveBeenCalledTimes(1)
+      expect(mockLoadSignalBundle).toHaveBeenCalledTimes(1)
     );
     resolveTop(plexArtists);
     await Promise.all([p1, p2]);
 
-    expect(mockLoadArtistWeights).toHaveBeenCalledTimes(1);
+    expect(mockLoadSignalBundle).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -444,22 +611,18 @@ describe("loadProfileForRequest", () => {
 
     expect(load).toEqual({ status: "building" });
     await vi.waitFor(() =>
-      expect(mockLoadArtistWeights).toHaveBeenCalledWith(
-        userId,
-        "token",
-        expect.anything()
-      )
+      expect(mockLoadSignalBundle).toHaveBeenCalledWith(userId, "token")
     );
   });
 
   it("serves a fresh profile without scheduling a build", async () => {
     await regenerateProfile(userId, "token");
-    mockLoadArtistWeights.mockClear();
+    mockLoadSignalBundle.mockClear();
 
     const load = await loadProfileForRequest(userId, "token", baseConfig);
 
     expect(load.status).toBe("ready");
-    expect(mockLoadArtistWeights).not.toHaveBeenCalled();
+    expect(mockLoadSignalBundle).not.toHaveBeenCalled();
   });
 
   it("serves a stale profile rather than blocking on its rebuild", async () => {

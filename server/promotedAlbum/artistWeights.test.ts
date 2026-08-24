@@ -18,11 +18,13 @@ import {
   aggregateArtistRatings,
   applyRatingMultiplier,
   loadArtistWeights,
+  deriveAlbumWeights,
   type ArtistRatingSignal,
   type ArtistWeight,
   type ArtistWeightOptions,
   type DistributionOptions,
   type PlayWeightOptions,
+  type SignalBundle,
 } from "./artistWeights";
 import {
   NOMINAL_TRACK_MS,
@@ -1088,6 +1090,168 @@ describe("applyRatingMultiplier", () => {
       ratingMultiplier: 1.5,
     });
     expect(result[1]).toEqual({ name: "B", viewCount: 100 });
+  });
+});
+
+describe("deriveAlbumWeights", () => {
+  function episode(
+    ratingKey: string,
+    artistName: string,
+    albumKey: string,
+    daysAgo: number,
+    listenedMs: number
+  ) {
+    return {
+      ratingKey,
+      title: `t${ratingKey}`,
+      artistKey: `ak-${artistName}`,
+      artistName,
+      albumKey,
+      albumTitle: albumKey,
+      startedAt: NOW - daysAgo * DAY,
+      durationMs: listenedMs,
+      listenedMs,
+      measured: false,
+    };
+  }
+
+  function bundle(overrides: Partial<SignalBundle> = {}): SignalBundle {
+    return {
+      trackEvents: [],
+      legacyEvents: [],
+      ratingEvents: [],
+      albumEvents: [],
+      episodes: new Map(),
+      ...overrides,
+    };
+  }
+
+  it("splits an artist's window across their albums from the count deltas", () => {
+    const albums = deriveAlbumWeights(
+      bundle({
+        trackEvents: [
+          trackEvent(
+            [
+              {
+                ratingKey: "1",
+                artistName: "A",
+                albumKey: "acoustic",
+                playCount: 2,
+              },
+              {
+                ratingKey: "2",
+                artistName: "A",
+                albumKey: "loud",
+                playCount: 4,
+              },
+            ],
+            60
+          ),
+          trackEvent(
+            [
+              {
+                ratingKey: "1",
+                artistName: "A",
+                albumKey: "acoustic",
+                playCount: 3,
+              },
+              {
+                ratingKey: "2",
+                artistName: "A",
+                albumKey: "loud",
+                playCount: 13,
+              },
+            ],
+            1
+          ),
+        ],
+      }),
+      weightOptions()
+    );
+
+    const byKey = new Map(albums.map((a) => [a.albumKey, a.playCount]));
+    expect(byKey.get("acoustic")).toBe(1);
+    expect(byKey.get("loud")).toBe(9);
+  });
+
+  it("takes the window from the episodes when history covers it", () => {
+    const albums = deriveAlbumWeights(
+      bundle({
+        trackEvents: [
+          trackEvent(
+            [
+              {
+                ratingKey: "1",
+                artistName: "A",
+                albumKey: "loud",
+                playCount: 40,
+              },
+            ],
+            60
+          ),
+        ],
+        episodes: new Map([
+          ["e0", episode("1", "A", "loud", 40, 210_000)],
+          ["e1", episode("2", "A", "quiet", 10, 630_000)],
+        ]),
+      }),
+      weightOptions()
+    );
+
+    expect(albums).toEqual([
+      expect.objectContaining({
+        albumKey: "quiet",
+        playCount: 1,
+        listenedMs: 630_000,
+      }),
+    ]);
+  });
+
+  it("falls back to cumulative totals when the series is shallower than the window", () => {
+    const albums = deriveAlbumWeights(
+      bundle({
+        trackEvents: [
+          trackEvent(
+            [
+              {
+                ratingKey: "1",
+                artistName: "A",
+                albumKey: "loud",
+                playCount: 7,
+              },
+            ],
+            2
+          ),
+        ],
+      }),
+      weightOptions()
+    );
+
+    expect(albums[0]).toMatchObject({ albumKey: "loud", playCount: 7 });
+  });
+
+  it("caps a long track the same way the artist weights do", () => {
+    const albums = deriveAlbumWeights(
+      bundle({
+        trackEvents: [
+          trackEvent(
+            [
+              {
+                ratingKey: "1",
+                artistName: "A",
+                albumKey: "sets",
+                playCount: 2,
+                durationMs: 3_600_000,
+              },
+            ],
+            2
+          ),
+        ],
+      }),
+      weightOptions({ maxTrackMinutesForWeight: 10 })
+    );
+
+    expect(albums[0].listenedMs).toBe(1_200_000);
   });
 });
 

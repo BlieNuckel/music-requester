@@ -64,6 +64,24 @@ function profileRow(overrides: Record<string, unknown> = {}) {
           candidates: [{ name: "Lush", artistMbid: "l", score: 1, genres: [] }],
         },
       ],
+      albumTags: [
+        {
+          albumKey: "alb-nowhere",
+          title: "Nowhere",
+          artistName: "Ride",
+          weight: 120,
+          source: "plex-album",
+          tags: [{ name: "shoegaze", count: 1 }],
+        },
+        {
+          albumKey: "alb-souvlaki",
+          title: "Souvlaki",
+          artistName: "Slowdive",
+          weight: 90,
+          source: "artist",
+          tags: [{ name: "dream pop", count: 100 }],
+        },
+      ],
       knownAlbums: ["ride::nowhere"],
       explorationHistory: { albums: ["a"], artists: ["b", "c"] },
     }),
@@ -212,6 +230,8 @@ describe("getProfileDebugSummaries", () => {
     expect(entry.profile?.counts).toEqual({
       genres: 2,
       artists: 2,
+      taggedAlbums: 2,
+      albumsWithOwnGenre: 1,
       similarSeeds: 1,
       similarCandidates: 1,
       knownAlbums: 1,

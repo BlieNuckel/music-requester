@@ -97,8 +97,11 @@ export type ArtistPlayRollup = {
 export type AlbumPlayRollup = {
   albumKey: string;
   title: string;
+  artistKey: string;
   artistName: string;
   playCount: number;
+  /** Inferred the same way as {@link ArtistPlayRollup.listenedMs} — plays x track length. */
+  listenedMs: number;
 };
 
 /** One album's track count — how much of it exists, regardless of what was played. */
@@ -108,6 +111,11 @@ export type AlbumTrackState = {
   artistKey: string;
   artistName: string;
   trackCount: number;
+  /**
+   * Plex agent genres for the album. Absent on events written before the field existed
+   * (the sweep backfills them), empty where the section's agent supplies none.
+   */
+  genres?: string[];
 };
 
 /**
@@ -466,23 +474,43 @@ export function rollupToArtists(
   return Array.from(byArtist.values());
 }
 
-/** Per-album cumulative plays accumulated from the same track fold. */
+/**
+ * Per-album plays and listening accumulated from the same track fold. Keyed on Plex's album
+ * `ratingKey` where the tracks carry one, so the result joins onto the album catalogue series
+ * — and on `artist:title` only for tracks that have no key to join by.
+ *
+ * `capMs` bounds what one play of a single track may contribute, exactly as it does for the
+ * artist rollup; the two must be passed the same value or an album's share of its artist
+ * would be measured against a differently-capped total.
+ */
 export function rollupToAlbums(
-  tracks: Map<string, TrackPlayState>
+  tracks: Map<string, TrackPlayState>,
+  capMs = 0
 ): AlbumPlayRollup[] {
   const byAlbum = new Map<string, AlbumPlayRollup>();
   for (const track of tracks.values()) {
     if (!track.albumKey && !track.albumTitle) continue;
     const key = track.albumKey || `${track.artistName}:${track.albumTitle}`;
+    const listenedMs = inferListenedMs(
+      track.playCount,
+      track.durationMs,
+      capMs
+    );
     const existing = byAlbum.get(key);
     if (existing) {
       existing.playCount += track.playCount;
+      existing.listenedMs += listenedMs;
+      if (!existing.title) existing.title = track.albumTitle;
+      if (!existing.artistName) existing.artistName = track.artistName;
+      if (!existing.artistKey) existing.artistKey = track.artistKey;
     } else {
       byAlbum.set(key, {
         albumKey: key,
         title: track.albumTitle,
+        artistKey: track.artistKey,
         artistName: track.artistName,
         playCount: track.playCount,
+        listenedMs,
       });
     }
   }
@@ -636,14 +664,30 @@ const toAlbumTrackState = (album: AlbumTrackCount): AlbumTrackState => ({
   artistKey: album.artistKey,
   artistName: album.artistName,
   trackCount: album.trackCount,
+  genres: album.genres,
 });
 
 /**
- * Append `plex_album_tracks` deltas capturing only the albums whose track count changed
- * since the last capture — how much music the library actually holds per artist, which the
- * played-track sweep can't see (it never fetches an unplayed track). Unlike plays, a track
- * count is not monotonic: an album can legitimately shrink, so any difference is recorded.
- * When nothing changed, no event is written.
+ * Whether an album's stored genres differ from what Plex now reports. Both sides normalize
+ * an absent list to empty, so an album Plex has never tagged compares equal to one written
+ * before the field existed — otherwise every untagged album would re-emit on every sweep.
+ */
+function genresChanged(
+  prior: AlbumTrackState | undefined,
+  live: AlbumTrackCount
+): boolean {
+  const before = prior?.genres ?? [];
+  if (before.length !== live.genres.length) return true;
+  return before.some((genre, index) => genre !== live.genres[index]);
+}
+
+/**
+ * Append `plex_album_tracks` deltas capturing only the albums whose track count or genres
+ * changed since the last capture — how much music the library actually holds per artist,
+ * which the played-track sweep can't see (it never fetches an unplayed track), plus the
+ * genre the recommender hangs that listening on. Unlike plays, neither quantity is
+ * monotonic: an album can legitimately shrink or be re-tagged, so any difference is
+ * recorded. When nothing changed, no event is written.
  */
 export async function ingestUserAlbumTracks(
   userId: number,
@@ -654,9 +698,12 @@ export async function ingestUserAlbumTracks(
     await getSignalEvents(userId, "plex_album_tracks"),
     Infinity
   );
-  const changed = live.filter(
-    (album) => album.trackCount !== stored.get(album.ratingKey)?.trackCount
-  );
+  const changed = live.filter((album) => {
+    const prior = stored.get(album.ratingKey);
+    return (
+      album.trackCount !== prior?.trackCount || genresChanged(prior, album)
+    );
+  });
   if (changed.length === 0) return;
 
   const chunks: PlexAlbumTracksPayload[] = [];

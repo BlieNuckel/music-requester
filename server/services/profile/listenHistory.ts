@@ -5,6 +5,7 @@ import {
   foldEvents,
   reconstructTrackPlayCounts,
 } from "./signalIngestion";
+import type { AlbumPlayRollup } from "./signalIngestion";
 import type { PlexHistoryEntry } from "../../api/plex/playHistory";
 import type { UserSignalEvent } from "../../db/entity/UserSignalEvent";
 
@@ -243,6 +244,52 @@ export function rollupEpisodesToArtists(
 
   applyTopTracks(byArtist, episodes, fromMs, toMs, capMs);
   return Array.from(byArtist.values());
+}
+
+/**
+ * Per-album listening from the episodes started inside `[fromMs, toMs)`, windowed the same
+ * way {@link rollupEpisodesToArtists} is. Returns the shape the count-delta rollup returns,
+ * because the caller picks one source or the other for a window and everything downstream
+ * reads whichever it got.
+ *
+ * Episodes with no album at all are dropped rather than pooled under an empty key: an album
+ * share is only meaningful against an album.
+ */
+export function rollupEpisodesToAlbums(
+  episodes: Map<string, ListenEpisode>,
+  fromMs = -Infinity,
+  toMs = Infinity,
+  capMs = 0
+): AlbumPlayRollup[] {
+  const byAlbum = new Map<string, AlbumPlayRollup>();
+
+  for (const episode of episodes.values()) {
+    if (episode.startedAt < fromMs || episode.startedAt >= toMs) continue;
+    if (!episode.albumKey && !episode.albumTitle) continue;
+    const key =
+      episode.albumKey || `${episode.artistName}:${episode.albumTitle}`;
+
+    const listenedMs = creditedMs(episode, capMs);
+    const existing = byAlbum.get(key);
+    if (!existing) {
+      byAlbum.set(key, {
+        albumKey: key,
+        title: episode.albumTitle,
+        artistKey: episode.artistKey,
+        artistName: episode.artistName,
+        playCount: 1,
+        listenedMs,
+      });
+      continue;
+    }
+    existing.playCount += 1;
+    existing.listenedMs += listenedMs;
+    if (!existing.title) existing.title = episode.albumTitle;
+    if (!existing.artistName) existing.artistName = episode.artistName;
+    if (!existing.artistKey) existing.artistKey = episode.artistKey;
+  }
+
+  return Array.from(byAlbum.values());
 }
 
 /**
