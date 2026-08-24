@@ -81,6 +81,18 @@ function profileRow(overrides: Record<string, unknown> = {}) {
           source: "artist",
           tags: [{ name: "dream pop", count: 100 }],
         },
+        {
+          albumKey: "alb-quiet",
+          title: "Quiet",
+          artistName: "Ride",
+          weight: 40,
+          source: "artist",
+          tags: [],
+          otherTags: [
+            { name: "nigerian", canonical: "Nigeria", class: "region" },
+            { name: "2024", canonical: "2024", class: "era" },
+          ],
+        },
       ],
       knownAlbums: ["ride::nowhere"],
       explorationHistory: { albums: ["a"], artists: ["b", "c"] },
@@ -230,8 +242,9 @@ describe("getProfileDebugSummaries", () => {
     expect(entry.profile?.counts).toEqual({
       genres: 2,
       artists: 2,
-      taggedAlbums: 2,
+      taggedAlbums: 3,
       albumsWithOwnGenre: 1,
+      genrelessAlbums: 1,
       similarSeeds: 1,
       similarCandidates: 1,
       knownAlbums: 1,
@@ -250,6 +263,33 @@ describe("getProfileDebugSummaries", () => {
       "Ride",
       "Slowdive",
     ]);
+  });
+
+  it("weighs the non-genre residue by the album weight behind it", async () => {
+    mockListUserProfiles.mockResolvedValue([profileRow()]);
+
+    const [entry] = await getProfileDebugSummaries();
+
+    expect(entry.profile?.topOtherTags).toEqual([
+      { tag: "Nigeria", weight: 40, tagClass: "region" },
+      { tag: "2024", weight: 40, tagClass: "era" },
+    ]);
+  });
+
+  it("reports no residue for a profile whose albums all resolved to genres", async () => {
+    const row = profileRow();
+    const parsed = JSON.parse(row.profile_json);
+    parsed.albumTags = parsed.albumTags.filter(
+      (album: { tags: unknown[] }) => album.tags.length > 0
+    );
+    mockListUserProfiles.mockResolvedValue([
+      { ...row, profile_json: JSON.stringify(parsed) },
+    ]);
+
+    const [entry] = await getProfileDebugSummaries();
+
+    expect(entry.profile?.counts.genrelessAlbums).toBe(0);
+    expect(entry.profile?.topOtherTags).toEqual([]);
   });
 
   it("calls a profile fresh when hash and schema match the current ones", async () => {
