@@ -6,6 +6,7 @@ import {
   type DerivedProfile,
 } from "./entity/UserProfile";
 import { UserSignalEvent } from "./entity/UserSignalEvent";
+import { VOCABULARY_VERSION } from "../genres/classify";
 
 /** The config fields that shape the derived profile and thus invalidate it on change. */
 export type ProfileConfigInputs = {
@@ -60,7 +61,10 @@ export function parseDerivedProfile(json: string): DerivedProfile {
       genreVector: parsed.genreVector ?? [],
       artistTags: parsed.artistTags ?? [],
       similarGraph: parsed.similarGraph ?? [],
-      albumTags: parsed.albumTags ?? [],
+      albumTags: (parsed.albumTags ?? []).map((album) => ({
+        ...album,
+        otherTags: album.otherTags ?? [],
+      })),
       artistSeries: parsed.artistSeries ?? [],
       knownAlbums: parsed.knownAlbums ?? [],
       explorationHistory: {
@@ -91,6 +95,9 @@ export function computeConfigHash(inputs: ProfileConfigInputs): string {
     seriesSpanDays: inputs.seriesSpanDays,
     momentumRecentBuckets: inputs.momentumRecentBuckets,
     albumTagsPerArtist: inputs.albumTagsPerArtist,
+    // Not a config field: regenerating the committed vocabulary changes what the recommender
+    // means by a genre, and stored profiles would otherwise keep the old reading forever.
+    vocabularyVersion: VOCABULARY_VERSION,
   });
   return createHash("sha256").update(stable).digest("hex");
 }

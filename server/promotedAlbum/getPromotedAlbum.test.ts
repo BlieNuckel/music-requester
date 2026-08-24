@@ -225,8 +225,20 @@ const plexArtists = [
   { name: "Bjork", viewCount: 50, thumb: "", genres: [] },
 ];
 
+/** Real MusicBrainz genres — the classifier drops anything the vocabulary doesn't know. */
+const GENRE_FIXTURES = [
+  "shoegaze",
+  "dream pop",
+  "techno",
+  "drone",
+  "ambient",
+  "jazz",
+  "funk",
+  "disco",
+];
+
 const tags = [
-  { name: "alternative", count: 100 },
+  { name: "alternative rock", count: 100 },
   { name: "rock", count: 80 },
 ];
 
@@ -284,11 +296,11 @@ const similarArtists = [
 
 const genreByArtist: Record<string, { name: string; count: number }[]> = {
   Radiohead: [
-    { name: "alternative", count: 100 },
+    { name: "alternative rock", count: 100 },
     { name: "rock", count: 80 },
   ],
   "Rock Clone": [
-    { name: "alternative", count: 100 },
+    { name: "alternative rock", count: 100 },
     { name: "rock", count: 80 },
   ],
   "Jazz Cat": [
@@ -332,7 +344,7 @@ describe("getPromotedAlbums", () => {
       ),
       year: "1997",
     });
-    expect(wt(result).tag).toBe("alternative");
+    expect(wt(result).tag).toBe("alternative rock");
     expect(result!.inLibrary).toBe(false);
     expect(mockLoadSignalBundle).toHaveBeenCalledWith(
       expect.any(Number),
@@ -1050,7 +1062,9 @@ describe("getPromotedAlbums", () => {
       }));
       mockDeriveArtistWeights.mockReturnValue(wide);
       mockGetArtistTopTags.mockImplementation((name: string) =>
-        Promise.resolve([{ name: `tag-${name}`, count: 100 }])
+        Promise.resolve([
+          { name: GENRE_FIXTURES[Number(name.split(" ")[1])], count: 100 },
+        ])
       );
       mockGetTopAlbumsByTag.mockResolvedValue(bigAlbumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
@@ -1102,7 +1116,9 @@ describe("getPromotedAlbums", () => {
         }))
       );
       mockGetArtistTopTags.mockImplementation((name: string) =>
-        Promise.resolve([{ name: `tag-${name}`, count: 100 }])
+        Promise.resolve([
+          { name: GENRE_FIXTURES[Number(name.split(" ")[1])], count: 100 },
+        ])
       );
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
@@ -1142,7 +1158,7 @@ describe("getPromotedAlbums", () => {
       const { albums } = await getPromotedAlbums(userId, true, 1);
 
       expect(albums).toHaveLength(1);
-      expect(wt(albums[0]).tag).toBe("alternative");
+      expect(wt(albums[0]).tag).toBe("alternative rock");
     });
 
     it("chosenTag name matches result tag", async () => {
@@ -1212,7 +1228,7 @@ describe("getPromotedAlbums", () => {
 
       const result = await getOne(userId);
       const altTag = wt(result).trace.weightedTags.find(
-        (t) => t.name === "alternative"
+        (t) => t.name === "alternative rock"
       );
       expect(altTag).toBeDefined();
       expect(altTag!.fromArtists).toContain("Radiohead");
@@ -1232,7 +1248,7 @@ describe("getPromotedAlbums", () => {
         (a) => a.name === "Radiohead"
       );
       expect(radiohead!.tagContributions).toHaveLength(2);
-      expect(radiohead!.tagContributions[0].tagName).toBe("alternative");
+      expect(radiohead!.tagContributions[0].tagName).toBe("alternative rock");
     });
 
     it("carries the play-distribution stats into the trace", async () => {
@@ -1298,7 +1314,7 @@ describe("getPromotedAlbums", () => {
     it("uses custom genericTags from config", async () => {
       mockGetConfigValue.mockReturnValue({
         ...defaultPromotedAlbumConfig,
-        genericTags: ["alternative"],
+        genericTags: ["alternative rock"],
       });
       mockDeriveArtistWeights.mockReturnValue(plexArtists);
       mockGetArtistTopTags.mockResolvedValue(tags);
@@ -1330,14 +1346,14 @@ describe("getPromotedAlbums", () => {
           listenedMs: 2_100_000,
         },
       ]);
-      mockGetAlbumTopTags.mockResolvedValue([{ name: "acoustic", count: 100 }]);
+      mockGetAlbumTopTags.mockResolvedValue([{ name: "folk", count: 100 }]);
       mockGetArtistTopTags.mockResolvedValue(tags);
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
       const result = await getOne(userId);
 
-      expect(wt(result).tag).toBe("acoustic");
+      expect(wt(result).tag).toBe("folk");
     });
 
     it("attributes the trace's tag contributions to the artist the album belongs to", async () => {
@@ -1359,7 +1375,7 @@ describe("getPromotedAlbums", () => {
           listenedMs: 2_100_000,
         },
       ]);
-      mockGetAlbumTopTags.mockResolvedValue([{ name: "acoustic", count: 100 }]);
+      mockGetAlbumTopTags.mockResolvedValue([{ name: "folk", count: 100 }]);
       mockGetArtistTopTags.mockResolvedValue(tags);
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
@@ -1369,7 +1385,7 @@ describe("getPromotedAlbums", () => {
       const [artist] = wt(result).trace.plexArtists;
       expect(artist.name).toBe("Radiohead");
       expect(artist.tagContributions).toEqual([
-        { tagName: "acoustic", rawCount: 100, weight: 100 },
+        { tagName: "folk", rawCount: 100, weight: 100 },
       ]);
     });
 

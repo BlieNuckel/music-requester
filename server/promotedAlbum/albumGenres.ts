@@ -3,11 +3,13 @@ import {
   reconstructAlbumTrackCounts,
   toPlayEquivalents,
 } from "../services/profile/signalIngestion";
+import { classifyTag, foldTag } from "../genres/classify";
 import { createLogger } from "../logger";
 import type { AlbumPlayRollup } from "../services/profile/signalIngestion";
 import type { UserSignalEvent } from "../db/entity/UserSignalEvent";
 import type {
   AlbumTagSource,
+  ClassifiedOtherTag,
   DerivedProfile,
   ProfileAlbumTags,
 } from "../db/entity/UserProfile";
@@ -29,7 +31,17 @@ export type AlbumTagOptions = {
   listeningWeight: number;
 };
 
-type ResolvedTags = { tags: AlbumTag[]; source: AlbumTagSource };
+type ResolvedTags = {
+  tags: AlbumTag[];
+  source: AlbumTagSource;
+  other: ClassifiedOtherTag[];
+};
+
+/** One source's tags split by whether they can carry weight into the genre vector. */
+export type PartitionedTags = {
+  genres: AlbumTag[];
+  other: ClassifiedOtherTag[];
+};
 
 const log = createLogger("album-genres");
 
@@ -141,45 +153,65 @@ export async function fetchAlbumTags(
   return found;
 }
 
-const keepTags = (
-  tags: AlbumTag[],
-  genericTags: Set<string>,
-  limit: number
-): AlbumTag[] =>
-  tags.filter((t) => !genericTags.has(t.name.toLowerCase())).slice(0, limit);
-
 /**
- * A tag carrying a year — `2011`, `best of 2011`, `2024 albums` — is a release date or a
- * listing, never a genre. Last.fm's album vocabulary is full of both, and they rank high
- * enough to take a top-five slot outright. No real genre name contains a year.
+ * Split one source's tags into the genres that can carry weight and everything else.
+ *
+ * Everything the year and junk heuristics used to guess at is now a vocabulary lookup, which
+ * is the point: we stop trying to enumerate what *isn't* a genre — an unbounded set — and
+ * check membership of what is. Non-genre tags are kept rather than dropped so an artist we
+ * know a region for but no genre reads as exactly that, instead of as an artist we know
+ * nothing about.
+ *
+ * Two things are still handled here rather than by the vocabulary. A tag equal to the
+ * artist's own name is self-reference, not vocabulary, and Last.fm album tags are full of it.
+ * And genre tags are deduplicated *after* canonicalization, keeping the highest count —
+ * without that, an album tagged both `Hip-Hop` and `hip hop` would contribute the same genre
+ * twice and take double its share of the album's weight.
  */
-const isDatedTag = (name: string): boolean => /\b(19|20)\d{2}\b/.test(name);
-
-/**
- * The same filtering plus the two noise classes that only appear once tags are read per
- * album: the release year, and the artist's own name. Both are common enough in Last.fm's
- * album vocabulary to win a top-five slot outright, and an album left with nothing after
- * this falls through to the next source rather than contributing a year to the genre vector.
- */
-const keepAlbumTags = (
+export function partitionTags(
   tags: AlbumTag[],
   artistName: string,
-  genericTags: Set<string>,
-  limit: number
-): AlbumTag[] => {
-  const self = artistName.trim().toLowerCase();
-  return tags
-    .filter((t) => {
-      const name = t.name.trim().toLowerCase();
-      return (
-        name.length > 0 &&
-        !genericTags.has(name) &&
-        !isDatedTag(name) &&
-        name !== self
-      );
-    })
-    .slice(0, limit);
-};
+  options: AlbumTagOptions
+): PartitionedTags {
+  const { genericTags, tagsPerAlbum } = options;
+  const self = foldTag(artistName);
+
+  const genres = new Map<string, AlbumTag>();
+  const other: ClassifiedOtherTag[] = [];
+
+  for (const tag of tags) {
+    const key = foldTag(tag.name);
+    if (!key || key === self) continue;
+
+    const classified = classifyTag(tag.name);
+    if (classified.class !== "genre") {
+      if (!genericTags.has(key)) {
+        other.push({
+          name: tag.name,
+          canonical: classified.canonical,
+          class: classified.class,
+        });
+      }
+      continue;
+    }
+
+    // Generic tags are matched on the canonical name: blocking "hip hop" has to block the
+    // "rap" that resolves to it, or the block is decided by which spelling happened to arrive.
+    if (genericTags.has(foldTag(classified.canonical))) continue;
+
+    const existing = genres.get(classified.canonical);
+    if (!existing) {
+      genres.set(classified.canonical, {
+        name: classified.canonical,
+        count: tag.count,
+      });
+    } else if (tag.count > existing.count) {
+      existing.count = tag.count;
+    }
+  }
+
+  return { genres: [...genres.values()].slice(0, tagsPerAlbum), other };
+}
 
 /**
  * Plex genres carried as tags. Every genre gets the same count because Plex ranks nothing —
@@ -191,9 +223,13 @@ const asTags = (genres: string[]): AlbumTag[] =>
 
 /**
  * One album's genres, tried richest source first: the Last.fm album tags where we spent a
- * call, the Plex agent genre next, the artist's own tags last. A source that survives
- * generic-tag filtering with nothing left is skipped rather than accepted empty, so an album
- * tagged only "seen live" still inherits something usable.
+ * call, the Plex agent genre next, the artist's own tags last. A source yielding no *genre*
+ * is skipped rather than accepted, so an album Last.fm knows only as "nigerian" still
+ * inherits its artist's genres.
+ *
+ * Non-genre tags are collected from every source tried, not just the winning one. That is
+ * deliberate: the album above would otherwise lose the one region we know about it the
+ * moment a later source supplied a genre.
  */
 export function resolveAlbumTags(
   album: AlbumPlayRollup,
@@ -202,30 +238,30 @@ export function resolveAlbumTags(
   artistTags: AlbumTag[],
   options: AlbumTagOptions
 ): ResolvedTags {
-  const { genericTags, tagsPerAlbum } = options;
+  const sources: [AlbumTagSource, AlbumTag[]][] = [
+    ["lastfm-album", lastfm.get(album.albumKey) ?? []],
+    ["plex-album", asTags(plex.get(album.albumKey) ?? [])],
+    ["artist", artistTags],
+  ];
 
-  const fromLastfm = keepAlbumTags(
-    lastfm.get(album.albumKey) ?? [],
-    album.artistName,
-    genericTags,
-    tagsPerAlbum
-  );
-  if (fromLastfm.length > 0) {
-    return { tags: fromLastfm, source: "lastfm-album" };
+  const other: ClassifiedOtherTag[] = [];
+  for (const [source, tags] of sources) {
+    const partitioned = partitionTags(tags, album.artistName, options);
+    other.push(...partitioned.other);
+    if (partitioned.genres.length > 0) {
+      return { tags: partitioned.genres, source, other: dedupeOther(other) };
+    }
   }
+  return { tags: [], source: "artist", other: dedupeOther(other) };
+}
 
-  const fromPlex = keepAlbumTags(
-    asTags(plex.get(album.albumKey) ?? []),
-    album.artistName,
-    genericTags,
-    tagsPerAlbum
-  );
-  if (fromPlex.length > 0) return { tags: fromPlex, source: "plex-album" };
-
-  return {
-    tags: keepTags(artistTags, genericTags, tagsPerAlbum),
-    source: "artist",
-  };
+/** One entry per canonical name — the same region arrives from several sources. */
+function dedupeOther(tags: ClassifiedOtherTag[]): ClassifiedOtherTag[] {
+  const seen = new Map<string, ClassifiedOtherTag>();
+  for (const tag of tags) {
+    if (!seen.has(tag.canonical)) seen.set(tag.canonical, tag);
+  }
+  return [...seen.values()];
 }
 
 /**
@@ -251,6 +287,7 @@ function artistAlbumTags(
   const total = equivalents.reduce((sum, value) => sum + value, 0);
 
   if (total <= 0) {
+    const partitioned = partitionTags(artistTags, artist.name, options);
     return [
       {
         albumKey: "",
@@ -258,7 +295,8 @@ function artistAlbumTags(
         artistName: artist.name,
         weight: artist.viewCount,
         source: "artist",
-        tags: keepTags(artistTags, options.genericTags, options.tagsPerAlbum),
+        tags: partitioned.genres,
+        otherTags: partitioned.other,
       },
     ];
   }
@@ -272,14 +310,16 @@ function artistAlbumTags(
       weight: artist.viewCount * (equivalents[index] / total),
       source: resolved.source,
       tags: resolved.tags,
+      otherTags: resolved.other,
     };
   });
 }
 
 /**
- * Every top artist's listening, split across their albums and tagged. Albums whose tags all
- * turn out generic are dropped: they can contribute nothing to the vector, and keeping them
- * only makes the stored document larger.
+ * Every top artist's listening, split across their albums and tagged. An album that resolved
+ * to no genre is kept only when it carries something else we recognised — a region says
+ * "we know where this is from but not what it is", which is worth storing, while an album
+ * that produced nothing at all is just weight with no attribute and only bloats the document.
  */
 export function buildAlbumTags(
   byArtist: ArtistAlbums[],
@@ -300,5 +340,5 @@ export function buildAlbumTags(
         options
       )
     )
-    .filter((album) => album.tags.length > 0);
+    .filter((album) => album.tags.length > 0 || album.otherTags.length > 0);
 }

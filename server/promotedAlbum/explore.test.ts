@@ -59,7 +59,7 @@ describe("buildSimilarGraph", () => {
     mockGetArtistTopTags.mockImplementation((name: string) =>
       Promise.resolve(
         name === "Radiohead"
-          ? [{ name: "alternative", count: 100 }]
+          ? [{ name: "alternative rock", count: 100 }]
           : [{ name: "jazz", count: 100 }]
       )
     );
@@ -73,7 +73,7 @@ describe("buildSimilarGraph", () => {
       {
         seedArtist: "Radiohead",
         seedMbid: "mbid-seed",
-        seedGenres: ["alternative"],
+        seedGenres: ["alternative rock"],
         viewCount: 100,
         candidates: [
           {
@@ -120,6 +120,46 @@ describe("buildSimilarGraph", () => {
     expect(graph).toEqual([]);
   });
 
+  it("overlaps a seed and candidate that spell one genre differently", async () => {
+    mockGetArtistMbidByName.mockResolvedValue("mbid-seed");
+    mockGetSimilarArtists.mockResolvedValue([
+      similar("Bass Cat", "mbid-bass", 9000),
+    ]);
+    mockGetArtistTopTags.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === "Radiohead"
+          ? [{ name: "DnB", count: 100 }]
+          : [{ name: "Drum and bass", count: 100 }]
+      )
+    );
+
+    const graph = await buildSimilarGraph(
+      [{ name: "Radiohead", viewCount: 100 }],
+      config
+    );
+
+    expect(graph[0].seedGenres).toEqual(["drum and bass"]);
+    expect(graph[0].candidates[0].genres).toEqual(["drum and bass"]);
+  });
+
+  it("leaves a non-genre tag out of the sets that decide genre overlap", async () => {
+    mockGetArtistMbidByName.mockResolvedValue("mbid-seed");
+    mockGetSimilarArtists.mockResolvedValue([
+      similar("Jazz Cat", "mbid-jazz", 9000),
+    ]);
+    mockGetArtistTopTags.mockResolvedValue([
+      { name: "nigerian", count: 100 },
+      { name: "jazz", count: 90 },
+    ]);
+
+    const graph = await buildSimilarGraph(
+      [{ name: "Radiohead", viewCount: 100 }],
+      config
+    );
+
+    expect(graph[0].seedGenres).toEqual(["jazz"]);
+  });
+
   it("drops Various Artists from the candidate list", async () => {
     mockGetArtistMbidByName.mockResolvedValue("mbid-seed");
     mockGetSimilarArtists.mockResolvedValue([
@@ -129,7 +169,7 @@ describe("buildSimilarGraph", () => {
     mockGetArtistTopTags.mockImplementation((name: string) =>
       Promise.resolve(
         name === "Radiohead"
-          ? [{ name: "alternative", count: 100 }]
+          ? [{ name: "alternative rock", count: 100 }]
           : [{ name: "jazz", count: 100 }]
       )
     );
@@ -163,14 +203,14 @@ describe("buildExploreResult", () => {
   const seed: SimilarGraphSeed = {
     seedArtist: "Radiohead",
     seedMbid: "mbid-seed",
-    seedGenres: ["alternative", "rock"],
+    seedGenres: ["alternative rock", "rock"],
     viewCount: 100,
     candidates: [
       {
         name: "Rock Clone",
         artistMbid: "mbid-rock",
         score: 9000,
-        genres: ["alternative", "rock"],
+        genres: ["alternative rock", "rock"],
       },
       {
         name: "Jazz Cat",

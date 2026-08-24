@@ -47,6 +47,7 @@
     "migration:generate": "pnpm typeorm migration:generate -d server/db/dataSource.ts",
     "migration:run": "pnpm typeorm migration:run -d server/db/dataSource.ts",
     "seed": "tsx --tsconfig server/tsconfig.json server/dev/seed.ts",
+    "genres:build": "tsx --tsconfig server/tsconfig.json server/dev/buildGenreVocabulary.ts",
     "dev:mock": "MOCK_LIDARR=true pnpm dev",
     "prepare": "husky"
   },
