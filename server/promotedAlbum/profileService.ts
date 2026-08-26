@@ -1,26 +1,8 @@
-import {
-  deriveAlbumWeights,
-  deriveArtistWeights,
-  loadSignalBundle,
-  type ArtistWeight,
-  type ArtistWeightOptions,
-  type SignalBundle,
-} from "./artistWeights";
-import {
-  albumsByArtist,
-  buildAlbumTags,
-  fetchAlbumTags,
-  plexAlbumGenres,
-  selectTagTargets,
-} from "./albumGenres";
-import {
-  attachSeriesSignals,
-  loadArtistSeries,
-  selectProfileSeries,
-  type ArtistSeriesOptions,
-} from "./artistSeries";
-import { buildSimilarGraph } from "./explore";
-import { loadKnownAlbums } from "./knownAlbums";
+import type { ArtistWeight } from "./artistWeights";
+
+import { selectProfileSeries, type ArtistSeries } from "./artistSeries";
+import { runGraph } from "../recommenderGraph/runtime/executor";
+import { PROFILE_BODIES } from "./profileGraph";
 import { getArtistTopTags } from "../api/lastfm/artists";
 import { getConfigValue } from "../config";
 import type { PromotedAlbumConfig } from "../config";
@@ -36,7 +18,7 @@ import {
 import type { UserProfile, DerivedProfile } from "../db/entity/UserProfile";
 import { DERIVED_PROFILE_SCHEMA_VERSION } from "../db/entity/UserProfile";
 
-type TagResultEntry = {
+export type TagResultEntry = {
   artist: ArtistWeight;
   tags: { name: string; count: number }[];
 };
@@ -50,14 +32,6 @@ export type ProfileLoad =
   { status: "ready"; profile: DerivedProfile } | { status: "building" };
 
 /** Everything {@link buildProfileAlbumTags} needs, gathered rather than passed one by one. */
-type AlbumTagInputs = {
-  bundle: SignalBundle;
-  topArtists: ArtistWeight[];
-  artistTags: DerivedProfile["artistTags"];
-  config: PromotedAlbumConfig;
-  weightOptions: ArtistWeightOptions;
-  genericTags: Set<string>;
-};
 
 type TagAccumulator = {
   displayName: string;
@@ -156,7 +130,7 @@ export function buildGenreVector(
   }));
 }
 
-function buildArtistTags(
+export function buildArtistTags(
   tagResults: TagResultEntry[],
   genericTags: Set<string>,
   tagsPerArtist: number
@@ -171,40 +145,7 @@ function buildArtistTags(
   }));
 }
 
-/**
- * The albums of the top artists, tagged and weighted, ready to be summed into the vector.
- * The Last.fm fan-out is bounded per artist by `albumTagsPerArtist`; every other album
- * resolves off the Plex genres the catalogue sweep already captured, at no request cost.
- */
-async function buildProfileAlbumTags(
-  inputs: AlbumTagInputs
-): Promise<DerivedProfile["albumTags"]> {
-  const { bundle, topArtists, artistTags, config, weightOptions, genericTags } =
-    inputs;
-
-  const byArtist = albumsByArtist(
-    topArtists,
-    deriveAlbumWeights(bundle, weightOptions),
-    config.listeningWeight
-  );
-  const lastfm = await fetchAlbumTags(
-    selectTagTargets(byArtist, config.albumTagsPerArtist)
-  );
-
-  return buildAlbumTags(
-    byArtist,
-    artistTags,
-    lastfm,
-    plexAlbumGenres(bundle.albumEvents),
-    {
-      tagsPerAlbum: config.tagsPerArtist,
-      genericTags,
-      listeningWeight: config.listeningWeight,
-    }
-  );
-}
-
-async function fetchTagResults(
+export async function fetchTagResults(
   artists: ArtistWeight[]
 ): Promise<TagResultEntry[]> {
   return Promise.all(
@@ -220,95 +161,65 @@ async function fetchTagResults(
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** The weighting knobs, resolved once so the album split is measured over the same window. */
-function artistWeightOptions(config: PromotedAlbumConfig): ArtistWeightOptions {
-  return {
-    windowMs: config.playTrendWindowDays * DAY_MS,
-    ratingWeight: config.ratingWeight,
-    listeningWeight: config.listeningWeight,
-    maxTrackMinutesForWeight: config.maxTrackMinutesForWeight,
-  };
-}
-
-/** The series knobs, resolved from config so both the derivation and the stored bucket width agree. */
-function seriesOptions(config: PromotedAlbumConfig): ArtistSeriesOptions {
-  return {
-    now: Date.now(),
-    bucketMs: config.seriesBucketDays * DAY_MS,
-    spanMs: config.seriesSpanDays * DAY_MS,
-    recentBuckets: config.momentumRecentBuckets,
-    capMs: Math.max(0, config.maxTrackMinutesForWeight) * 60_000,
-    listeningWeight: config.listeningWeight,
-  };
-}
-
 /**
- * Rebuild a user's derived profile from Plex top-artists + Last.fm tags and persist it.
- * Request-free (token in, profile out) so the Phase 3 scheduler can call it directly.
- * Returns null when the user has no top artists or every tag is generic; the existing
- * row (if any) is left untouched in that case. Existing exploration memory is carried
- * forward across the regenerate.
+ * Rebuild a user's derived profile and persist it. Request-free (token in, profile out) so a
+ * scheduler can call it directly. Returns null when the user has no top artists or every tag
+ * is generic; the existing row is left untouched in that case, and the exploration memory is
+ * carried forward across the rebuild.
  *
- * Tags are fetched for *every* top artist rather than a random few. Sampling here froze one
- * draw into a profile that then drove every recommendation for the whole TTL; the sample
- * belongs at selection time, where it can be re-rolled per recommendation.
+ * The sequence is the graph's, not this function's. It used to be written out here — some
+ * seventeen calls threading two hand-built option objects — while the same sequence was also
+ * drawn in the node registry, and nothing made the two agree. Asking the runtime for
+ * `profileDocument` runs exactly what that node depends on, so the drawing is the pipeline
+ * rather than a description of it that can rot.
+ *
+ * The signal log is `given` rather than run: a profile build reads what the capture sweep and
+ * the session poller have already written, on their own schedules.
  */
 export async function regenerateProfile(
   userId: number,
   plexToken: string
 ): Promise<DerivedProfile | null> {
   const config = getConfigValue("promotedAlbum");
-  const weightOptions = artistWeightOptions(config);
-  const bundle = await loadSignalBundle(userId, plexToken);
-  const series = await loadArtistSeries(userId, seriesOptions(config));
-  const weighted = attachSeriesSignals(
-    deriveArtistWeights(bundle, weightOptions),
-    series
+  const { outputs } = await runGraph(
+    [
+      "genreVector",
+      "artistTags",
+      "albumTags",
+      "similarGraph",
+      "attachSeries",
+      "artistSeries",
+      "knownAlbums",
+    ],
+    PROFILE_BODIES,
+    { userId, plexToken, config, now: Date.now() },
+    new Map([["signalLog", "persisted"]])
   );
-  if (weighted.length === 0) return null;
 
-  const topArtists = [...weighted]
-    .sort((a, b) => b.viewCount - a.viewCount)
-    .slice(0, config.topArtistsCount);
-
-  const tagResults = await fetchTagResults(topArtists);
-  const genericTags = new Set(config.genericTags.map((t) => t.toLowerCase()));
-  const artistTags = buildArtistTags(
-    tagResults,
-    genericTags,
-    config.tagsPerArtist
-  );
-  const albumTags = await buildProfileAlbumTags({
-    bundle,
-    topArtists,
-    artistTags,
-    config,
-    weightOptions,
-    genericTags,
-  });
-  const genreVector = buildGenreVector(albumTags);
-  if (genreVector.length === 0) return null;
-
-  const similarGraph = await buildSimilarGraph(topArtists, config);
+  const artistTags = outputs.get("artistTags") as DerivedProfile["artistTags"];
+  const genreVector = outputs.get(
+    "genreVector"
+  ) as DerivedProfile["genreVector"];
+  if (artistTags.length === 0 || genreVector.length === 0) return null;
 
   const existing = await getUserProfile(userId);
-  const explorationHistory = existing
-    ? parseDerivedProfile(existing.profile_json).explorationHistory
-    : { albums: [], artists: [] };
+  const topArtists = outputs.get("topArtists") as ArtistWeight[];
 
   const profile: DerivedProfile = {
     genreVector,
     artistTags,
-    albumTags,
-    similarGraph,
+    albumTags: outputs.get("albumTags") as DerivedProfile["albumTags"],
+    similarGraph: outputs.get("similarGraph") as DerivedProfile["similarGraph"],
     artistSeries: selectProfileSeries(
-      series,
-      topArtists.map((a) => a.name),
+      outputs.get("artistSeries") as ArtistSeries[],
+      topArtists.map((artist) => artist.name),
       config.topArtistsCount,
       config.seriesBucketDays * DAY_MS
     ),
-    knownAlbums: await loadKnownAlbums(userId),
-    explorationHistory,
+    knownAlbums: outputs.get("knownAlbums") as string[],
+    explorationHistory: existing
+      ? parseDerivedProfile(existing.profile_json).explorationHistory
+      : { albums: [], artists: [] },
   };
 
   await upsertUserProfile(userId, profile, computeConfigHash(config));

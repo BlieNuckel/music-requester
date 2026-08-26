@@ -106,13 +106,19 @@ async function runNode<Ctx>(
  *
  * `control` inputs are scheduling rather than data — something triggers something else — so
  * they are not resolved here. A node whose only inputs are control edges is a root.
+ *
+ * `given` names the nodes this run starts from rather than computes. A profile build reads
+ * the signal log; it does not sweep Plex to fill it, because that runs on its own schedule.
+ * Seeding the boundary keeps that edge in the drawing — the log really is where the data
+ * comes from — without the run reaching back through it.
  */
 export async function runGraph<Ctx>(
   targets: string[],
   bodies: ReadonlyMap<string, NodeBody<Ctx>>,
-  ctx: Ctx
+  ctx: Ctx,
+  given: ReadonlyMap<string, unknown> = new Map()
 ): Promise<GraphRun> {
-  const done = new Map<string, unknown>();
+  const done = new Map<string, unknown>(given);
   const trace: NodeRun[] = [];
 
   for (const target of targets) {
