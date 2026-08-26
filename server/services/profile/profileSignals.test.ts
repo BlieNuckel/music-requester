@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+/** `foldSignalsToNow` takes a track-length ceiling; these cases are about the fold. */
+const UNCAPPED = 0;
+
 const mockGetAllTrackPlayCounts = vi.fn();
 
 vi.mock("../../api/plex/trackPlayCounts", () => ({
@@ -67,7 +70,8 @@ describe("foldSignalsToNow", () => {
           trackEvent([{ ratingKey: "1", artistName: "A", playCount: 4 }]),
           trackEvent([{ ratingKey: "1", artistName: "A", playCount: 9 }]),
         ],
-      })
+      }),
+      UNCAPPED
     );
 
     expect(folded.tracks.get("1")?.plays).toBe(9);
@@ -92,7 +96,8 @@ describe("foldSignalsToNow", () => {
             rating: 10,
           }),
         ],
-      })
+      }),
+      UNCAPPED
     );
 
     expect(folded.ratings.get("r1")?.rating).toBe(10);
@@ -109,7 +114,8 @@ describe("foldSignalsToNow", () => {
             ],
           }),
         ],
-      })
+      }),
+      UNCAPPED
     );
 
     expect(folded.albumGenres.get("a1")).toEqual(["dub"]);
@@ -117,7 +123,7 @@ describe("foldSignalsToNow", () => {
   });
 
   it("folds an empty log to empty state rather than throwing", () => {
-    const folded = foldSignalsToNow(signals());
+    const folded = foldSignalsToNow(signals(), UNCAPPED);
 
     expect(folded.tracks.size).toBe(0);
     expect(folded.ratings.size).toBe(0);

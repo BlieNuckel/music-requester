@@ -71,10 +71,17 @@ export async function loadProfileSignals(
   };
 }
 
-/** Replay the log into current state, once, for everything that reads it as it stands. */
+/**
+ * Replay the log into current state, once, for everything that reads it as it stands.
+ *
+ * `capMs` is required rather than defaulted: `tracks` becomes the all-time fallback a
+ * listening window compares its own capped rows against, and a caller holding a cap for one
+ * and taking a default on the other gets a mismatch nothing downstream can detect. See
+ * {@link allTimeListening}.
+ */
 export function foldSignalsToNow(
   signals: ProfileSignals,
-  capMs = 0
+  capMs: number
 ): FoldedSignals {
   const albumGenres = new Map<string, string[]>();
   for (const [key, album] of reconstructAlbumTrackCounts(

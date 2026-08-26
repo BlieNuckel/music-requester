@@ -44,10 +44,3 @@ export function selectFlow(
 
   return { nodes, edges };
 }
-
-/** How many knobs a flow owns, for the flow switcher. */
-export function countFlowParams(graph: RecommenderGraph, flow: FlowId): number {
-  return graph.nodes
-    .filter((node) => node.flow === flow)
-    .reduce((total, node) => total + node.params.length, 0);
-}

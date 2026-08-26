@@ -242,9 +242,10 @@ describe("resolveListeningWindow", () => {
 
 describe("allTimeListening", () => {
   it("applies no window at all", () => {
-    const rows = allTimeListening([
-      trackEvent([{ ratingKey: "1", artistName: "A", playCount: 10 }], 400),
-    ]);
+    const rows = allTimeListening(
+      [trackEvent([{ ratingKey: "1", artistName: "A", playCount: 10 }], 400)],
+      0
+    );
 
     expect(rows.get("1")?.plays).toBe(10);
   });

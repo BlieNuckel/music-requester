@@ -162,10 +162,17 @@ function hasListening(rows: Map<string, WindowedPlay>): boolean {
   return false;
 }
 
-/** All-time listening as rows: the fold with no window applied. */
+/**
+ * All-time listening as rows: the fold with no window applied.
+ *
+ * `capMs` is required and not defaulted, though 0 still means uncapped. This map is what a
+ * window falls back to, and the fallback is compared against rows the window capped: folding
+ * it under a different ceiling is a difference nothing downstream can see, and both spellings
+ * type-check the same. Making the caller say which it wants is the only place to catch it.
+ */
 export function allTimeListening(
   trackEvents: UserSignalEvent[],
-  capMs = 0
+  capMs: number
 ): Map<string, WindowedPlay> {
   return rowsFromTracks(
     reconstructTrackPlayCounts(trackEvents, Infinity),
@@ -192,6 +199,11 @@ export function allTimeListening(
  *
  * `allTimePlays` is passed in rather than folded here: it is the same fold the rest of the
  * build already reads, and folding it twice is what this whole pass exists to stop.
+ *
+ * The `deltas` branch is the exception, and not a resolved one. It replays the track events
+ * a second time because it needs `durationMs` to infer listening, which `WindowedPlay` has
+ * already dropped — so the branch most users land on still folds all-time twice. Fixing that
+ * means carrying durations through the row shape, which is #348.
  */
 export function resolveListeningWindow(
   trackEvents: UserSignalEvent[],

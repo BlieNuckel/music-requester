@@ -1,4 +1,4 @@
-import { countFlowParams, selectFlow } from "../flowSelection";
+import { selectFlow } from "../flowSelection";
 import { makeGraph, makeNode } from "./fixtures";
 import type { GraphEdge, RecommenderGraph } from "@shared/recommenderGraph";
 
@@ -76,12 +76,5 @@ describe("selectFlow", () => {
 
   it("drops edges that touch neither side", () => {
     expect(selectFlow(graph, "artists")).toEqual({ nodes: [], edges: [] });
-  });
-});
-
-describe("countFlowParams", () => {
-  it("counts only the knobs a flow owns", () => {
-    expect(countFlowParams(graph, "spotlight")).toBe(1);
-    expect(countFlowParams(graph, "ingestion")).toBe(0);
   });
 });
