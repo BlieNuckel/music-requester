@@ -162,23 +162,24 @@ function hasListening(rows: Map<string, WindowedPlay>): boolean {
   return false;
 }
 
-/**
- * All-time listening as rows: the fold with no window applied.
- *
- * `capMs` is required and not defaulted, though 0 still means uncapped. This map is what a
- * window falls back to, and the fallback is compared against rows the window capped: folding
- * it under a different ceiling is a difference nothing downstream can see, and both spellings
- * type-check the same. Making the caller say which it wants is the only place to catch it.
- */
-export function allTimeListening(
-  trackEvents: UserSignalEvent[],
+/** A cumulative fold as rows, with no window applied and the per-play ceiling in place. */
+export function listeningRows(
+  tracks: Map<string, TrackPlayState>,
   capMs: number
 ): Map<string, WindowedPlay> {
-  return rowsFromTracks(
-    reconstructTrackPlayCounts(trackEvents, Infinity),
-    undefined,
-    capMs
-  );
+  return rowsFromTracks(tracks, undefined, capMs);
+}
+
+/** The window to fall back to: the whole fold, honestly labelled as unwindowed. */
+function allTimeWindow(
+  tracks: Map<string, TrackPlayState>,
+  capMs: number
+): ListeningWindow {
+  return {
+    startMs: null,
+    source: "allTime",
+    plays: listeningRows(tracks, capMs),
+  };
 }
 
 /**
@@ -197,45 +198,44 @@ export function allTimeListening(
  * alone. The episode series joins durations from the play series, so without it there is
  * nothing to measure against.
  *
- * `allTimePlays` is passed in rather than folded here: it is the same fold the rest of the
- * build already reads, and folding it twice is what this whole pass exists to stop.
+ * `allTimeTracks` is the cumulative fold, passed in rather than folded here: it is the same
+ * fold the rest of the build already reads, and folding it twice is what this whole pass
+ * exists to stop. Only the baseline at the window's start is folded here, because that
+ * cutoff belongs to this window and to nothing else.
  *
- * The `deltas` branch is the exception, and not a resolved one. It replays the track events
- * a second time because it needs `durationMs` to infer listening, which `WindowedPlay` has
- * already dropped — so the branch most users land on still folds all-time twice. Fixing that
- * means carrying durations through the row shape, which is #348.
+ * It arrives as the fold rather than as rows so that the `deltas` branch can subtract from
+ * it — a delta needs each track's `playCount` and length, which rows no longer carry — and
+ * so that the type refuses rows measured from episodes, which count plays differently and
+ * would silently make every delta wrong.
  */
 export function resolveListeningWindow(
   trackEvents: UserSignalEvent[],
   episodes: Map<string, ListenEpisode>,
-  allTimePlays: Map<string, WindowedPlay>,
+  allTimeTracks: Map<string, TrackPlayState>,
   options: WindowOptions
 ): ListeningWindow {
   const { now, windowMs, capMs } = options;
-  const allTime: ListeningWindow = {
-    startMs: null,
-    source: "allTime",
-    plays: allTimePlays,
-  };
 
   const earliest = earliestRecordedAt(trackEvents);
-  if (earliest === null) return allTime;
+  if (earliest === null) return allTimeWindow(allTimeTracks, capMs);
 
   const startMs = now - windowMs;
   if (historyCovers(episodes, startMs)) {
     const plays = rowsFromEpisodes(episodes, startMs, now, capMs);
     return hasListening(plays)
       ? { startMs, source: "episodes", plays }
-      : allTime;
+      : allTimeWindow(allTimeTracks, capMs);
   }
-  if (earliest > startMs) return allTime;
+  if (earliest > startMs) return allTimeWindow(allTimeTracks, capMs);
 
   const plays = rowsFromTracks(
-    reconstructTrackPlayCounts(trackEvents, Infinity),
+    allTimeTracks,
     reconstructTrackPlayCounts(trackEvents, startMs),
     capMs
   );
-  return hasListening(plays) ? { startMs, source: "deltas", plays } : allTime;
+  return hasListening(plays)
+    ? { startMs, source: "deltas", plays }
+    : allTimeWindow(allTimeTracks, capMs);
 }
 
 /**
