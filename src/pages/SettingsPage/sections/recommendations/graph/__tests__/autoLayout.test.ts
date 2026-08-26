@@ -132,6 +132,38 @@ describe("autoLayout", () => {
     expect(loose.get("b")!.x).toBeGreaterThan(tight.get("b")!.x);
   });
 
+  it("places a node beside what reads it, not beside what feeds it", () => {
+    const chain = ["a", "b", "c", "d", "aside"].map(own);
+    const positions = autoLayout(chain, [
+      edge("a", "b"),
+      edge("b", "c"),
+      edge("c", "d"),
+      edge("a", "aside"),
+      edge("aside", "d"),
+    ]);
+
+    expect(positions.get("aside")!.x).toBe(positions.get("c")!.x);
+  });
+
+  it("reserves room in the lanes a long edge has to cross", () => {
+    const short = autoLayout(nodes, [edge("a", "b"), edge("b", "c")]);
+    const crossed = autoLayout(nodes, [
+      edge("a", "b"),
+      edge("b", "c"),
+      edge("a", "c"),
+    ]);
+
+    expect(crossed.get("c")!.y).toBeGreaterThan(short.get("c")!.y);
+  });
+
+  it("orders a lane so its edges stop crossing each other", () => {
+    const four = ["a", "b", "c", "d"].map(own);
+    const positions = autoLayout(four, [edge("a", "d"), edge("b", "c")]);
+
+    expect(positions.get("a")!.y).toBeLessThan(positions.get("b")!.y);
+    expect(positions.get("d")!.y).toBeLessThan(positions.get("c")!.y);
+  });
+
   it("ignores edges to nodes outside this flow's selection", () => {
     const positions = autoLayout(nodes, [edge("elsewhere", "a")]);
 

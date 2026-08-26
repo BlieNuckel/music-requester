@@ -19,10 +19,19 @@ export type NodeScope = "ingest" | "profile" | "pick" | "serve";
 /**
  * Which chart a node belongs to. One canvas holding every node was drawn first and was
  * unreadable: the flows share nodes but not shape, so they read as one tangle rather than
- * as four pipelines. A node belongs to exactly one flow and appears in the others as a
+ * as several pipelines. A node belongs to exactly one flow and appears in the others as a
  * boundary reference.
+ *
+ * The profile build was one flow to begin with, and at twenty nodes over fourteen lanes it
+ * had the same problem in miniature: the total edge span came to seventy-five lanes whichever
+ * way it was laid out, because seven producers scattered across the whole depth all wrote
+ * into one document. That is a property of the shape, not of the layout, and no arrangement
+ * fixes it. Split at the two points the pipeline genuinely narrows — everything becomes
+ * windowed listening, that becomes one ranked artist set — and each chart is five lanes deep
+ * with its neighbours showing as boundary stubs.
  */
-export type FlowId = "ingestion" | "profile" | "spotlight" | "artists";
+export type FlowId =
+  "ingestion" | "listening" | "ranking" | "profile" | "spotlight" | "artists";
 
 export type FlowDef = {
   id: FlowId;
@@ -39,10 +48,22 @@ export const FLOWS: FlowDef[] = [
       "What we read from Plex and how it lands in the append-only signal log. Everything else reads the log, never Plex.",
   },
   {
+    id: "listening",
+    label: "Listening",
+    summary:
+      "How the log becomes measured listening over a recent window, rolled up by artist, by album and by track.",
+  },
+  {
+    id: "ranking",
+    label: "Artist ranking",
+    summary:
+      "How that listening becomes one ranked set of artists: discounted for a one-hit habit, boosted by ratings, carrying the shape of how it arrived.",
+  },
+  {
     id: "profile",
     label: "Taste profile",
     summary:
-      "How the log becomes one weighted picture of your taste: what you listen to, how broadly, what it is tagged as, and who sits next to it.",
+      "How the top artists become the stored document every recommender reads: what their records are tagged as, who sits next to them, and what you already play.",
   },
   {
     id: "spotlight",

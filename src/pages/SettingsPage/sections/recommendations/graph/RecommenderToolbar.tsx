@@ -56,7 +56,7 @@ function Switch<T extends string>({
       <div
         role="group"
         aria-label={label}
-        className="flex rounded-lg border-2 border-black overflow-hidden shadow-cartoon-sm"
+        className="flex flex-wrap rounded-lg border-2 border-black overflow-hidden shadow-cartoon-sm"
       >
         {choices.map((choice) => (
           <button
