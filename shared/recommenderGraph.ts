@@ -107,12 +107,21 @@ export type NodeStatus = "live" | "ported";
 
 /**
  * What shape a knob takes, which is also what control renders it. `ratio` is a share of one
- * and reads as a percentage; `factor` is a multiplier, which is fractional but not a share
- * of anything, so showing it as a percentage would misstate it. `int` therefore means a
- * whole number and nothing else.
+ * and reads as a percentage; `split` is a share of one that divides a quantity between two
+ * named things, so it reads from both ends at once; `factor` is a multiplier, which is
+ * fractional but not a share of anything, so showing it as a percentage would misstate it.
+ * `int` therefore means a whole number and nothing else.
  */
 export type ParamKind =
-  "ratio" | "factor" | "int" | "days" | "minutes" | "enum" | "tags" | "boolean";
+  | "ratio"
+  | "split"
+  | "factor"
+  | "int"
+  | "days"
+  | "minutes"
+  | "enum"
+  | "tags"
+  | "boolean";
 
 export type ParamOption = { value: string; label: string };
 
@@ -126,6 +135,12 @@ export type ParamDef = {
   /** Upper bound taken from another param's current value, e.g. picked <= top artists. */
   maxFrom?: keyof PromotedAlbumSettings;
   options?: ParamOption[];
+  /**
+   * The two things a `split` knob divides one quantity between, the one at 0 first. Both are
+   * named because the knob only means something as a pair: a fraction on its own leaves the
+   * reader to work out what the other side of it was.
+   */
+  ends?: { low: string; high: string };
   /**
    * The sentence the node reads as, with `{key}` placeholders rendered as live inputs:
    * `"weight x (1 + {ratingWeight} x stars/10)"`. Absent when the knob is not part of a

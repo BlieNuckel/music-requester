@@ -328,8 +328,36 @@ describe("recommender graph registry", () => {
 
   it("keeps a knob rendered as a percentage inside a share of one", () => {
     for (const param of Object.values(PARAMS)) {
-      if (param.kind !== "ratio") continue;
+      if (param.kind !== "ratio" && param.kind !== "split") continue;
       expect([param.key, param.min ?? 0, param.max]).toEqual([param.key, 0, 1]);
+    }
+  });
+
+  it("names both ends of a knob that reads from both of them", () => {
+    for (const param of Object.values(PARAMS)) {
+      if (param.kind !== "split") continue;
+      expect([param.key, param.ends?.low, param.ends?.high]).toEqual([
+        param.key,
+        expect.any(String),
+        expect.any(String),
+      ]);
+    }
+  });
+
+  it("keeps a two-ended knob out of another knob's sentence", () => {
+    const split = new Set(
+      Object.values(PARAMS)
+        .filter((param) => param.kind === "split")
+        .map((param) => param.key)
+    );
+
+    for (const param of Object.values(PARAMS)) {
+      for (const match of param.formula?.matchAll(/\{(\w+)\}/g) ?? []) {
+        expect([param.key, split.has(match[1] as never)]).toEqual([
+          param.key,
+          false,
+        ]);
+      }
     }
   });
 

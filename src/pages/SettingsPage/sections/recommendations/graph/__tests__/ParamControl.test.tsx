@@ -25,6 +25,17 @@ const ratingWeight: ParamDef = {
   description: "How much your stars boost an artist.",
 };
 
+const listeningWeight: ParamDef = {
+  key: "listeningWeight",
+  kind: "split",
+  label: "Listening time vs plays",
+  min: 0,
+  max: 1,
+  step: 0.05,
+  ends: { low: "plays", high: "listening time" },
+  description: "What counts as listening to an artist more.",
+};
+
 const profileTtl: ParamDef = {
   key: "profileTtlMinutes",
   kind: "minutes",
@@ -90,6 +101,40 @@ describe("ratio knobs", () => {
     fireEvent.change(screen.getByRole("slider"), { target: { value: "2" } });
 
     expect(update).toHaveBeenCalledWith("explorationRate", 1);
+  });
+});
+
+describe("split knobs", () => {
+  it("names both ends and gives each its share", () => {
+    renderControl(listeningWeight, { listeningWeight: 0.75 });
+
+    expect(screen.getByText("plays")).toBeInTheDocument();
+    expect(screen.getByText("listening time")).toBeInTheDocument();
+    expect(screen.getByText("25%")).toBeInTheDocument();
+    expect(screen.getByText("75%")).toBeInTheDocument();
+  });
+
+  it("uses one slider for the one value it stores", () => {
+    renderControl(listeningWeight, { listeningWeight: 0.75 });
+
+    expect(screen.getAllByRole("slider")).toHaveLength(1);
+  });
+
+  it("says the split rather than the fraction to a screen reader", () => {
+    renderControl(listeningWeight, { listeningWeight: 0.75 });
+
+    expect(screen.getByRole("slider")).toHaveAttribute(
+      "aria-valuetext",
+      "25% plays, 75% listening time"
+    );
+  });
+
+  it("moves both ends from the one control", () => {
+    const update = renderControl(listeningWeight, { listeningWeight: 0.75 });
+
+    fireEvent.change(screen.getByRole("slider"), { target: { value: "0.2" } });
+
+    expect(update).toHaveBeenCalledWith("listeningWeight", 0.2);
   });
 });
 

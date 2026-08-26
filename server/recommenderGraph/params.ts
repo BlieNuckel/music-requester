@@ -33,14 +33,14 @@ export const PARAMS: Record<ParamKey, ParamDef> = {
   },
   listeningWeight: {
     key: "listeningWeight",
-    kind: "ratio",
+    kind: "split",
     label: "Listening time vs plays",
     min: 0,
     max: 1,
     step: 0.05,
-    formula: "plays x (1 - {listeningWeight}) + exposure x {listeningWeight}",
+    ends: { low: "plays", high: "listening time" },
     description:
-      "What counts as listening to an artist more. 1 ranks by time spent, so an hour-long DJ set outweighs a three-minute single played once. 0 ranks by play count, so twenty plays of one short track outweigh one long set. Plays measure how often you chose it again; time measures how much of your listening it filled.",
+      "What counts as listening to an artist more. All the way to listening time it ranks by time spent, so an hour-long DJ set outweighs a three-minute single played once. All the way to plays it ranks by play count, so twenty plays of one short track outweigh one long set. Plays measure how often you chose it again; time measures how much of your listening it filled.",
   },
   maxTrackMinutesForWeight: {
     key: "maxTrackMinutesForWeight",
@@ -64,7 +64,7 @@ export const PARAMS: Record<ParamKey, ParamDef> = {
     formula:
       "weight x (1 - {distributionWeight} x top track share x (1 - rating breadth))",
     description:
-      "How much to discount an artist whose listening all sits on one track, so a single song on repeat doesn't count as liking the whole artist. 0 ignores how listening is spread; 0.5 halves the weight of an artist you only play one track by. Ratings spread across the catalogue push the discount back down.",
+      "How much to discount an artist whose listening all sits on one track, so a single song on repeat doesn't count as liking the whole artist. 0% ignores how listening is spread; 50% halves the weight of an artist you only play one track by. Ratings spread across the catalogue push the discount back down.",
   },
   minPlaysForDistribution: {
     key: "minPlaysForDistribution",
@@ -98,7 +98,7 @@ export const PARAMS: Record<ParamKey, ParamDef> = {
     step: 0.1,
     formula: "weight x (1 + {ratingWeight} x stars/10)",
     description:
-      "How much your Plex star ratings boost an artist's weight. 0 ignores ratings; 0.5 gives a five-star artist +50% weight. The rating is a play-weighted mean, so a star on the track carrying the listening outweighs one on a deep cut.",
+      "How much your Plex star ratings boost an artist's weight. At 0 ratings are ignored; at 0.5 a five-star artist gets +50% weight. The rating is a play-weighted mean, so a star on the track carrying the listening outweighs one on a deep cut.",
   },
 
   seriesBucketDays: {

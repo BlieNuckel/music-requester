@@ -19,11 +19,12 @@ export const ratingWeightParam: ParamDef = {
 
 export const listeningWeightParam: GraphNodeParam = {
   key: "listeningWeight",
-  kind: "ratio",
+  kind: "split",
   label: "Listening time vs plays",
   min: 0,
   max: 1,
   step: 0.05,
+  ends: { low: "plays", high: "listening time" },
   description: "What counts as listening to an artist more.",
   owner: "playWeights",
 };

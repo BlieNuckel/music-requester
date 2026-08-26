@@ -21,6 +21,12 @@ const SLIDER_CLASS =
 
 const ASIDE_CLASS = "text-xs text-gray-500 dark:text-gray-400";
 
+const PERCENT_CLASS =
+  "shrink-0 text-xs font-bold tabular-nums text-gray-700 dark:text-gray-300";
+
+const END_NAME_CLASS =
+  "text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400";
+
 const clamp = (value: number, min?: number, max?: number): number => {
   const lower = min === undefined ? value : Math.max(min, value);
   return max === undefined ? lower : Math.min(max, lower);
@@ -144,8 +150,52 @@ function RatioControl({ param, variant, disabled }: ParamControlProps) {
         }
         className={`${SLIDER_CLASS} ${variant === "inline" ? "w-20" : "flex-1"}`}
       />
-      <span className="w-9 shrink-0 text-right text-xs font-bold tabular-nums text-gray-700 dark:text-gray-300">
+      <span className={`w-9 text-right ${PERCENT_CLASS}`}>
         {Math.round(value * 100)}%
+      </span>
+    </span>
+  );
+}
+
+/**
+ * One value read from both ends. A knob that divides a quantity between two named things is
+ * still one setting, so it gets one control: a second slider for the other side would have
+ * to fight the first, and a lone fraction leaves the reader working out what it was taken
+ * from. Naming both ends is what makes the number mean something without the formula.
+ */
+function SplitControl({ param, variant, disabled }: ParamControlProps) {
+  const { config, update } = useRecommenderParams();
+  const value = Number(config[param.key] ?? 0);
+  const min = param.min ?? 0;
+  const max = effectiveMax(param, config) ?? 1;
+  const ends = param.ends;
+  const high = Math.round(value * 100);
+
+  return (
+    <span
+      className={`flex w-full flex-col gap-0.5 ${variant === "block" ? "sm:max-w-xs" : ""}`}
+    >
+      <span className={`flex justify-between gap-2 ${END_NAME_CLASS}`}>
+        <span>{ends?.low}</span>
+        <span>{ends?.high}</span>
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className={`w-9 text-right ${PERCENT_CLASS}`}>{100 - high}%</span>
+        <input
+          type="range"
+          aria-label={param.label}
+          aria-valuetext={`${100 - high}% ${ends?.low}, ${high}% ${ends?.high}`}
+          value={value}
+          min={min}
+          max={max}
+          step={param.step ?? 0.05}
+          disabled={disabled}
+          onChange={(e) =>
+            update(param.key, clamp(Number(e.target.value), min, max))
+          }
+          className={`${SLIDER_CLASS} flex-1`}
+        />
+        <span className={`w-9 ${PERCENT_CLASS}`}>{high}%</span>
       </span>
     </span>
   );
@@ -186,6 +236,8 @@ export default function ParamControl(props: ParamControlProps) {
       return <TagsControl {...props} />;
     case "ratio":
       return <RatioControl {...props} />;
+    case "split":
+      return <SplitControl {...props} />;
     case "days":
     case "minutes":
       return <DurationControl {...props} kind={props.param.kind} />;
