@@ -19,8 +19,9 @@ export default function RetiredParams({ params }: RetiredParamsProps) {
           On their way out
         </h3>
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          Still in effect, but the pipeline no longer has a step that reads
-          them. They are removed once the nodes replacing them go live.
+          Still read by the pipeline running today. The step that replaces each
+          of them is written but not live yet, so setting one here still changes
+          recommendations. They are removed once that step goes live.
         </p>
       </div>
 

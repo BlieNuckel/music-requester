@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Handle } from "@xyflow/react";
 import ParamControl from "./ParamControl";
-import { parseFormula, reachableParamKeys } from "./formula";
+import { parseFormula, reachableParams } from "./formula";
 import { useRecommenderParams } from "./paramsContext";
 import {
   FLOWS,
@@ -35,10 +35,10 @@ const KIND_BADGE: Partial<Record<NodeKind, string>> = {
 
 function ParamSentence({
   param,
-  known,
+  reachable,
 }: {
   param: ParamDef;
-  known: ReadonlySet<string>;
+  reachable: ReadonlyMap<string, ParamDef>;
 }) {
   if (!param.formula) {
     return (
@@ -53,11 +53,15 @@ function ParamSentence({
 
   return (
     <div className="flex flex-wrap items-center gap-x-1 gap-y-1 text-xs text-gray-700 dark:text-gray-300">
-      {parseFormula(param.formula, known).map((segment, index) =>
+      {parseFormula(param.formula, reachable).map((segment, index) =>
         segment.kind === "text" ? (
           <span key={index}>{segment.text}</span>
         ) : (
-          <ParamControl key={index} param={param} variant="inline" />
+          <ParamControl
+            key={index}
+            param={reachable.get(segment.key) ?? param}
+            variant="inline"
+          />
         )
       )}
     </div>
@@ -155,7 +159,7 @@ export function ExternalCard({ node }: NodeCardProps) {
 export function NodeCard({ node }: NodeCardProps) {
   const [open, setOpen] = useState(false);
   const { arrivedAt } = useRecommenderParams();
-  const known = reachableParamKeys(node.params, node.usesParams);
+  const reachable = reachableParams(node.params, node.usesParams);
   const badge = KIND_BADGE[node.kind];
 
   return (
@@ -215,7 +219,7 @@ export function NodeCard({ node }: NodeCardProps) {
         )}
 
         {node.params.map((param) => (
-          <ParamSentence key={param.key} param={param} known={known} />
+          <ParamSentence key={param.key} param={param} reachable={reachable} />
         ))}
 
         <UsedParams params={node.usesParams} />

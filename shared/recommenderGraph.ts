@@ -134,9 +134,9 @@ export type GraphNodeParam = ParamDef & { owner: string };
 
 /**
  * A knob still carried by the settings — and still folded into a stored profile's config
- * hash — that the pipeline no longer has a use for. It leaves both when the node that
- * replaced its work goes live; until then it is declared here rather than parked on a node
- * that does not read it.
+ * hash — that no node in this graph reads. The pipeline running today may still read it,
+ * since the node replacing its work can be `ported` rather than live; it is declared here
+ * rather than parked on a graph node that does not read it.
  */
 export type RetiredParam = ParamDef & { reason: string };
 

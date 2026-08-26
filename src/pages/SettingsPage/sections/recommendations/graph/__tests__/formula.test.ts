@@ -1,4 +1,4 @@
-import { parseFormula, reachableParamKeys } from "../formula";
+import { parseFormula, reachableParams } from "../formula";
 import { listeningWeightParam, ratingWeightParam } from "./fixtures";
 
 describe("parseFormula", () => {
@@ -42,10 +42,19 @@ describe("parseFormula", () => {
   });
 });
 
-describe("reachableParamKeys", () => {
+describe("reachableParams", () => {
   it("covers both owned and referenced params", () => {
-    expect(
-      reachableParamKeys([ratingWeightParam], [listeningWeightParam])
-    ).toEqual(new Set(["ratingWeight", "listeningWeight"]));
+    expect([
+      ...reachableParams([ratingWeightParam], [listeningWeightParam]).keys(),
+    ]).toEqual(["ratingWeight", "listeningWeight"]);
+  });
+
+  it("keeps each key pointing at its own definition", () => {
+    const reachable = reachableParams(
+      [ratingWeightParam],
+      [listeningWeightParam]
+    );
+
+    expect(reachable.get("listeningWeight")).toBe(listeningWeightParam);
   });
 });

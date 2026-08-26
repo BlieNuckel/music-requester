@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { ExternalCard, NodeCard } from "../NodeCard";
 import { RecommenderParamsContext } from "../paramsContext";
 import { DEFAULT_PROMOTED_ALBUM } from "@/context/promotedAlbumDefaults";
-import { listeningWeightParam, makeNode } from "./fixtures";
+import { listeningWeightParam, makeNode, ratingWeightParam } from "./fixtures";
 import type { GraphNode } from "@shared/recommenderGraph";
 import type { PromotedAlbumSettings } from "@/context/settingsContextDef";
 
@@ -64,6 +64,27 @@ describe("NodeCard", () => {
       DEFAULT_PROMOTED_ALBUM.ratingWeight
     );
     expect(screen.getByText("x stars/10)")).toBeInTheDocument();
+  });
+
+  it("edits the knob a placeholder names, not the one whose sentence it sits in", () => {
+    const update = renderCard(
+      makeNode({
+        params: [
+          {
+            ...ratingWeightParam,
+            formula: "weight x (1 + {listeningWeight} x stars/10)",
+          },
+        ],
+        usesParams: [listeningWeightParam],
+      })
+    );
+
+    fireEvent.change(screen.getByLabelText("Listening time vs plays"), {
+      target: { value: "0.6" },
+    });
+
+    expect(update).toHaveBeenCalledWith("listeningWeight", 0.6);
+    expect(screen.queryByLabelText("Rating weight")).not.toBeInTheDocument();
   });
 
   it("reports an edit through the params context", () => {

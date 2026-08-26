@@ -3,6 +3,9 @@ import type { ParamDef } from "@shared/recommenderGraph";
 export type FormulaSegment =
   { kind: "text"; text: string } | { kind: "param"; key: string };
 
+/** Anything that can answer "is this placeholder a param the node can reach". */
+type KeyLookup = { has(key: string): boolean };
+
 const PLACEHOLDER = /\{(\w+)\}/g;
 
 /**
@@ -13,7 +16,7 @@ const PLACEHOLDER = /\{(\w+)\}/g;
  */
 export function parseFormula(
   formula: string,
-  known: ReadonlySet<string>
+  known: KeyLookup
 ): FormulaSegment[] {
   const segments: FormulaSegment[] = [];
   let cursor = 0;
@@ -37,10 +40,14 @@ export function parseFormula(
   return segments;
 }
 
-/** The params a node's own formulas can interpolate: the ones it owns or reads. */
-export function reachableParamKeys(
+/**
+ * The params a node's own formulas can interpolate, by key: the ones it owns or reads. A
+ * placeholder names the knob it stands for, which is not always the knob whose sentence it
+ * appears in, so the segment has to be resolved rather than assumed.
+ */
+export function reachableParams(
   params: ParamDef[],
   usesParams: ParamDef[]
-): Set<string> {
-  return new Set([...params, ...usesParams].map((param) => param.key));
+): Map<string, ParamDef> {
+  return new Map([...params, ...usesParams].map((param) => [param.key, param]));
 }

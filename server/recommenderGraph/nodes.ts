@@ -795,12 +795,14 @@ export const NODE_REGISTRY: NodeRegistration[] = [
 
 /**
  * Knobs the settings still carry, and a stored profile's config hash still covers, that no
- * node reads any more. They leave both when the nodes that replaced their work go live.
+ * node in this graph reads any more. The pipeline running today still reads them — the
+ * nodes replacing their work are `ported`, not live — so they stay settable and stay
+ * described honestly until that changes.
  */
 export const RETIRED_PARAMS: RetiredParam[] = [
   {
     ...PARAMS.minAvailableTracksForDistribution,
     reason:
-      "The one-hit discount now measures concentration against spreading the same listening evenly across the tracks actually played, so an artist with one played track scores nothing on its own. The exemption this knob bought falls out of that arithmetic, and the library catalogue no longer has to be captured to grant it.",
+      "The replacement one-hit discount measures concentration against spreading the same listening evenly across the tracks actually played, so an artist with one played track scores nothing on its own. The exemption this knob buys falls out of that arithmetic, and the library catalogue no longer has to be captured to grant it. Until that step goes live, this knob still decides which artists are exempt.",
   },
 ];

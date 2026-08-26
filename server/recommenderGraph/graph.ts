@@ -1,3 +1,4 @@
+import { RESOLUTION_BUDGET } from "../promotedAlbum/budget";
 import { NODE_REGISTRY, RETIRED_PARAMS } from "./nodes";
 import { PARAMS } from "./params";
 import type { ParamKey } from "./params";
@@ -10,12 +11,9 @@ import type {
 } from "../../shared/recommenderGraph";
 
 /**
- * Paced MusicBrainz lookups one carousel build may spend across all of its picks. Declared
- * here as a resource rather than as an edge: the three sources compete for one allowance,
- * and drawing that as a connection would say they hand it to each other.
+ * Declared as a resource rather than as an edge: the three sources compete for one
+ * allowance, and drawing that as a connection would say they hand it to each other.
  */
-const RESOLUTION_BUDGET = 30;
-
 const BUDGETS: RecommenderGraph["budgets"] = [
   {
     id: "resolutionBudget",
