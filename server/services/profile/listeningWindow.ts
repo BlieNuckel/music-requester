@@ -1,11 +1,8 @@
 import { historyCovers } from "./listenHistory";
 import { inferListenedMs, reconstructTrackPlayCounts } from "./signalIngestion";
+import { normalizeAlbumKey } from "../../utils/albumKey";
 import type { ListenEpisode } from "./listenHistory";
-import type {
-  AlbumPlayRollup,
-  ArtistPlayRollup,
-  TrackPlayState,
-} from "./signalIngestion";
+import type { ArtistPlayRollup, TrackPlayState } from "./signalIngestion";
 import type { UserSignalEvent } from "../../db/entity/UserSignalEvent";
 
 /**
@@ -42,12 +39,40 @@ export type ListeningWindow = {
   plays: Map<string, WindowedPlay>;
 };
 
+/**
+ * One album's listening over a window. Its own type rather than the shared play rollup
+ * because it carries `distinctTracksPlayed`, which only rows can answer and which is what
+ * separates a record someone has been through from one hit they played on repeat.
+ */
+export type AlbumListening = {
+  albumKey: string;
+  title: string;
+  artistKey: string;
+  artistName: string;
+  plays: number;
+  listenedMs: number;
+  distinctTracksPlayed: number;
+};
+
 export type WindowOptions = {
   now: number;
   windowMs: number;
   /** Per-play ceiling on listening credit, in ms; `0` is uncapped. */
   capMs: number;
 };
+
+/**
+ * Plays a record needs before it counts as one the user already knows. A stray play or two
+ * is what discovery looks like from the inside; this is the line past which recommending it
+ * back to them says nothing they do not already have.
+ */
+const KNOWN_ALBUM_MIN_PLAYS = 5;
+
+/** Distinct tracks off a record before those plays describe the record, not one song. */
+const KNOWN_ALBUM_MIN_TRACKS = 2;
+
+/** Cap on stored keys, so a huge library cannot turn the profile document into a payload. */
+const KNOWN_ALBUM_LIMIT = 500;
 
 /** `recorded_at` of the oldest event in the series, or null when it has none. */
 function earliestRecordedAt(events: UserSignalEvent[]): number | null {
@@ -272,8 +297,8 @@ export function artistRollupsByName(
  */
 export function rollupWindowToAlbums(
   plays: Map<string, WindowedPlay>
-): AlbumPlayRollup[] {
-  const byAlbum = new Map<string, AlbumPlayRollup>();
+): AlbumListening[] {
+  const byAlbum = new Map<string, AlbumListening>();
 
   for (const row of plays.values()) {
     if (!row.albumKey && !row.albumTitle) continue;
@@ -286,16 +311,44 @@ export function rollupWindowToAlbums(
         title: row.albumTitle,
         artistKey: row.artistKey,
         artistName: row.artistName,
-        playCount: row.plays,
+        plays: row.plays,
         listenedMs: row.listenedMs,
+        distinctTracksPlayed: row.plays > 0 ? 1 : 0,
       });
       continue;
     }
-    existing.playCount += row.plays;
+    existing.plays += row.plays;
     existing.listenedMs += row.listenedMs;
+    if (row.plays > 0) existing.distinctTracksPlayed += 1;
     if (!existing.title) existing.title = row.albumTitle;
     if (!existing.artistName) existing.artistName = row.artistName;
     if (!existing.artistKey) existing.artistKey = row.artistKey;
   }
   return Array.from(byAlbum.values());
+}
+
+/**
+ * The records this user has actually been through, as normalized keys, most-played first —
+ * what keeps recommendations off things they already have.
+ *
+ * Two conditions, not one. Plays alone marked a record known off a single hit played five
+ * times, which is the opposite of knowing it: they know one song, and the album is exactly
+ * the kind of thing worth recommending. Requiring a second track played says they have been
+ * past the single, while staying true for a two-track release nobody would call unfamiliar.
+ */
+export function deriveKnownAlbums(
+  tracks: Map<string, WindowedPlay>,
+  minPlays = KNOWN_ALBUM_MIN_PLAYS,
+  limit = KNOWN_ALBUM_LIMIT
+): string[] {
+  return rollupWindowToAlbums(tracks)
+    .filter(
+      (album) =>
+        album.title &&
+        album.plays >= minPlays &&
+        album.distinctTracksPlayed >= KNOWN_ALBUM_MIN_TRACKS
+    )
+    .sort((a, b) => b.plays - a.plays)
+    .slice(0, limit)
+    .map((album) => normalizeAlbumKey(album.artistName, album.title));
 }

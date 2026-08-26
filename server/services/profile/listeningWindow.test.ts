@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   allTimeListening,
   artistRollupsByName,
+  deriveKnownAlbums,
   resolveListeningWindow,
   rollupWindowToAlbums,
   rollupWindowToArtists,
@@ -377,6 +378,70 @@ describe("rollupWindowToAlbums", () => {
     );
 
     expect(albums).toHaveLength(1);
-    expect(albums[0]).toMatchObject({ playCount: 5, listenedMs: 500 });
+    expect(albums[0]).toMatchObject({
+      plays: 5,
+      listenedMs: 500,
+      distinctTracksPlayed: 2,
+    });
+  });
+});
+
+describe("deriveKnownAlbums", () => {
+  const albumRow = (
+    ratingKey: string,
+    albumTitle: string,
+    plays: number
+  ): WindowedPlay => ({
+    ratingKey,
+    artistKey: "ak",
+    artistName: "A",
+    albumKey: `alb-${albumTitle}`,
+    albumTitle,
+    plays,
+    listenedMs: plays * NOMINAL_TRACK_MS,
+  });
+
+  const tracks = (...rows: WindowedPlay[]) =>
+    new Map(rows.map((row) => [row.ratingKey, row]));
+
+  it("counts a record played across several of its tracks", () => {
+    expect(
+      deriveKnownAlbums(
+        tracks(albumRow("1", "Souvlaki", 3), albumRow("2", "Souvlaki", 2))
+      )
+    ).toEqual(["a::souvlaki"]);
+  });
+
+  it("does not call a record known off one track on repeat", () => {
+    expect(deriveKnownAlbums(tracks(albumRow("1", "Souvlaki", 40)))).toEqual(
+      []
+    );
+  });
+
+  it("leaves a barely-played record out", () => {
+    expect(
+      deriveKnownAlbums(
+        tracks(albumRow("1", "Souvlaki", 1), albumRow("2", "Souvlaki", 1))
+      )
+    ).toEqual([]);
+  });
+
+  it("orders by plays and caps the list", () => {
+    expect(
+      deriveKnownAlbums(
+        tracks(
+          albumRow("1", "Quiet", 3),
+          albumRow("2", "Quiet", 3),
+          albumRow("3", "Loud", 20),
+          albumRow("4", "Loud", 20)
+        ),
+        5,
+        1
+      )
+    ).toEqual(["a::loud"]);
+  });
+
+  it("drops a record with no title to key on", () => {
+    expect(deriveKnownAlbums(tracks(albumRow("1", "", 9)))).toEqual([]);
   });
 });

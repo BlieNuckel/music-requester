@@ -9,7 +9,7 @@ import {
 } from "./artistWeighting";
 import { NOMINAL_TRACK_MS } from "./signalIngestion";
 import type { ListeningWindow, WindowedPlay } from "./listeningWindow";
-import type { UserSignalEvent } from "../../db/entity/UserSignalEvent";
+import type { PlexRatingPayload } from "./signalIngestion";
 
 type RowSpec = Partial<WindowedPlay> & { ratingKey: string };
 
@@ -31,20 +31,20 @@ function window(...rows: WindowedPlay[]): ListeningWindow {
   };
 }
 
-function ratingEvent(item: {
+type RatedSpec = {
   ratingKey: string;
   kind: "track" | "album";
   rating: number;
   artist?: string;
-}): UserSignalEvent {
-  return {
-    id: 0,
-    user_id: 1,
-    kind: "plex_rating",
-    payload: JSON.stringify({ title: item.ratingKey, ...item }),
-    recorded_at: "2026-06-01T00:00:00.000Z",
-  } as UserSignalEvent;
-}
+};
+
+const rated = (...items: RatedSpec[]): Map<string, PlexRatingPayload> =>
+  new Map(
+    items.map((item) => [
+      item.ratingKey,
+      { title: item.ratingKey, artist: "A", ...item },
+    ])
+  );
 
 const listening = (overrides: Partial<ArtistListening>): ArtistListening => ({
   name: "A",
@@ -141,10 +141,10 @@ describe("deriveArtistListening", () => {
 describe("deriveArtistRatings", () => {
   it("weights a rating by the listening it covers", () => {
     const ratings = deriveArtistRatings(
-      [
-        ratingEvent({ ratingKey: "1", kind: "track", rating: 10, artist: "A" }),
-        ratingEvent({ ratingKey: "2", kind: "track", rating: 2, artist: "A" }),
-      ],
+      rated(
+        { ratingKey: "1", kind: "track", rating: 10 },
+        { ratingKey: "2", kind: "track", rating: 2 }
+      ),
       window(
         row({ ratingKey: "1", plays: 9 }),
         row({ ratingKey: "2", plays: 0 })
@@ -156,15 +156,15 @@ describe("deriveArtistRatings", () => {
 
   it("reads breadth off how many things were rated, not off which", () => {
     const one = deriveArtistRatings(
-      [ratingEvent({ ratingKey: "1", kind: "track", rating: 8, artist: "A" })],
+      rated({ ratingKey: "1", kind: "track", rating: 8 }),
       window(row({ ratingKey: "1", plays: 9 }))
     );
     const three = deriveArtistRatings(
-      [
-        ratingEvent({ ratingKey: "1", kind: "track", rating: 8, artist: "A" }),
-        ratingEvent({ ratingKey: "2", kind: "track", rating: 8, artist: "A" }),
-        ratingEvent({ ratingKey: "3", kind: "track", rating: 8, artist: "A" }),
-      ],
+      rated(
+        { ratingKey: "1", kind: "track", rating: 8 },
+        { ratingKey: "2", kind: "track", rating: 8 },
+        { ratingKey: "3", kind: "track", rating: 8 }
+      ),
       window(row({ ratingKey: "1", plays: 9 }))
     );
 
@@ -174,14 +174,7 @@ describe("deriveArtistRatings", () => {
 
   it("joins an album rating onto the plays its tracks hold", () => {
     const ratings = deriveArtistRatings(
-      [
-        ratingEvent({
-          ratingKey: "alb",
-          kind: "album",
-          rating: 10,
-          artist: "A",
-        }),
-      ],
+      rated({ ratingKey: "alb", kind: "album", rating: 10 }),
       window(
         row({ ratingKey: "1", plays: 2 }),
         row({ ratingKey: "2", plays: 3 })
@@ -193,14 +186,7 @@ describe("deriveArtistRatings", () => {
 
   it("still counts a rated item the window holds no listening for", () => {
     const ratings = deriveArtistRatings(
-      [
-        ratingEvent({
-          ratingKey: "unplayed",
-          kind: "track",
-          rating: 6,
-          artist: "A",
-        }),
-      ],
+      rated({ ratingKey: "unplayed", kind: "track", rating: 6 }),
       window()
     );
 
@@ -209,10 +195,10 @@ describe("deriveArtistRatings", () => {
 
   it("excludes a cleared star rather than counting it as zero", () => {
     const ratings = deriveArtistRatings(
-      [
-        ratingEvent({ ratingKey: "1", kind: "track", rating: 8, artist: "A" }),
-        ratingEvent({ ratingKey: "2", kind: "track", rating: 0, artist: "A" }),
-      ],
+      rated(
+        { ratingKey: "1", kind: "track", rating: 8 },
+        { ratingKey: "2", kind: "track", rating: 0 }
+      ),
       window(row({ ratingKey: "1", plays: 1 }))
     );
 

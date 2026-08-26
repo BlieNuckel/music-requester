@@ -1,4 +1,4 @@
-import { NOMINAL_TRACK_MS, latestRatings } from "./signalIngestion";
+import { NOMINAL_TRACK_MS } from "./signalIngestion";
 import {
   artistRollupsByName,
   rollupWindowToArtists,
@@ -6,7 +6,7 @@ import {
   type WindowedPlay,
 } from "./listeningWindow";
 import { isPlaceholderArtist } from "../../utils/artistFilter";
-import type { UserSignalEvent } from "../../db/entity/UserSignalEvent";
+import type { PlexRatingPayload } from "./signalIngestion";
 
 /**
  * One artist's listening over the window, with how it spread across their tracks. The
@@ -150,13 +150,13 @@ export function deriveArtistListening(
  * falling back to the artist name its payload carries.
  */
 export function deriveArtistRatings(
-  ratingEvents: UserSignalEvent[],
+  ratings: Map<string, PlexRatingPayload>,
   window: ListeningWindow
 ): Map<string, ArtistRating> {
   const albums = albumPlaysByKey(window.plays);
   const totals = new Map<string, RatingTotals>();
 
-  for (const payload of latestRatings(ratingEvents).values()) {
+  for (const payload of ratings.values()) {
     if (payload.rating <= 0) continue;
 
     const track =
