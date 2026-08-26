@@ -12,14 +12,18 @@ vi.mock("../api/musicbrainz/releaseGroups", () => ({
 }));
 
 import {
-  buildPersonalResult,
   collectCandidates,
   eligibleAlbums,
   preferredPool,
   withinTastePool,
-  type PersonalContext,
 } from "./personal";
 import { preferenceRule } from "./preference";
+import { PICK_BODIES, type PickCtx } from "./pickGraph";
+import { runGraph } from "../recommenderGraph/runtime/executor";
+import { RESOLUTION_BUDGET } from "./budget";
+import type { DerivedProfile } from "../db/entity/UserProfile";
+import type { Rng } from "../utils/random";
+import type { BuiltAlbum } from "./types";
 
 const config = {
   genreOverlapThreshold: 0.15,
@@ -76,19 +80,53 @@ const farNeighbour = {
   genres: ["bebop", "swing"],
 };
 
-function context(overrides: Partial<PersonalContext> = {}): PersonalContext {
-  return {
-    similarGraph: [
+type PersonalCase = {
+  similarGraph?: SimilarGraphSeed[];
+  knownAlbums?: Set<string>;
+  recentlyShown?: Set<string>;
+  artistInLibrary?: (mbid: string) => boolean;
+  budget?: { remaining: number };
+  rng?: Rng;
+};
+
+/**
+ * The personal source as the recommender runs it: the registry decides which steps a request
+ * for a neighbour's album pulls in, so collapsing the graph, the genre line, the library line
+ * and the album walk are exercised with the wiring the carousel actually uses.
+ */
+async function runPersonal(
+  input: PersonalCase = {}
+): Promise<BuiltAlbum | null> {
+  const ctx: PickCtx = {
+    userId: 1,
+    config,
+    library: {
+      artistInLibrary: input.artistInLibrary ?? (() => false),
+      albumLibrary: () => null,
+    },
+    budget: input.budget ?? { remaining: RESOLUTION_BUDGET },
+    rng: input.rng ?? (() => 0),
+    priority: "interactive",
+    count: 1,
+    recentAlbums: [],
+    excluded: input.recentlyShown ?? new Set(),
+    exploring: false,
+  };
+
+  const profile = {
+    similarGraph: input.similarGraph ?? [
       seed("Slowdive", 100, ["shoegaze", "dream pop"], [nearNeighbour]),
     ],
-    knownAlbums: new Set<string>(),
-    config,
-    recentlyShown: new Set<string>(),
-    artistInLibrary: () => false,
-    albumLibrary: () => null,
-    rng: () => 0,
-    ...overrides,
-  };
+    knownAlbums: [...(input.knownAlbums ?? [])],
+  } as DerivedProfile;
+
+  const { outputs } = await runGraph(
+    ["personalAlbum"],
+    PICK_BODIES,
+    ctx,
+    new Map([["profileFreshness", profile]])
+  );
+  return outputs.get("personalAlbum") as BuiltAlbum | null;
 }
 
 function personal(result: { result: unknown } | null): PersonalResult {
@@ -242,14 +280,14 @@ describe("eligibleAlbums", () => {
   });
 });
 
-describe("buildPersonalResult", () => {
+describe("the personal source", () => {
   it("returns null when the graph is empty", async () => {
-    const result = await buildPersonalResult(context({ similarGraph: [] }));
+    const result = await runPersonal({ similarGraph: [] });
     expect(result).toBeNull();
   });
 
   it("surfaces an album by a neighbour of an artist the user plays", async () => {
-    const built = await buildPersonalResult(context());
+    const built = await runPersonal();
 
     expect(built!.rememberKey).toBe("rg-1");
     const result = personal(built);
@@ -270,19 +308,17 @@ describe("buildPersonalResult", () => {
   });
 
   it("never consults the global tag charts", async () => {
-    await buildPersonalResult(context());
+    await runPersonal();
     // The only network call this source makes is the candidate's discography.
     expect(mockFetchReleaseGroupsForArtist).toHaveBeenCalledTimes(1);
   });
 
   it("traces the seed, the neighbours considered, and the one chosen", async () => {
-    const built = await buildPersonalResult(
-      context({
-        similarGraph: [
-          seed("Slowdive", 100, ["shoegaze", "dream pop"], [nearNeighbour]),
-        ],
-      })
-    );
+    const built = await runPersonal({
+      similarGraph: [
+        seed("Slowdive", 100, ["shoegaze", "dream pop"], [nearNeighbour]),
+      ],
+    });
 
     const { trace } = personal(built);
     expect(trace.kind).toBe("personal");
@@ -299,11 +335,9 @@ describe("buildPersonalResult", () => {
   });
 
   it("records that the pool widened when no neighbour was close enough", async () => {
-    const built = await buildPersonalResult(
-      context({
-        similarGraph: [seed("Slowdive", 100, ["shoegaze"], [farNeighbour])],
-      })
-    );
+    const built = await runPersonal({
+      similarGraph: [seed("Slowdive", 100, ["shoegaze"], [farNeighbour])],
+    });
     expect(personal(built).trace.widened).toBe(true);
   });
 
@@ -313,9 +347,9 @@ describe("buildPersonalResult", () => {
       releaseGroup("rg-new", "Pygmalion"),
     ]);
 
-    const built = await buildPersonalResult(
-      context({ knownAlbums: new Set(["near band::souvlaki"]) })
-    );
+    const built = await runPersonal({
+      knownAlbums: new Set(["near band::souvlaki"]),
+    });
     expect(personal(built).album.mbid).toBe("rg-new");
   });
 
@@ -325,16 +359,12 @@ describe("buildPersonalResult", () => {
       releaseGroup("rg-fresh", "Pygmalion"),
     ]);
 
-    const built = await buildPersonalResult(
-      context({ recentlyShown: new Set(["rg-old"]) })
-    );
+    const built = await runPersonal({ recentlyShown: new Set(["rg-old"]) });
     expect(personal(built).album.mbid).toBe("rg-fresh");
   });
 
   it("repeats a recent album rather than returning nothing", async () => {
-    const built = await buildPersonalResult(
-      context({ recentlyShown: new Set(["rg-1"]) })
-    );
+    const built = await runPersonal({ recentlyShown: new Set(["rg-1"]) });
     expect(personal(built).album.mbid).toBe("rg-1");
   });
 
@@ -343,21 +373,19 @@ describe("buildPersonalResult", () => {
       Promise.resolve(mbid === "mbid-near" ? [] : [releaseGroup("rg-2", "B")])
     );
 
-    const built = await buildPersonalResult(
-      context({
-        similarGraph: [
-          seed(
-            "Slowdive",
-            100,
-            ["shoegaze", "dream pop"],
-            [
-              nearNeighbour,
-              { ...nearNeighbour, name: "Other", artistMbid: "mbid-other" },
-            ]
-          ),
-        ],
-      })
-    );
+    const built = await runPersonal({
+      similarGraph: [
+        seed(
+          "Slowdive",
+          100,
+          ["shoegaze", "dream pop"],
+          [
+            nearNeighbour,
+            { ...nearNeighbour, name: "Other", artistMbid: "mbid-other" },
+          ]
+        ),
+      ],
+    });
 
     expect(personal(built).album.artistName).toBe("Other");
     expect(mockFetchReleaseGroupsForArtist).toHaveBeenCalledTimes(2);
@@ -371,19 +399,17 @@ describe("buildPersonalResult", () => {
       score: 1,
     }));
 
-    const built = await buildPersonalResult(
-      context({
-        similarGraph: [
-          seed(
-            "Slowdive",
-            100,
-            ["shoegaze", "dream pop"],
-            [...owned, { ...nearNeighbour, score: 0.01 }]
-          ),
-        ],
-        artistInLibrary: (mbid) => mbid.startsWith("mbid-owned"),
-      })
-    );
+    const built = await runPersonal({
+      similarGraph: [
+        seed(
+          "Slowdive",
+          100,
+          ["shoegaze", "dream pop"],
+          [...owned, { ...nearNeighbour, score: 0.01 }]
+        ),
+      ],
+      artistInLibrary: (mbid) => mbid.startsWith("mbid-owned"),
+    });
 
     const result = personal(built);
     expect(result.album.artistName).toBe("Near Band");
@@ -393,19 +419,17 @@ describe("buildPersonalResult", () => {
   });
 
   it("falls back to owned neighbours rather than returning nothing", async () => {
-    const built = await buildPersonalResult(
-      context({
-        similarGraph: [
-          seed(
-            "Slowdive",
-            100,
-            ["shoegaze", "dream pop"],
-            [{ ...nearNeighbour, name: "Owned", artistMbid: "mbid-owned" }]
-          ),
-        ],
-        artistInLibrary: (mbid) => mbid === "mbid-owned",
-      })
-    );
+    const built = await runPersonal({
+      similarGraph: [
+        seed(
+          "Slowdive",
+          100,
+          ["shoegaze", "dream pop"],
+          [{ ...nearNeighbour, name: "Owned", artistMbid: "mbid-owned" }]
+        ),
+      ],
+      artistInLibrary: (mbid) => mbid === "mbid-owned",
+    });
 
     const result = personal(built);
     expect(result.album.artistName).toBe("Owned");
@@ -415,13 +439,13 @@ describe("buildPersonalResult", () => {
 
   it("spends one unit of the shared budget per neighbour tried", async () => {
     const budget = { remaining: 5 };
-    await buildPersonalResult(context({ budget }));
+    await runPersonal({ budget });
     expect(budget.remaining).toBe(4);
   });
 
   it("gives up without a lookup once the budget is spent", async () => {
     const budget = { remaining: 0 };
-    const built = await buildPersonalResult(context({ budget }));
+    const built = await runPersonal({ budget });
 
     expect(built).toBeNull();
     expect(mockFetchReleaseGroupsForArtist).not.toHaveBeenCalled();

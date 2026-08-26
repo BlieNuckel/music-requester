@@ -24,14 +24,65 @@ vi.mock("../api/musicbrainz/releaseGroups", () => ({
     mockFetchReleaseGroupsForArtist(...args),
 }));
 
-import { buildSimilarGraph, buildExploreResult } from "./explore";
+import { buildSimilarGraph } from "./explore";
+import { PICK_BODIES, type PickCtx } from "./pickGraph";
+import { runGraph } from "../recommenderGraph/runtime/executor";
+import { RESOLUTION_BUDGET } from "./budget";
 import { VARIOUS_ARTISTS_MBID } from "../utils/artistFilter";
+import type { DerivedProfile } from "../db/entity/UserProfile";
+import type { BuiltAlbum } from "./types";
 
 const config = {
   genericTags: ["seen live"],
   exploreCandidateCount: 12,
   genreOverlapThreshold: 0.15,
+  libraryPreference: "prefer_new",
 } as unknown as PromotedAlbumConfig;
+
+type ExploreCase = {
+  similarGraph: SimilarGraphSeed[];
+  config?: PromotedAlbumConfig;
+  recentlyShown?: Set<string>;
+  artistInLibrary?: (mbid: string) => boolean;
+  budget?: { remaining: number };
+  exploring?: boolean;
+};
+
+/**
+ * The explore source as the recommender runs it: the registry decides which steps a request
+ * for an explore album pulls in, so the seed draw, the genre line and the album walk are
+ * exercised in the order and with the wiring the carousel actually uses.
+ */
+async function runExplore(input: ExploreCase): Promise<BuiltAlbum | null> {
+  const ctx: PickCtx = {
+    userId: 1,
+    config: input.config ?? config,
+    library: {
+      artistInLibrary: input.artistInLibrary ?? (() => false),
+      albumLibrary: () => null,
+    },
+    budget: input.budget ?? { remaining: RESOLUTION_BUDGET },
+    rng: Math.random,
+    priority: "interactive",
+    count: 1,
+    recentAlbums: [],
+    excluded: input.recentlyShown ?? new Set(),
+    exploring: input.exploring ?? true,
+  };
+
+  const { outputs } = await runGraph(
+    ["exploreAlbum"],
+    PICK_BODIES,
+    ctx,
+    new Map([
+      [
+        "profileFreshness",
+        { similarGraph: input.similarGraph } as DerivedProfile,
+      ],
+    ])
+  );
+  return outputs.get("exploreAlbum") as BuiltAlbum | null;
+}
 
 function similar(name: string, mbid: string, score: number) {
   return {
@@ -199,7 +250,7 @@ describe("buildSimilarGraph", () => {
   });
 });
 
-describe("buildExploreResult", () => {
+describe("the explore source", () => {
   const seed: SimilarGraphSeed = {
     seedArtist: "Radiohead",
     seedMbid: "mbid-seed",
@@ -221,17 +272,8 @@ describe("buildExploreResult", () => {
     ],
   };
 
-  const notInLibrary = () => false;
-  const noLibraryAlbum = () => null;
-
   it("returns null for an empty graph without any network call", async () => {
-    const result = await buildExploreResult({
-      similarGraph: [],
-      config,
-      recentlyShown: new Set(),
-      artistInLibrary: notInLibrary,
-      albumLibrary: noLibraryAlbum,
-    });
+    const result = await runExplore({ similarGraph: [] });
     expect(result).toBeNull();
     expect(mockFetchReleaseGroupsForArtist).not.toHaveBeenCalled();
   });
@@ -251,13 +293,7 @@ describe("buildExploreResult", () => {
       ],
     };
 
-    const result = await buildExploreResult({
-      similarGraph: [staleSeed],
-      config,
-      recentlyShown: new Set(),
-      artistInLibrary: notInLibrary,
-      albumLibrary: noLibraryAlbum,
-    });
+    const result = await runExplore({ similarGraph: [staleSeed] });
 
     expect(result).toBeNull();
     expect(mockFetchReleaseGroupsForArtist).not.toHaveBeenCalled();
@@ -287,13 +323,7 @@ describe("buildExploreResult", () => {
       )
     );
 
-    const result = await buildExploreResult({
-      similarGraph: [seed],
-      config,
-      recentlyShown: new Set(),
-      artistInLibrary: notInLibrary,
-      albumLibrary: noLibraryAlbum,
-    });
+    const result = await runExplore({ similarGraph: [seed] });
 
     expect(result!.rememberKey).toBe("rg-jazz-ep");
   });
@@ -317,13 +347,7 @@ describe("buildExploreResult", () => {
       )
     );
 
-    const result = await buildExploreResult({
-      similarGraph: [seed],
-      config,
-      recentlyShown: new Set(),
-      artistInLibrary: notInLibrary,
-      albumLibrary: noLibraryAlbum,
-    });
+    const result = await runExplore({ similarGraph: [seed] });
 
     expect(result).toBeNull();
   });
@@ -346,13 +370,7 @@ describe("buildExploreResult", () => {
       )
     );
 
-    const result = await buildExploreResult({
-      similarGraph: [seed],
-      config,
-      recentlyShown: new Set(),
-      artistInLibrary: notInLibrary,
-      albumLibrary: noLibraryAlbum,
-    });
+    const result = await runExplore({ similarGraph: [seed] });
 
     expect(result).not.toBeNull();
     expect(result!.result.mode).toBe("explore");
@@ -366,12 +384,8 @@ describe("buildExploreResult", () => {
   it("stops walking candidates once the shared resolution budget is spent", async () => {
     mockFetchReleaseGroupsForArtist.mockResolvedValue([]);
 
-    const result = await buildExploreResult({
+    const result = await runExplore({
       similarGraph: [seed],
-      config,
-      recentlyShown: new Set(),
-      artistInLibrary: notInLibrary,
-      albumLibrary: noLibraryAlbum,
       budget: { remaining: 0 },
     });
 
@@ -383,17 +397,81 @@ describe("buildExploreResult", () => {
     mockFetchReleaseGroupsForArtist.mockResolvedValue([]);
     const budget = { remaining: 5 };
 
-    await buildExploreResult({
-      similarGraph: [seed],
-      config,
-      recentlyShown: new Set(),
-      artistInLibrary: notInLibrary,
-      albumLibrary: noLibraryAlbum,
-      budget,
-    });
+    await runExplore({ similarGraph: [seed], budget });
 
     expect(budget.remaining).toBe(
       5 - mockFetchReleaseGroupsForArtist.mock.calls.length
     );
+  });
+  describe("the library preference", () => {
+    const twoDistant: SimilarGraphSeed = {
+      ...seed,
+      candidates: [
+        {
+          name: "Jazz Owned",
+          artistMbid: "mbid-jazz-owned",
+          score: 9000,
+          genres: ["jazz", "bebop"],
+        },
+        {
+          name: "Jazz Cat",
+          artistMbid: "mbid-jazz",
+          score: 5000,
+          genres: ["jazz", "bebop"],
+        },
+      ],
+    };
+
+    beforeEach(() => {
+      mockFetchReleaseGroupsForArtist.mockImplementation((mbid: string) =>
+        Promise.resolve([
+          {
+            id: `rg-${mbid}`,
+            score: 1,
+            title: `Record by ${mbid}`,
+            "primary-type": "Album",
+            "first-release-date": "1965-03-01",
+            "artist-credit": [],
+          },
+        ])
+      );
+    });
+
+    /**
+     * Explore used to read the preference only to label the trace, so a user asking for
+     * records they do not own got them from the personal source and not from this one — the
+     * closest neighbour won whether or not they already had it.
+     */
+    it("skips a distant artist the user already owns under prefer_new", async () => {
+      const result = await runExplore({
+        similarGraph: [twoDistant],
+        artistInLibrary: (mbid) => mbid === "mbid-jazz-owned",
+      });
+
+      expect(result!.result.album.artistName).toBe("Jazz Cat");
+      expect(mockFetchReleaseGroupsForArtist).not.toHaveBeenCalledWith(
+        "mbid-jazz-owned",
+        expect.anything()
+      );
+    });
+
+    it("relaxes rather than giving up when every distant artist is owned", async () => {
+      const result = await runExplore({
+        similarGraph: [twoDistant],
+        artistInLibrary: () => true,
+      });
+
+      expect(result!.result.album.artistName).toBe("Jazz Owned");
+    });
+  });
+
+  it("sits out a slot the quota did not grant a jump", async () => {
+    const result = await runExplore({
+      similarGraph: [seed],
+      exploring: false,
+    });
+
+    expect(result).toBeNull();
+    expect(mockFetchReleaseGroupsForArtist).not.toHaveBeenCalled();
   });
 });

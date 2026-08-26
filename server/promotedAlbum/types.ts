@@ -8,6 +8,12 @@ import type { AlbumLibraryInfo } from "../../shared/albumLibrary";
  */
 export type ResolutionBudget = { remaining: number };
 
+/** What a build knows about the local library, asked one MBID at a time. */
+export type LibraryLookups = {
+  artistInLibrary: (mbid: string) => boolean;
+  albumLibrary: (mbid: string) => AlbumLibraryInfo | null;
+};
+
 export type TraceArtistTagContribution = {
   tagName: string;
   rawCount: number;

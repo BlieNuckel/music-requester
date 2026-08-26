@@ -454,22 +454,6 @@ export const NODE_REGISTRY: NodeRegistration[] = [
   },
 
   {
-    id: "pickLoop",
-    title: "Fill the carousel",
-    scope: "pick",
-    kind: "repeat",
-    summary: "Builds the carousel one recommendation at a time.",
-    takes: ["A profile to recommend from"],
-    does: [
-      "Runs once per slot, plus three spare attempts",
-      "Excludes each pick from the next",
-      "Spends a spare when a tag turns up dead or a pick repeats",
-    ],
-    gives: "Five recommendations",
-    flow: "spotlight",
-    inputs: [data("profileFreshness")],
-  },
-  {
     id: "exploreQuota",
     title: "Explore slots",
     scope: "pick",
@@ -479,10 +463,11 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     does: [
       "Turns the exploration rate into a whole number of slots",
       "Leaves the fraction over as a coin flip",
+      "Allocates them once for the build, rather than per slot",
     ],
-    gives: "Which slots explore",
+    gives: "How many of the build's slots explore",
     flow: "spotlight",
-    inputs: [control("pickLoop")],
+    inputs: [],
     params: ["explorationRate"],
   },
 
@@ -493,7 +478,10 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     kind: "step",
     summary: "Draws one of your artists to jump away from.",
     takes: ["The similar-artist graph"],
-    does: ["Draws one of your own artists, weighted by how much you play them"],
+    does: [
+      "Draws one of your own artists, weighted by how much you play them",
+      "Sits the slot out unless the quota granted it a jump",
+    ],
     gives: "A seed artist",
     flow: "spotlight",
     inputs: [
@@ -510,12 +498,14 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     takes: ["The seed and its neighbours"],
     does: [
       "Keeps the neighbours in genres the seed does not share",
+      "Keeps the preferred side of the library line, relaxing when it is empty",
       "Ranks them by similarity",
     ],
     gives: "Neighbours far enough away to be a jump",
     flow: "spotlight",
     inputs: [data("exploreSeed")],
     params: ["genreOverlapThreshold"],
+    usesParams: ["libraryPreference"],
   },
   {
     id: "exploreAlbum",
@@ -544,10 +534,7 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     ],
     gives: "Every neighbour, with how strongly your taste points at it",
     flow: "spotlight",
-    inputs: [
-      control("pickLoop"),
-      data("profileFreshness", "similar-artist graph"),
-    ],
+    inputs: [data("profileFreshness", "similar-artist graph")],
   },
   {
     id: "personalBand",
@@ -611,7 +598,7 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     does: ["Draws a few artists, weighted by listening"],
     gives: "The artists this recommendation comes from",
     flow: "spotlight",
-    inputs: [control("pickLoop"), data("profileFreshness", "artist tags")],
+    inputs: [data("profileFreshness", "artist tags")],
     params: ["pickedArtistsCount"],
   },
   {
@@ -665,7 +652,7 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     scope: "pick",
     kind: "step",
     summary: "Takes the first record in the pool worth showing.",
-    takes: ["The pool of records"],
+    takes: ["The pool of records", "Tags per artist, to explain the pick"],
     does: [
       "Visits candidates in library-preference order",
       "Takes the first that resolves and was not shown recently",
@@ -673,7 +660,7 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     ],
     gives: "An album from the genre chart",
     flow: "spotlight",
-    inputs: [data("albumPool")],
+    inputs: [data("albumPool"), data("profileFreshness", "artist tags")],
     usesParams: ["libraryPreference"],
     spendsBudget: true,
   },
@@ -699,6 +686,26 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     ],
   },
   {
+    id: "pickLoop",
+    title: "Fill the carousel",
+    scope: "pick",
+    kind: "repeat",
+    summary: "Builds the carousel one recommendation at a time.",
+    takes: ["One recommendation per attempt", "How many slots explore"],
+    does: [
+      "Runs once per slot, plus three spare attempts",
+      "Excludes each pick from the next",
+      "Spends a spare when a source comes up empty or a pick repeats",
+      "Contains a failed attempt to itself rather than losing the carousel",
+    ],
+    gives: "Five recommendations",
+    flow: "spotlight",
+    inputs: [
+      data("sourceChain", "one attempt"),
+      data("exploreQuota", "slots that explore"),
+    ],
+  },
+  {
     id: "antiRepeat",
     title: "Remember what was shown",
     scope: "pick",
@@ -708,7 +715,7 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     does: ["Records them, keeping the last 25"],
     gives: "Picks the next builds will avoid",
     flow: "spotlight",
-    inputs: [data("sourceChain")],
+    inputs: [data("pickLoop")],
   },
   {
     id: "carouselCache",
@@ -726,7 +733,6 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     inputs: [data("antiRepeat")],
     params: ["cacheDurationMinutes"],
   },
-
   {
     id: "promotedArtistSeeds",
     title: "Seed artists",

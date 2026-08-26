@@ -1,53 +1,23 @@
-import { getTopAlbumsByTag } from "../api/lastfm/albums";
 import type { LidarrAlbum } from "../api/lidarr/types";
-import { resolveReleaseGroupInfo } from "../api/musicbrainz/releaseGroups";
-import type { MbPriority } from "../api/musicbrainz/queue";
-import type { ReleaseGroupInfo } from "../api/musicbrainz/types";
 import { getConfigValue } from "../config";
-import {
-  deriveAlbumLibraryInfo,
-  type AlbumLibraryInfo,
-} from "../../shared/albumLibrary";
-import type { LibraryPreference, PromotedAlbumConfig } from "../config";
-import { weightedRandomPick, shuffle, type Rng } from "../utils/random";
+import { deriveAlbumLibraryInfo } from "../../shared/albumLibrary";
+import type { PromotedAlbumConfig } from "../config";
+import type { Rng } from "../utils/random";
 import { createTtlMap } from "../utils/ttlMap";
-import { isPlaceholderArtist } from "../utils/artistFilter";
 import { findUserById } from "../auth/users";
-import { updateExplorationHistory } from "../db/userProfile";
 import {
   getPromotedAlbumSnapshot,
   savePromotedAlbumSnapshot,
   type StoredCarousel,
 } from "../db/promotedAlbumSnapshot";
-import type { DerivedProfile } from "../db/entity/UserProfile";
 import { getMonitoredAlbums } from "../services/lidarr/albums";
 import { getArtistList } from "../services/lidarr/artists";
-import { isAllowedReleaseType } from "../services/discover/typeFilter";
 import { createLogger } from "../logger";
+import { runGraph } from "../recommenderGraph/runtime/executor";
 import { RESOLUTION_BUDGET } from "./budget";
-import { buildExploreResult } from "./explore";
-import { buildPersonalResult } from "./personal";
-import { preferenceRule, orderByPreference } from "./preference";
-import type { PreferenceRule } from "./preference";
-import {
-  loadProfileForRequest,
-  normalizedTagWeights,
-  buildGenreVector,
-  artistGenreUnits,
-  type GenreUnit,
-} from "./profileService";
-import type {
-  BuiltAlbum,
-  ResolutionBudget,
-  PromotedAlbumEntry,
-  WithinTasteResult,
-  WithinTasteTrace,
-  TraceArtistEntry,
-  TraceArtistTagContribution,
-  TraceAlbumPoolInfo,
-  TraceSelectionReason,
-  TraceWeightedTag,
-} from "./types";
+import { PICK_BODIES, type PickCtx } from "./pickGraph";
+import { loadProfileForRequest } from "./profileService";
+import type { BuiltAlbum, LibraryLookups, PromotedAlbumEntry } from "./types";
 
 export type { PromotedAlbumResult, PromotedAlbumEntry } from "./types";
 
@@ -56,8 +26,6 @@ export type PromotedAlbumsResult = {
   status: "ready" | "building";
   albums: PromotedAlbumEntry[];
 };
-
-type WeightedTag = { name: string; weight: number };
 
 /**
  * A cached carousel plus the batch size the build was aiming for. The two differ whenever
@@ -74,55 +42,6 @@ type BuildRequest = {
   plexToken: string;
   rng: Rng;
   source: PromotedAlbumSource;
-};
-
-type LibraryLookups = {
-  artistInLibrary: (mbid: string) => boolean;
-  albumLibrary: (mbid: string) => AlbumLibraryInfo | null;
-};
-
-/** What the within-taste trace explains: the sample drawn, the vector it produced, the pick. */
-type TraceInputs = {
-  profile: DerivedProfile;
-  sampledNames: Set<string>;
-  vector: DerivedProfile["genreVector"];
-  chosenTag: WeightedTag;
-  albumPool: TraceAlbumPoolInfo;
-  selectionReason: TraceSelectionReason;
-};
-
-/** Everything one carousel build shares across its picks, including the spend budget. */
-type PickContext = {
-  profile: DerivedProfile;
-  config: PromotedAlbumConfig;
-  library: LibraryLookups;
-  budget: ResolutionBudget;
-  rng: Rng;
-  priority: MbPriority;
-};
-
-/** One Last.fm tag-chart album, before it has been resolved to a release group. */
-type CandidateAlbum = {
-  mbid: string;
-  artistMbid: string;
-  name: string;
-  artistName: string;
-};
-
-type AlbumSelection = {
-  album: CandidateAlbum;
-  rgMbid: string;
-  year: string;
-  reason: TraceSelectionReason;
-};
-
-type GetRgInfo = (mbid: string) => Promise<ReleaseGroupInfo | null>;
-
-type SelectionWalk = PreferenceRule & {
-  candidates: CandidateAlbum[];
-  getRgInfo: GetRgInfo;
-  recentlyShown: Set<string>;
-  budget: ResolutionBudget;
 };
 
 /**
@@ -145,11 +64,6 @@ export type PromotedAlbumDeps = {
 
 /** How many recommendations the spotlight carousel presents. */
 export const SPOTLIGHT_COUNT = 5;
-
-/** Spare attempts so dead tags or duplicate picks don't shorten the carousel. */
-const PICK_ATTEMPT_SLACK = 3;
-
-const RECENT_SHOWN_LIMIT = 25;
 
 const log = createLogger("promoted-album");
 
@@ -194,325 +108,6 @@ export function promotedAlbumCacheExpiry(
   return resultCache.expiresAt(userId, now);
 }
 
-/** A profile's albums indexed by the artist whose weight they carry a share of. */
-function groupAlbumsByArtist(
-  albumTags: DerivedProfile["albumTags"]
-): Map<string, GenreUnit[]> {
-  const byArtist = new Map<string, GenreUnit[]>();
-  for (const album of albumTags) {
-    const existing = byArtist.get(album.artistName);
-    if (existing) existing.push(album);
-    else byArtist.set(album.artistName, [album]);
-  }
-  return byArtist;
-}
-
-/** Whether a set of units can put anything in the vector at all. */
-const carriesGenres = (units: GenreUnit[]): boolean =>
-  units.some((unit) => unit.tags.length > 0);
-
-/**
- * One artist's tag contributions as they actually reached the vector — summed across that
- * artist's albums, because the album is what carries the weight now. `rawCount` is the
- * highest count the tag was seen with, which is all the trace does with it.
- *
- * An artist with no stored albums falls back to its own tags, which is both the pre-album
- * shape and what the vector itself falls back to.
- */
-function tagContributions(
-  artist: DerivedProfile["artistTags"][number],
-  albums: GenreUnit[] | undefined
-): TraceArtistTagContribution[] {
-  const units: GenreUnit[] =
-    albums && carriesGenres(albums)
-      ? albums
-      : [
-          {
-            artistName: artist.name,
-            weight: artist.viewCount,
-            tags: artist.tags,
-          },
-        ];
-
-  const merged = new Map<string, TraceArtistTagContribution>();
-  for (const unit of units) {
-    const weights = normalizedTagWeights(unit.tags, unit.weight);
-    for (const [index, tag] of unit.tags.entries()) {
-      const key = tag.name.toLowerCase();
-      const existing = merged.get(key);
-      if (existing) {
-        existing.weight += weights[index];
-        existing.rawCount = Math.max(existing.rawCount, tag.count);
-      } else {
-        merged.set(key, {
-          tagName: tag.name,
-          rawCount: tag.count,
-          weight: weights[index],
-        });
-      }
-    }
-  }
-  return Array.from(merged.values());
-}
-
-function buildTraceFromProfile(inputs: TraceInputs): WithinTasteTrace {
-  const { profile, sampledNames, vector, chosenTag } = inputs;
-
-  const albumsByArtistName = groupAlbumsByArtist(profile.albumTags);
-
-  const plexArtists: TraceArtistEntry[] = profile.artistTags.map((a) => {
-    return {
-      name: a.name,
-      viewCount: a.viewCount,
-      picked: sampledNames.has(a.name),
-      tagContributions: tagContributions(a, albumsByArtistName.get(a.name)),
-      ratingMultiplier: a.ratingMultiplier,
-    };
-  });
-
-  const weightedTags: TraceWeightedTag[] = vector.map((g) => ({
-    name: g.tag,
-    weight: g.weight,
-    fromArtists: g.fromArtists,
-  }));
-
-  return {
-    kind: "within_taste",
-    plexArtists,
-    weightedTags,
-    chosenTag: { name: chosenTag.name, weight: chosenTag.weight },
-    albumPool: inputs.albumPool,
-    selectionReason: inputs.selectionReason,
-  };
-}
-
-/**
- * The artists one recommendation is drawn from, re-sampled per pick and weighted by play
- * weight. The sample used to happen at regeneration time, which froze one draw of three
- * artists into the profile and let it shape every recommendation for the whole 24h TTL.
- * Drawing here instead means a day's carousel spans the user's whole top-artist set, and
- * two picks in the same batch can come from different corners of it.
- */
-function sampleArtists(
-  artistTags: DerivedProfile["artistTags"],
-  count: number,
-  rng: Rng
-): DerivedProfile["artistTags"] {
-  return weightedRandomPick(artistTags, (a) => a.viewCount, count, rng);
-}
-
-/**
- * What this pick's vector is summed from: the sampled artists' albums, since that is where
- * genre attaches. The artists themselves stand in for a profile stored before album tags
- * existed — the vector that comes out is then exactly the one that profile was built from.
- *
- * The test is whether the albums carry genres, not whether they exist. An album resolving to
- * no genre is still stored — it carries what else we know about it — and counting those rows
- * as a usable sample would suppress the artist fallback and hand back an empty vector.
- */
-function sampledGenreUnits(
-  profile: DerivedProfile,
-  sampled: DerivedProfile["artistTags"]
-): GenreUnit[] {
-  const names = new Set(sampled.map((a) => a.name));
-  const albums = profile.albumTags.filter((a) => names.has(a.artistName));
-  return carriesGenres(albums) ? albums : artistGenreUnits(sampled);
-}
-
-/**
- * Preferred candidates first, then the rest. The preference reads `artistMbid`, which the
- * chart already carries, so ordering the pool by it costs nothing — whereas evaluating it
- * *after* resolving each candidate is what used to walk a whole 100-album pool through
- * paced MusicBrainz lookups whenever the pool was mostly library artists.
- */
-function orderCandidates(walk: SelectionWalk): CandidateAlbum[] {
-  return orderByPreference(walk.candidates, (a) => a.artistMbid, walk);
-}
-
-/**
- * Resolve one candidate, treating a failed lookup the same as an unknown release group.
- * MusicBrainz answers 429/503 under load, and `mbJson` rightly throws on those rather than
- * caching them as "this album does not exist" — but a build must not die of it. Losing one
- * candidate costs one slot of a 30-lookup budget; letting the error out costs the carousel.
- */
-async function resolveOrNull(
-  getRgInfo: GetRgInfo,
-  mbid: string
-): Promise<ReleaseGroupInfo | null> {
-  try {
-    return await getRgInfo(mbid);
-  } catch (error) {
-    log.debug(`Candidate ${mbid} could not be resolved`, error);
-    return null;
-  }
-}
-
-/**
- * Take the first album that resolves to a release group, is a release type worth
- * recommending, and hasn't been shown recently. Candidates are visited in preference order,
- * so the first qualifying one is also the most preferred available and the walk can stop
- * there; a greatest-hits package or a live album is not an album recommendation, and the
- * type only becomes known once the candidate has been resolved.
- *
- * The shared {@link ResolutionBudget} bounds how many MusicBrainz lookups the whole build
- * may spend: without it, a pool of unresolvable MBIDs walks the full pool per pick and every
- * pick attempt pays it again.
- */
-async function walkCandidates(
-  walk: SelectionWalk
-): Promise<AlbumSelection | null> {
-  for (const album of orderCandidates(walk)) {
-    if (walk.budget.remaining <= 0) {
-      log.debug("Resolution budget spent; giving up on this pick");
-      return null;
-    }
-    walk.budget.remaining -= 1;
-
-    const rgInfo = await resolveOrNull(walk.getRgInfo, album.mbid);
-    if (!rgInfo) continue;
-    if (!isAllowedReleaseType(rgInfo.primaryType, rgInfo.secondaryTypes)) {
-      continue;
-    }
-    if (walk.recentlyShown.has(rgInfo.id)) continue;
-
-    return {
-      album,
-      rgMbid: rgInfo.id,
-      year: rgInfo.firstReleaseDate.slice(0, 4),
-      reason: walk.isPreferred(album.artistMbid)
-        ? walk.preferredReason
-        : walk.fallbackReason,
-    };
-  }
-
-  return null;
-}
-
-/**
- * Anti-repeat runs inside the walk rather than over the raw pool because the memory is keyed
- * on release-group MBIDs, and a Last.fm chart entry only has one after it is resolved. When
- * every qualifying candidate turns out to be recently shown, the walk repeats without the
- * memory — a repeat beats an empty slot, and the second pass is served entirely from the
- * MusicBrainz cache the first one filled.
- */
-async function selectAlbum(
-  shuffled: CandidateAlbum[],
-  artistInLibrary: (mbid: string) => boolean,
-  libraryPreference: LibraryPreference,
-  getRgInfo: GetRgInfo,
-  recentlyShown: Set<string>,
-  budget: ResolutionBudget
-): Promise<AlbumSelection | null> {
-  const walk: SelectionWalk = {
-    candidates: shuffled,
-    getRgInfo,
-    recentlyShown,
-    budget,
-    ...preferenceRule(libraryPreference, artistInLibrary),
-  };
-
-  const picked = await walkCandidates(walk);
-  if (picked || recentlyShown.size === 0) return picked;
-  return walkCandidates({ ...walk, recentlyShown: new Set() });
-}
-
-/**
- * Per-request within-taste selection off the persisted profile: sample a few of the user's
- * top artists, build this pick's genre vector from their tags, draw a tag from it, fetch a
- * fresh album pool and select an album. The expensive Plex + Last.fm fan-out is NOT re-run
- * here — that lives in the profile, which now stores every top artist's tags so the sample
- * can be drawn per pick.
- *
- * A profile written before the artists were stored in full falls back to its stored vector,
- * which is the same thing built from whatever sample that profile froze.
- */
-async function buildWithinTasteFromProfile(
-  ctx: PickContext,
-  recentlyShown: Set<string>
-): Promise<BuiltAlbum | null> {
-  const { profile, config, rng } = ctx;
-
-  const sampled = sampleArtists(
-    profile.artistTags,
-    config.pickedArtistsCount,
-    rng
-  );
-  const sampledVector = buildGenreVector(sampledGenreUnits(profile, sampled));
-  const vector = sampledVector.length > 0 ? sampledVector : profile.genreVector;
-
-  const weightedTags: WeightedTag[] = vector.map((g) => ({
-    name: g.tag,
-    weight: g.weight,
-  }));
-  if (weightedTags.length === 0) return null;
-
-  const [chosenTag] = weightedRandomPick(weightedTags, (t) => t.weight, 1, rng);
-  if (!chosenTag) return null;
-
-  const range = config.deepPageMax - config.deepPageMin + 1;
-  const deepPage = String(Math.floor(rng() * range) + config.deepPageMin);
-  const [page1, pageDeep] = await Promise.all([
-    getTopAlbumsByTag(chosenTag.name, "1"),
-    getTopAlbumsByTag(chosenTag.name, deepPage),
-  ]);
-
-  const seen = new Set<string>();
-  const allAlbums = [...page1.albums, ...pageDeep.albums].filter((a) => {
-    if (!a.mbid) return false;
-    if (isPlaceholderArtist(a.artistName, a.artistMbid)) return false;
-    if (seen.has(a.mbid)) return false;
-    seen.add(a.mbid);
-    return true;
-  });
-  if (allAlbums.length === 0) return null;
-
-  const picked = await selectAlbum(
-    shuffle(allAlbums, rng),
-    ctx.library.artistInLibrary,
-    config.libraryPreference,
-    (mbid) => resolveReleaseGroupInfo(mbid, ctx.priority),
-    recentlyShown,
-    ctx.budget
-  );
-  if (!picked) return null;
-
-  const albumPoolInfo: TraceAlbumPoolInfo = {
-    page1Count: page1.albums.length,
-    deepPage: Number(deepPage),
-    deepPageCount: pageDeep.albums.length,
-    totalAfterDedup: allAlbums.length,
-  };
-
-  const trace = buildTraceFromProfile({
-    profile,
-    sampledNames: new Set(sampled.map((a) => a.name)),
-    vector,
-    chosenTag,
-    albumPool: albumPoolInfo,
-    selectionReason: picked.reason,
-  });
-
-  const library = ctx.library.albumLibrary(picked.rgMbid);
-
-  const result: WithinTasteResult = {
-    mode: "within_taste",
-    album: {
-      name: picked.album.name,
-      mbid: picked.rgMbid,
-      artistName: picked.album.artistName,
-      artistMbid: picked.album.artistMbid,
-      coverUrl: `https://coverartarchive.org/release-group/${picked.rgMbid}/front-500`,
-      year: picked.year,
-    },
-    tag: chosenTag.name,
-    inLibrary: library !== null,
-    library,
-    trace,
-  };
-
-  return { result, rememberKey: picked.rgMbid };
-}
-
 async function loadLibraryMbids(): Promise<LibraryLookups> {
   let libraryArtistMbids = new Set<string>();
   let libraryAlbums = new Map<string, LidarrAlbum>();
@@ -544,133 +139,6 @@ async function loadLibraryMbids(): Promise<LibraryLookups> {
       return album ? deriveAlbumLibraryInfo(album.statistics) : null;
     },
   };
-}
-
-function buildExplore(
-  ctx: PickContext,
-  recentlyShown: Set<string>
-): Promise<BuiltAlbum | null> {
-  return buildExploreResult({
-    similarGraph: ctx.profile.similarGraph,
-    config: ctx.config,
-    recentlyShown,
-    artistInLibrary: ctx.library.artistInLibrary,
-    albumLibrary: ctx.library.albumLibrary,
-    budget: ctx.budget,
-    rng: ctx.rng,
-    priority: ctx.priority,
-  });
-}
-
-function buildPersonal(
-  ctx: PickContext,
-  recentlyShown: Set<string>
-): Promise<BuiltAlbum | null> {
-  return buildPersonalResult({
-    similarGraph: ctx.profile.similarGraph,
-    knownAlbums: new Set(ctx.profile.knownAlbums),
-    config: ctx.config,
-    recentlyShown,
-    artistInLibrary: ctx.library.artistInLibrary,
-    albumLibrary: ctx.library.albumLibrary,
-    budget: ctx.budget,
-    rng: ctx.rng,
-    priority: ctx.priority,
-  });
-}
-
-/**
- * One recommendation: a genre jump when this slot is an explore slot, then the adjacent band
- * off the user's own graph, and the genre's global album chart only when neither produced
- * anything. The tag path is the fallback rather than the default because it knows nothing
- * about this user past one tag string — but it is also the only source that works before a
- * graph exists, so it stays.
- */
-async function buildOnePick(
-  ctx: PickContext,
-  excluded: Set<string>,
-  explore: boolean
-): Promise<BuiltAlbum | null> {
-  if (explore) {
-    const explored = await buildExplore(ctx, excluded);
-    if (explored) return explored;
-  }
-
-  const personal = await buildPersonal(ctx, excluded);
-  if (personal) return personal;
-
-  return buildWithinTasteFromProfile(ctx, excluded);
-}
-
-/**
- * One pick, with its failures contained to itself. Every source behind a pick reaches at
- * least one external service, so any of them can throw — and an uncaught throw here used
- * to discard the picks already built alongside it and fail the whole request. A dead pick
- * costs one attempt out of {@link PICK_ATTEMPT_SLACK} spare ones instead.
- */
-async function tryOnePick(
-  ctx: PickContext,
-  excluded: Set<string>,
-  explore: boolean
-): Promise<BuiltAlbum | null> {
-  try {
-    return await buildOnePick(ctx, excluded, explore);
-  } catch (error) {
-    log.warn("Pick failed; continuing with the rest of the carousel", error);
-    return null;
-  }
-}
-
-/**
- * How many of this build's picks attempt a genre jump. `explorationRate` used to be a coin
- * re-flipped per pick, which let a five-album carousel come back all jumps or none by chance;
- * as a quota over the build it is the proportion it reads as, and every carousel spans both
- * bands. The fractional remainder stays a coin so the dial still means something for a single
- * pick.
- */
-function exploreSlots(rate: number, count: number, rng: Rng): number {
-  const exact = Math.min(1, Math.max(0, rate)) * count;
-  const whole = Math.floor(exact);
-  return whole + (rng() < exact - whole ? 1 : 0);
-}
-
-/**
- * Build up to `count` distinct recommendations in one pass. The explore slots are allocated
- * up front rather than re-rolled per pick, and every pick adds its album to the exclusion
- * set, so the carousel spans both bands instead of repeating one pool. A slot is spent when
- * its attempt is made: an explore slot that yields nothing falls through to the adjacent band
- * rather than making every later attempt retry the same empty graph corner.
- */
-async function buildPicks(
-  ctx: PickContext,
-  recentlyShown: Set<string>,
-  count: number
-): Promise<BuiltAlbum[]> {
-  const picks: BuiltAlbum[] = [];
-  const excluded = new Set(recentlyShown);
-  const pickedAlbums = new Set<string>();
-  const attemptLimit = count + PICK_ATTEMPT_SLACK;
-  let exploresLeft = exploreSlots(ctx.config.explorationRate, count, ctx.rng);
-
-  for (
-    let attempt = 0;
-    attempt < attemptLimit && picks.length < count;
-    attempt += 1
-  ) {
-    const explore = exploresLeft > 0;
-    if (explore) exploresLeft -= 1;
-
-    const built = await tryOnePick(ctx, excluded, explore);
-    if (!built) continue;
-
-    excluded.add(built.rememberKey);
-    if (pickedAlbums.has(built.result.album.mbid)) continue;
-
-    pickedAlbums.add(built.result.album.mbid);
-    picks.push(built);
-  }
-
-  return picks;
 }
 
 /** A cached batch big enough to answer this request, or undefined. */
@@ -732,11 +200,15 @@ function snapshotIsFresh(
 }
 
 /**
- * Select a fresh batch. Profile construction never runs inside this call: a cold start walks
- * every played track in the Plex library and resolves every seed against MusicBrainz at
- * ~1 req/sec, which is minutes of work. It is started in the background instead, and the
- * caller shows that the profile is being built rather than an empty page indistinguishable
- * from "no results".
+ * Select a fresh batch, by running the spotlight flow of the declared recommender graph.
+ * The wiring is the graph's: this asks for `antiRepeat` and gets back whatever the nodes
+ * feeding it produced, which is what stops the picture on the settings page and the code
+ * that picks albums from describing two different pipelines.
+ *
+ * Profile construction never runs inside this call: a cold start walks every played track in
+ * the Plex library and resolves every seed against MusicBrainz at ~1 req/sec, which is
+ * minutes of work. It is started in the background instead, and the caller shows that the
+ * profile is being built rather than an empty page indistinguishable from "no results".
  */
 async function buildCarousel(req: BuildRequest): Promise<PromotedAlbumsResult> {
   const load = await loadProfileForRequest(
@@ -748,26 +220,28 @@ async function buildCarousel(req: BuildRequest): Promise<PromotedAlbumsResult> {
   const profile = load.profile;
 
   const recentAlbums = profile.explorationHistory.albums ?? [];
-  const ctx: PickContext = {
-    profile,
+  const ctx: PickCtx = {
+    userId: req.userId,
     config: req.config,
     library: await loadLibraryMbids(),
     budget: { remaining: RESOLUTION_BUDGET },
     rng: req.rng,
     priority: req.source === "warmer" ? "background" : "interactive",
+    count: req.count,
+    recentAlbums,
+    excluded: new Set(recentAlbums),
+    exploring: false,
   };
 
-  const picks = await buildPicks(ctx, new Set(recentAlbums), req.count);
-  if (picks.length === 0) return { status: "ready", albums: [] };
+  const { outputs } = await runGraph(
+    ["antiRepeat"],
+    PICK_BODIES,
+    ctx,
+    new Map([["profileFreshness", profile]])
+  );
 
-  const rememberKeys = picks.map((p) => p.rememberKey);
-  const nextAlbums = [
-    ...rememberKeys,
-    ...recentAlbums.filter((m) => !rememberKeys.includes(m)),
-  ].slice(0, RECENT_SHOWN_LIMIT);
-  await updateExplorationHistory(req.userId, { albums: nextAlbums });
-
-  return { status: "ready", albums: picks.map((p) => p.result) };
+  const picks = (outputs.get("antiRepeat") ?? []) as BuiltAlbum[];
+  return { status: "ready", albums: picks.map((pick) => pick.result) };
 }
 
 /**

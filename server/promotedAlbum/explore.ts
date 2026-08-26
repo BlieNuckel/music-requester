@@ -13,6 +13,9 @@ import type {
 } from "../db/entity/UserProfile";
 import { weightedRandomPick, shuffle, type Rng } from "../utils/random";
 import { isPlaceholderArtist } from "../utils/artistFilter";
+import { isDistantGenre, jaccard } from "./genreBand";
+import { preferredOrRelaxed } from "./preference";
+import type { PreferenceRule } from "./preference";
 import type {
   BuiltAlbum,
   ResolutionBudget,
@@ -25,13 +28,12 @@ import { classifyTag, foldTag } from "../genres/classify";
 
 type GraphSeedArtist = { name: string; viewCount: number };
 
-type ExploreContext = {
-  similarGraph: SimilarGraphSeed[];
-  config: PromotedAlbumConfig;
+/** What the album walk needs, once the band has been settled. */
+export type ExploreAlbumContext = {
   recentlyShown: Set<string>;
   artistInLibrary: (artistMbid: string) => boolean;
   albumLibrary: (rgMbid: string) => AlbumLibraryInfo | null;
-  /** Shared with within-taste, so one carousel build has a single MusicBrainz allowance. */
+  /** Shared with the other sources, so one carousel build has a single MusicBrainz allowance. */
   budget?: ResolutionBudget;
   rng?: Rng;
   /** Warmer builds take the background lane so nobody's page load queues behind them. */
@@ -43,6 +45,16 @@ type EvaluatedCandidate = {
   genres: Set<string>;
   overlap: number;
   isDifferentGenre: boolean;
+};
+
+/** One seed's neighbours, split by the genre line and narrowed to the preferred side. */
+export type ExploreBand = {
+  seedArtist: string;
+  seedGenres: Set<string>;
+  /** Every neighbour of the seed, whichever band it fell in — the trace lists them all. */
+  evaluated: EvaluatedCandidate[];
+  /** The ones worth walking, most similar first. */
+  ranked: EvaluatedCandidate[];
 };
 
 const SEED_GENRE_LIMIT = 8;
@@ -59,7 +71,7 @@ async function safeTopTags(
 
 /**
  * The genres two artists are compared on. Canonicalized, and non-genres left out entirely:
- * `jaccard` measures set overlap on exact strings, so before this a seed tagged `DnB` and a
+ * genre overlap is measured on exact strings, so before this a seed tagged `DnB` and a
  * candidate tagged `Drum and bass` scored zero overlap and the explore/personal split was
  * being decided by which spelling each artist happened to attract.
  */
@@ -78,19 +90,6 @@ function buildGenreSet(
     if (set.size >= limit) break;
   }
   return set;
-}
-
-/**
- * Jaccard similarity of two genre sets (0 = disjoint, 1 = identical). Exported because the
- * personal source reads the same measure from the other side of the threshold — one
- * definition is what makes the two modes partition the graph instead of overlapping.
- */
-export function jaccard(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 || b.size === 0) return 0;
-  let intersection = 0;
-  for (const x of a) if (b.has(x)) intersection += 1;
-  const union = a.size + b.size - intersection;
-  return union === 0 ? 0 : intersection / union;
 }
 
 /**
@@ -170,9 +169,54 @@ function evaluateSeed(
         candidate,
         genres,
         overlap,
-        isDifferentGenre: genres.size > 0 && overlap <= threshold,
+        isDifferentGenre: isDistantGenre(genres, overlap, threshold),
       };
     });
+}
+
+/**
+ * One of the user's own artists to jump away from, weighted by how much they play it.
+ * Null when the graph is empty or the drawn seed carries no genres — there is nothing to
+ * measure distance from.
+ */
+export function drawExploreSeed(
+  similarGraph: SimilarGraphSeed[],
+  rng: Rng
+): SimilarGraphSeed | null {
+  if (similarGraph.length === 0) return null;
+  const [seed] = weightedRandomPick(similarGraph, (s) => s.viewCount, 1, rng);
+  if (!seed || seed.seedGenres.length === 0) return null;
+  return seed;
+}
+
+/**
+ * The seed's neighbours that are far enough away to count as a jump, on the preferred side
+ * of the library line, most similar first.
+ *
+ * The preference used to be read here only to label the trace, while the personal source
+ * filtered on it — so asking for records you do not own was honoured by one source and
+ * ignored by the other. Same rule now, both sides.
+ */
+export function rankDistantNeighbours(
+  seed: SimilarGraphSeed,
+  threshold: number,
+  rule: PreferenceRule
+): ExploreBand {
+  const seedGenres = new Set(seed.seedGenres);
+  const evaluated = evaluateSeed(seed, seedGenres, threshold);
+  const distant = evaluated.filter((e) => e.isDifferentGenre);
+  const { items } = preferredOrRelaxed(
+    distant,
+    (e) => e.candidate.artistMbid,
+    rule
+  );
+
+  return {
+    seedArtist: seed.seedArtist,
+    seedGenres,
+    evaluated,
+    ranked: [...items].sort((a, b) => b.candidate.score - a.candidate.score),
+  };
 }
 
 async function pickAlbumFromArtist(
@@ -192,14 +236,12 @@ async function pickAlbumFromArtist(
 }
 
 function buildExploreTrace(
-  seedArtist: string,
-  seedGenres: Set<string>,
-  evaluated: EvaluatedCandidate[],
+  band: ExploreBand,
   chosen: EvaluatedCandidate,
   newGenres: string[],
   selectionReason: TraceSelectionReason
 ): ExploreTrace {
-  const candidates: TraceSimilarArtist[] = evaluated.map((e) => ({
+  const candidates: TraceSimilarArtist[] = band.evaluated.map((e) => ({
     name: e.candidate.name,
     score: e.candidate.score,
     genres: [...e.genres],
@@ -210,8 +252,8 @@ function buildExploreTrace(
 
   return {
     kind: "explore",
-    seedArtist,
-    seedGenres: [...seedGenres],
+    seedArtist: band.seedArtist,
+    seedGenres: [...band.seedGenres],
     candidates,
     chosenArtist: chosen.candidate.name,
     chosenGenres: [...chosen.genres],
@@ -221,14 +263,12 @@ function buildExploreTrace(
 }
 
 function assembleResult(
-  ctx: ExploreContext,
-  seedArtist: string,
-  seedGenres: Set<string>,
-  evaluated: EvaluatedCandidate[],
+  ctx: ExploreAlbumContext,
+  band: ExploreBand,
   chosen: EvaluatedCandidate,
   album: MusicBrainzReleaseGroup
 ): BuiltAlbum {
-  const newGenres = [...chosen.genres].filter((g) => !seedGenres.has(g));
+  const newGenres = [...chosen.genres].filter((g) => !band.seedGenres.has(g));
   const selectionReason: TraceSelectionReason = ctx.artistInLibrary(
     chosen.candidate.artistMbid
   )
@@ -247,77 +287,43 @@ function assembleResult(
       coverUrl: `https://coverartarchive.org/release-group/${album.id}/front-500`,
       year: (album["first-release-date"] || "").slice(0, 4),
     },
-    seedArtist,
+    seedArtist: band.seedArtist,
     newGenres,
     inLibrary: library !== null,
     library,
-    trace: buildExploreTrace(
-      seedArtist,
-      seedGenres,
-      evaluated,
-      chosen,
-      newGenres,
-      selectionReason
-    ),
+    trace: buildExploreTrace(band, chosen, newGenres, selectionReason),
   };
 
   return { result, rememberKey: album.id };
 }
 
 /**
- * "Similar vibe, different genre": pick a seed from the persisted similar-artist
- * graph (weighted by play count), keep only similar artists in a genre the seed
- * doesn't share, and surface an album by one of them. No similarity/genre network
- * calls happen here — those are baked into the graph at regeneration time; the
- * only per-request fetch is the album pick. Returns null when the graph is empty
- * or no genre-distant candidate yields an album, so the caller falls back to
- * within-taste.
+ * "Similar vibe, different genre": walk the genre-distant neighbours until one has a record
+ * worth recommending. No similarity or genre network calls happen here — those are baked
+ * into the graph at regeneration time; the only per-request fetch is the album pick.
+ *
+ * Each candidate costs one paced discography lookup, so the walk spends the build's shared
+ * budget rather than trying every distant artist the seed offers. Returns null when none of
+ * them yields an album, and the source chain falls through to the next source.
  */
-export async function buildExploreResult(
-  ctx: ExploreContext
+export async function pickExploreAlbum(
+  band: ExploreBand | null,
+  ctx: ExploreAlbumContext
 ): Promise<BuiltAlbum | null> {
-  const { similarGraph, config, recentlyShown } = ctx;
+  if (!band) return null;
   const rng = ctx.rng ?? Math.random;
-  if (similarGraph.length === 0) return null;
 
-  const [seed] = weightedRandomPick(similarGraph, (s) => s.viewCount, 1, rng);
-  if (!seed) return null;
-
-  const seedGenres = new Set(seed.seedGenres);
-  if (seedGenres.size === 0) return null;
-
-  const evaluated = evaluateSeed(
-    seed,
-    seedGenres,
-    config.genreOverlapThreshold
-  );
-
-  const ranked = evaluated
-    .filter((e) => e.isDifferentGenre)
-    .sort((a, b) => b.candidate.score - a.candidate.score);
-
-  for (const chosen of ranked) {
-    // Each candidate costs one paced discography lookup, so the walk spends the shared
-    // budget rather than trying every genre-distant artist the seed offers.
+  for (const chosen of band.ranked) {
     if (ctx.budget && ctx.budget.remaining <= 0) break;
     if (ctx.budget) ctx.budget.remaining -= 1;
 
     const album = await pickAlbumFromArtist(
       chosen.candidate.artistMbid,
-      recentlyShown,
+      ctx.recentlyShown,
       rng,
       ctx.priority ?? "interactive"
     );
-    if (album) {
-      return assembleResult(
-        ctx,
-        seed.seedArtist,
-        seedGenres,
-        evaluated,
-        chosen,
-        album
-      );
-    }
+    if (album) return assembleResult(ctx, band, chosen, album);
   }
 
   return null;

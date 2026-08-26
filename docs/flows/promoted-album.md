@@ -4,8 +4,14 @@ Five recommendations on the Discover page, built from the persisted profile. Thr
 produce them, tried in a fixed order per pick, and each carries a trace explaining how it
 was reached.
 
-Code: `server/promotedAlbum/getPromotedAlbum.ts`, `explore.ts`, `personal.ts`,
-`preference.ts`, `warmer.ts`.
+The build is executed by the graph runtime rather than by a hand-written sequence: the nodes
+below are the ones declared in `server/recommenderGraph/nodes.ts` and drawn on the
+recommendations settings page, and `buildCarousel` asks the runtime for `antiRepeat`. Which
+steps that pulls in is the registry's answer, not this file's.
+
+Code: `server/recommenderGraph/runtime/executor.ts`, `server/promotedAlbum/pickGraph.ts`,
+`explore.ts`, `personal.ts`, `tagChart.ts`, `genreBand.ts`, `preference.ts`,
+`getPromotedAlbum.ts` (the caching and snapshot shell), `warmer.ts`.
 
 ## Serving a request
 
@@ -41,16 +47,16 @@ outage into a self-inflicted one.
 
 ```mermaid
 flowchart TB
-  start["buildPicks, attempts = count + 3"]
-  slots["exploreSlots: explorationRate x count,<br/>allocated up front, fractional part is a coin"]
-  pick["one pick"]
+  start["pickLoop: attempts = count + 3"]
+  slots["exploreQuota: explorationRate x count,<br/>allocated up front, fractional part is a coin"]
+  pick["sourceChain: one attempt"]
   ex{"explore slot left?"}
-  bex["buildExploreResult"]
-  bpe["buildPersonalResult"]
-  bwt["buildWithinTasteFromProfile"]
+  bex["exploreAlbum"]
+  bpe["personalAlbum"]
+  bwt["candidateWalk"]
   got{"album?"}
   add["add to picks, add rememberKey to the exclusion set"]
-  done["updateExplorationHistory<br/>last 25 release-group mbids"]
+  done["antiRepeat: updateExplorationHistory<br/>last 25 release-group mbids"]
 
   start --> slots --> pick --> ex
   ex -->|yes| bex --> got
@@ -69,6 +75,13 @@ carousel cannot come back all jumps or none by chance. Every pick shares one
 leaves the fallback nothing to spend, which is an empty carousel rather than a worse one.
 A pick that throws costs one spare attempt instead of the whole request.
 
+`exploreQuota`, `sourceChain` and `pickLoop` are combinator nodes rather than steps, because
+none of this is a DAG: rationing, ordering and repeating are all decisions about _when_ an
+input runs. The runtime hands those nodes a way to run an input themselves instead of
+settling every input before the body starts, and `sourceChain` reads the order of the three
+sources off the registry — so reordering them on the canvas reorders which one gets first
+refusal.
+
 ## The three sources
 
 ```mermaid
@@ -76,15 +89,16 @@ flowchart LR
   subgraph explore["explore: similar vibe, different genre"]
     e1["weighted draw of a seed from similarGraph"]
     e2["keep candidates whose genre overlap<br/>is at or below genreOverlapThreshold"]
-    e3["rank by ListenBrainz score"]
-    e4["fetchReleaseGroupsForArtist,<br/>primary-type Album only"]
-    e1 --> e2 --> e3 --> e4
+    e3["the libraryPreference side<br/>(relaxes if empty)"]
+    e4["rank by ListenBrainz score"]
+    e5["fetchReleaseGroupsForArtist,<br/>allowed release type, dated"]
+    e1 --> e2 --> e3 --> e4 --> e5
   end
 
   subgraph personal["personal: adjacent to what you play"]
     p1["collectCandidates: every neighbour in the graph,<br/>weight = seed play weight x similarity,<br/>summed across seeds"]
     p2["withinTastePool: overlap above the same threshold<br/>(widens to the whole graph if empty)"]
-    p3["preferredPool: the libraryPreference side<br/>(relaxes if empty)"]
+    p3["the libraryPreference side<br/>(relaxes if empty)"]
     p4["weighted draw of up to 3 artists"]
     p5["eligibleAlbums: allowed release type, dated,<br/>not in knownAlbums"]
     p1 --> p2 --> p3 --> p4 --> p5
@@ -101,7 +115,11 @@ flowchart LR
 ```
 
 The same genre-overlap line partitions the graph: explore takes the far side, personal takes
-the near side, so the two modes never compete for the same candidate. The tag path is last
+the near side, so the two modes never compete for the same candidate. It has one definition,
+in `genreBand.ts`, and an artist nobody has tagged falls in neither band. The library line is
+read the same way by both graph sources; the tag path expresses it as an ordering instead,
+which is the same rule over a walk that stops at its first qualifying candidate. All three
+prefer a record that has not been shown recently and show a repeat rather than nothing. The tag path is last
 because it knows nothing about the user past one tag string, and a genre's global chart
 converges on the canonical famous records a fan of that genre already owns. It stays because
 it is the only source that works before a similar graph exists.

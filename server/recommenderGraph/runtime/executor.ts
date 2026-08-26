@@ -1,12 +1,19 @@
 import { NODE_REGISTRY } from "../nodes";
-import type { NodeRegistration } from "../nodes";
+import type { NodeInput, NodeRegistration } from "../nodes";
 
 /** What a node body receives: its inputs by the id of the node that produced them. */
 export type NodeInputs = Readonly<Record<string, unknown>>;
 
+/**
+ * Runs one node on demand. Handed to every body, and the only way a node that decides for
+ * itself *when* — or whether, or how many times — to run something can say so in code.
+ */
+export type Resolve = (nodeId: string) => Promise<unknown>;
+
 export type NodeBody<Ctx> = (
   inputs: NodeInputs,
-  ctx: Ctx
+  ctx: Ctx,
+  resolve: Resolve
 ) => unknown | Promise<unknown>;
 
 /** One node's turn, for the trace a later phase renders. */
@@ -22,9 +29,30 @@ export type GraphRun = {
   trace: NodeRun[];
 };
 
+type RunState<Ctx> = {
+  bodies: ReadonlyMap<string, NodeBody<Ctx>>;
+  ctx: Ctx;
+  done: Map<string, unknown>;
+  trace: NodeRun[];
+};
+
 const REGISTRY = new Map<string, NodeRegistration>(
   NODE_REGISTRY.map((node) => [node.id, node])
 );
+
+/**
+ * The nodes a fallback node tries, in the order the registry declares. Read rather than
+ * hard-coded so the order is one fact: reordering the sources on the canvas reorders which
+ * one gets first refusal, instead of the drawing and the chain drifting apart.
+ */
+export function fallbackOrder(nodeId: string): string[] {
+  const node = REGISTRY.get(nodeId);
+  if (!node) throw new Error(`No node registered as "${nodeId}"`);
+  return node.inputs
+    .filter((input) => input.kind === "fallback")
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    .map((input) => input.from);
+}
 
 /**
  * Enough about an output to read a trace without holding the run in memory twice. A profile's
@@ -52,48 +80,56 @@ function cacheable(node: NodeRegistration): boolean {
   return node.scope !== "pick";
 }
 
+/**
+ * The inputs the runtime settles before the body starts.
+ *
+ * A `fallback` edge is by definition not one of them — it exists to be tried only if the one
+ * before it produced nothing, and resolving it up front spends the lookups it was declared to
+ * avoid. A `repeat` node settles nothing for the same reason one step further out: its input
+ * is the thing it runs many times, and running it once first is exactly the iteration the
+ * node exists to own.
+ *
+ * The other two structural kinds are not exceptions. A `quota` rations a settled input and a
+ * `fallback` orders inputs it declares as such, so both are served by the ordinary rule.
+ */
+function eagerInputs(node: NodeRegistration): NodeInput[] {
+  if (node.kind === "repeat") return [];
+  return node.inputs.filter((input) => input.kind === "data");
+}
+
 async function runNode<Ctx>(
   nodeId: string,
-  bodies: ReadonlyMap<string, NodeBody<Ctx>>,
-  ctx: Ctx,
-  done: Map<string, unknown>,
-  trace: NodeRun[],
+  state: RunState<Ctx>,
   running: Set<string>
 ): Promise<unknown> {
   const node = REGISTRY.get(nodeId);
   if (!node) throw new Error(`No node registered as "${nodeId}"`);
-  if (done.has(nodeId)) return done.get(nodeId);
+  if (state.done.has(nodeId)) return state.done.get(nodeId);
   if (running.has(nodeId)) {
     throw new Error(`Cycle in the graph, reached "${nodeId}" twice`);
   }
 
-  const body = bodies.get(nodeId);
+  const body = state.bodies.get(nodeId);
   if (!body) throw new Error(`No body wired for node "${nodeId}"`);
 
   running.add(nodeId);
   const inputs: Record<string, unknown> = {};
-  for (const input of node.inputs) {
-    if (input.kind === "control") continue;
-    inputs[input.from] = await runNode(
-      input.from,
-      bodies,
-      ctx,
-      done,
-      trace,
-      running
-    );
+  for (const input of eagerInputs(node)) {
+    inputs[input.from] = await runNode(input.from, state, running);
   }
   running.delete(nodeId);
 
   const startedAt = Date.now();
-  const output = await body(inputs, ctx);
-  trace.push({
+  const output = await body(inputs, state.ctx, (id) =>
+    runNode(id, state, new Set())
+  );
+  state.trace.push({
     nodeId,
     ms: Date.now() - startedAt,
     summary: summarize(output),
   });
 
-  if (cacheable(node)) done.set(nodeId, output);
+  if (cacheable(node)) state.done.set(nodeId, output);
   return output;
 }
 
@@ -118,11 +154,19 @@ export async function runGraph<Ctx>(
   ctx: Ctx,
   given: ReadonlyMap<string, unknown> = new Map()
 ): Promise<GraphRun> {
-  const done = new Map<string, unknown>(given);
-  const trace: NodeRun[] = [];
+  const state: RunState<Ctx> = {
+    bodies,
+    ctx,
+    done: new Map<string, unknown>(given),
+    trace: [],
+  };
 
+  // Kept apart from `done` and merged over it at the end: a target is what the caller asked
+  // for, and a `pick`-scope target — never cached, so that a draw is re-rolled per
+  // recommendation — would otherwise run and hand nothing back.
+  const asked = new Map<string, unknown>();
   for (const target of targets) {
-    await runNode(target, bodies, ctx, done, trace, new Set());
+    asked.set(target, await runNode(target, state, new Set()));
   }
-  return { outputs: done, trace };
+  return { outputs: new Map([...state.done, ...asked]), trace: state.trace };
 }
