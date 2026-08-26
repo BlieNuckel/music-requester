@@ -76,7 +76,7 @@ describe("runGraph", () => {
       { label: "t" }
     );
 
-    expect(trace.at(-1)).toEqual({
+    expect(trace[trace.length - 1]).toEqual({
       nodeId: "signalLog",
       ms: expect.any(Number),
       summary: "3 items",
