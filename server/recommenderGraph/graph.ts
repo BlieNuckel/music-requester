@@ -67,15 +67,28 @@ function toNode(
   };
 }
 
+/**
+ * One node's incoming edges. Two can share a pair — a node reading one field of the stored
+ * profile and falling back to another reads the same source twice — so the id carries an
+ * occurrence suffix. The canvas keys edges by id and silently drops a duplicate.
+ */
 function toEdges(node: NodeRegistration): GraphEdge[] {
-  return node.inputs.map((input) => ({
-    id: `${input.from}->${node.id}`,
-    from: input.from,
-    to: node.id,
-    kind: input.kind,
-    ...(input.label ? { label: input.label } : {}),
-    ...(input.order !== undefined ? { order: input.order } : {}),
-  }));
+  const seen = new Map<string, number>();
+
+  return node.inputs.map((input) => {
+    const pair = `${input.from}->${node.id}`;
+    const occurrence = seen.get(pair) ?? 0;
+    seen.set(pair, occurrence + 1);
+
+    return {
+      id: occurrence === 0 ? pair : `${pair}#${occurrence}`,
+      from: input.from,
+      to: node.id,
+      kind: input.kind,
+      ...(input.label ? { label: input.label } : {}),
+      ...(input.order !== undefined ? { order: input.order } : {}),
+    };
+  });
 }
 
 /**

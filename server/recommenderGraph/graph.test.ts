@@ -123,6 +123,37 @@ describe("recommender graph registry", () => {
     }
   });
 
+  it("gives every edge a unique id, even two sharing a pair", () => {
+    const { edges } = buildRecommenderGraph();
+    const ids = edges.map((edge) => edge.id);
+
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  /**
+   * The one edge from the build into a pick: the promoted-artists grid re-runs the weighting
+   * instead of reading the stored profile, which is duplicate work rather than a data path.
+   * It leaves this list when that is fixed; nothing else may join it.
+   */
+  it("reads the pick sources off the served profile, not off the build", () => {
+    const { nodes, edges } = buildRecommenderGraph();
+    const building = new Set(
+      nodes
+        .filter((node) => node.scope === "profile" && node.kind !== "store")
+        .map((node) => node.id)
+    );
+
+    const leaking = edges.filter(
+      (edge) =>
+        building.has(edge.from) &&
+        nodes.find((node) => node.id === edge.to)?.scope === "pick"
+    );
+
+    expect(leaking.map((edge) => edge.id)).toEqual([
+      "attachSeries->promotedArtistSeeds",
+    ]);
+  });
+
   it("resolves the owner of every referenced param", () => {
     const { nodes } = buildRecommenderGraph();
 

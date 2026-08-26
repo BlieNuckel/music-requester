@@ -390,7 +390,10 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     summary:
       "Picks one of your artists from the graph, weighted by how much you play them.",
     flow: "spotlight",
-    inputs: [control("exploreQuota", "explore slot"), data("similarGraph")],
+    inputs: [
+      control("exploreQuota", "explore slot"),
+      data("profileFreshness", "similar-artist graph"),
+    ],
   },
   {
     id: "exploreBand",
@@ -423,7 +426,10 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     summary:
       "Collapses the graph into one candidate set, each neighbour weighted by how much you play the seeds it came from times how strongly they are tied. Reachable from several seeds means stronger evidence.",
     flow: "spotlight",
-    inputs: [control("pickLoop"), data("similarGraph")],
+    inputs: [
+      control("pickLoop"),
+      data("profileFreshness", "similar-artist graph"),
+    ],
   },
   {
     id: "personalBand",
@@ -455,7 +461,10 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     summary:
       "Draws up to three candidate artists and takes the first album that is a real album, dated, and not one you already play.",
     flow: "spotlight",
-    inputs: [data("personalPreference"), data("knownAlbums")],
+    inputs: [
+      data("personalPreference"),
+      data("profileFreshness", "albums you already play"),
+    ],
     spendsBudget: true,
   },
 
@@ -467,7 +476,7 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     summary:
       "Draws a few of your top artists, weighted by listening, re-rolled for every recommendation rather than fixed when the profile was built.",
     flow: "spotlight",
-    inputs: [control("pickLoop"), data("artistTags")],
+    inputs: [control("pickLoop"), data("profileFreshness", "artist tags")],
     params: ["pickedArtistsCount"],
   },
   {
@@ -480,8 +489,8 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     flow: "spotlight",
     inputs: [
       data("artistSample"),
-      data("albumTags"),
-      fallback("genreVector", 0, "no genres sampled"),
+      data("profileFreshness", "album tags"),
+      fallback("profileFreshness", 0, "no genres sampled, so the whole vector"),
     ],
   },
   {
@@ -562,6 +571,7 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     kind: "step",
     summary:
       "Draws seeds from the same weighted artist set the profile ranks, for the promoted-artists grid.",
+    note: "Re-derives that set rather than reading the stored profile, which is why this edge points at the weighting and not at the document. Pointing it at the profile is what would remove the duplicate work.",
     flow: "artists",
     inputs: [data("attachSeries")],
     usesParams: ["topArtistsCount", "pickedArtistsCount"],
