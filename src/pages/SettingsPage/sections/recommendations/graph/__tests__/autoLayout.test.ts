@@ -180,6 +180,26 @@ describe("autoLayout", () => {
     expect(positions.get("a")!.y).toBe(fanned[1]);
   });
 
+  it("lays out against what the browser measured, not what we guessed", () => {
+    const measured = new Map([["a", { width: 300, height: 900 }]]);
+    const guessed = autoLayout(nodes, [edge("a", "b")]);
+    const settled = autoLayout(nodes, [edge("a", "b")], undefined, measured);
+
+    expect(layoutBoxes(nodes, settled, measured)[0].height).toBe(900);
+    expect(settled.get("b")!.y).not.toBe(guessed.get("b")!.y);
+  });
+
+  it("treats an unmeasured card as one that has not rendered yet", () => {
+    const zeroed = new Map([["a", { width: 0, height: 0 }]]);
+    const [box] = layoutBoxes(
+      nodes,
+      autoLayout(nodes, [], undefined, zeroed),
+      zeroed
+    );
+
+    expect(box.height).toBe(estimateNodeHeight(makeNode(), false));
+  });
+
   it("ignores edges to nodes outside this flow's selection", () => {
     const positions = autoLayout(nodes, [edge("elsewhere", "a")]);
 

@@ -12,6 +12,9 @@ export type LayoutOptions = { direction: LayoutDirection; spacing: Spacing };
 
 export type NodeBox = Position & { width: number; height: number };
 
+/** What the browser reports a card actually is, once it has rendered. */
+export type MeasuredSizes = Map<string, { width: number; height: number }>;
+
 /** Card widths, matching the two node components. */
 export const NODE_WIDTH = 300;
 export const EXTERNAL_WIDTH = 220;
@@ -39,11 +42,12 @@ const lines = (text: string): number =>
 const wrapped = (text: string): number => lines(text) * LINE_HEIGHT;
 
 /**
- * How tall a node's card will be, estimated from its content rather than measured.
+ * How tall a node's card will be, guessed from its content.
  *
- * Deliberately an over-estimate: the layout runs before anything is rendered, and a node
- * placed too far apart is untidy while one placed too close overlaps its neighbour and hides
- * the knob inside it.
+ * Only ever a first guess, for the pass that runs before anything has rendered. It cannot be
+ * right: a tag editor's height depends on how many tags the user has and how they wrap, and
+ * the graph deliberately carries no values for the estimate to read. The layout is run again
+ * against the real heights as soon as the cards exist.
  */
 export function estimateNodeHeight(node: GraphNode, external: boolean): number {
   if (external) return EXTERNAL_HEIGHT;
@@ -67,6 +71,22 @@ const nodeWidth = (entry: FlowNode): number =>
   entry.external ? EXTERNAL_WIDTH : NODE_WIDTH;
 
 /**
+ * A card's size: what the browser measured where it has, and the guess elsewhere. A measured
+ * zero is not a measurement — it is a card that has not been laid out yet — so it falls back
+ * rather than collapsing the node to nothing.
+ */
+function sizeOf(
+  entry: FlowNode,
+  measured?: MeasuredSizes
+): { width: number; height: number } {
+  const real = measured?.get(entry.node.id);
+  return {
+    width: real?.width || nodeWidth(entry),
+    height: real?.height || estimateNodeHeight(entry.node, entry.external),
+  };
+}
+
+/**
  * Layered layout, delegated to dagre.
  *
  * This was hand-rolled first, through four rounds of the same lesson: ranks, then ordering so
@@ -82,7 +102,8 @@ const nodeWidth = (entry: FlowNode): number =>
 export function autoLayout(
   nodes: FlowNode[],
   edges: GraphEdge[],
-  options: LayoutOptions = { direction: "LR", spacing: "comfortable" }
+  options: LayoutOptions = { direction: "LR", spacing: "comfortable" },
+  measured?: MeasuredSizes
 ): Map<string, Position> {
   const gap = GAPS[options.spacing];
   const known = new Set(nodes.map((entry) => entry.node.id));
@@ -97,10 +118,7 @@ export function autoLayout(
   graph.setDefaultEdgeLabel(() => ({}));
 
   for (const entry of nodes) {
-    graph.setNode(entry.node.id, {
-      width: nodeWidth(entry),
-      height: estimateNodeHeight(entry.node, entry.external),
-    });
+    graph.setNode(entry.node.id, sizeOf(entry, measured));
   }
   for (const edge of edges) {
     if (!known.has(edge.from) || !known.has(edge.to)) continue;
@@ -126,11 +144,11 @@ export function autoLayout(
 /** The laid-out boxes, for asserting that nothing lands on top of anything else. */
 export function layoutBoxes(
   nodes: FlowNode[],
-  positions: Map<string, Position>
+  positions: Map<string, Position>,
+  measured?: MeasuredSizes
 ): NodeBox[] {
   return nodes.map((entry) => ({
     ...(positions.get(entry.node.id) ?? { x: 0, y: 0 }),
-    width: nodeWidth(entry),
-    height: estimateNodeHeight(entry.node, entry.external),
+    ...sizeOf(entry, measured),
   }));
 }

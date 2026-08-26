@@ -1,6 +1,11 @@
 import { MarkerType, Position } from "@xyflow/react";
 import { autoLayout } from "./autoLayout";
-import type { LayoutDirection, LayoutOptions } from "./autoLayout";
+import type {
+  LayoutDirection,
+  LayoutOptions,
+  MeasuredSizes,
+  Position as CardPosition,
+} from "./autoLayout";
 import { selectFlow } from "./flowSelection";
 import type { Edge, Node } from "@xyflow/react";
 import type {
@@ -89,6 +94,16 @@ export function toFlowEdges(edges: GraphEdge[]): Edge[] {
  * Node positions can be dragged for a look, but are not saved: they belong to the declared
  * graph, and a per-user copy of them would be one more thing to keep in sync.
  */
+export function layoutPositions(
+  graph: RecommenderGraph,
+  flow: FlowId,
+  layout: LayoutOptions | undefined,
+  measured: MeasuredSizes
+): Map<string, CardPosition> {
+  const selection = selectFlow(graph, flow);
+  return autoLayout(selection.nodes, selection.edges, layout, measured);
+}
+
 export function buildFlow(
   graph: RecommenderGraph,
   flow: FlowId,

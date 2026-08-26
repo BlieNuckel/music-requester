@@ -1,10 +1,17 @@
-import { useMemo } from "react";
-import { Background, Controls, MiniMap, ReactFlow } from "@xyflow/react";
+import { useEffect, useMemo, useRef } from "react";
+import {
+  Background,
+  Controls,
+  MiniMap,
+  ReactFlow,
+  useNodesInitialized,
+  useReactFlow,
+} from "@xyflow/react";
 import RecommenderNode from "./NodeCard";
-import { buildFlow } from "./flowModel";
+import { buildFlow, layoutPositions } from "./flowModel";
 import { useTheme } from "@/context/useTheme";
 import { FLOWS } from "@shared/recommenderGraph";
-import type { LayoutOptions } from "./autoLayout";
+import type { LayoutOptions, MeasuredSizes } from "./autoLayout";
 import type { ActualTheme } from "@/context/themeContextDef";
 import type { FlowId, RecommenderGraph } from "@shared/recommenderGraph";
 import "@xyflow/react/dist/style.css";
@@ -76,6 +83,51 @@ function Legend({ graph, flow }: Omit<RecommenderGraphCanvasProps, "layout">) {
 }
 
 /**
+ * Lay the flow out again once the cards exist, against the heights the browser actually gave
+ * them rather than the estimate the first pass had to work from.
+ *
+ * The estimate cannot be right. A tag editor is as tall as the number of tags it holds and
+ * how they wrap, and the graph carries no values for an estimate to read — so the card that
+ * lists every generic tag came out around two hundred pixels short and sat on top of its
+ * neighbour. Measuring is the only thing that knows.
+ */
+function SettleOnMeasured({
+  graph,
+  flow,
+  layout,
+}: RecommenderGraphCanvasProps) {
+  const initialized = useNodesInitialized();
+  const { getNodes, setNodes, fitView } = useReactFlow();
+  const settled = useRef(false);
+
+  useEffect(() => {
+    if (!initialized || settled.current) return;
+    settled.current = true;
+
+    const measured: MeasuredSizes = new Map(
+      getNodes().map((node) => [
+        node.id,
+        {
+          width: node.measured?.width ?? 0,
+          height: node.measured?.height ?? 0,
+        },
+      ])
+    );
+
+    const positions = layoutPositions(graph, flow, layout, measured);
+    setNodes((current) =>
+      current.map((node) => ({
+        ...node,
+        position: positions.get(node.id) ?? node.position,
+      }))
+    );
+    void fitView();
+  }, [initialized, graph, flow, layout, getNodes, setNodes, fitView]);
+
+  return null;
+}
+
+/**
  * One flow as a pan-and-zoom canvas. Nodes are uncontrolled, so dragging one is free and
  * switching flow remounts the canvas with a fresh layout: dragged positions are for looking
  * at the graph, not something the app remembers.
@@ -114,6 +166,7 @@ export default function RecommenderGraphCanvas({
           minZoom={0.1}
           proOptions={{ hideAttribution: false }}
         >
+          <SettleOnMeasured graph={graph} flow={flow} layout={layout} />
           <Background />
           <Controls />
           <MiniMap
