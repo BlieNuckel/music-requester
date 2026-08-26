@@ -111,14 +111,45 @@ function Legend({ graph, flow }: Omit<RecommenderGraphCanvasProps, "layout">) {
   );
 }
 
+type FlowApi = Pick<ReturnType<typeof useReactFlow>, "getNodes" | "setNodes">;
+
+function settleOnMeasured(
+  { graph, flow, layout }: RecommenderGraphCanvasProps,
+  { getNodes, setNodes }: FlowApi
+): void {
+  const measured: MeasuredSizes = new Map(
+    getNodes().map((node) => [
+      node.id,
+      {
+        width: node.measured?.width ?? 0,
+        height: node.measured?.height ?? 0,
+      },
+    ])
+  );
+
+  const positions = layoutPositions(graph, flow, layout, measured);
+  setNodes((current) =>
+    current.map((node) => ({
+      ...node,
+      position: positions.get(node.id) ?? node.position,
+    }))
+  );
+}
+
 /**
  * Lay the flow out again once the cards exist, against the heights the browser actually gave
- * them rather than the estimate the first pass had to work from.
+ * them rather than the estimate the first pass had to work from, then look at whatever this
+ * visit came for.
  *
  * The estimate cannot be right. A tag editor is as tall as the number of tags it holds and
  * how they wrap, and the graph carries no values for an estimate to read — so the card that
  * lists every generic tag came out around two hundred pixels short and sat on top of its
  * neighbour. Measuring is the only thing that knows.
+ *
+ * The measuring happens once, but the looking cannot: over half the references a card offers
+ * name a step in the flow already on screen, and following one of those changes neither the
+ * flow nor the layout, so nothing remounts. Latching both together left those references
+ * ringing a card the viewport was never moved to.
  */
 function SettleOnMeasured({
   graph,
@@ -131,29 +162,16 @@ function SettleOnMeasured({
   const settled = useRef(false);
 
   useEffect(() => {
-    if (!initialized || settled.current) return;
-    settled.current = true;
+    if (!initialized) return;
+    if (!settled.current) {
+      settled.current = true;
+      settleOnMeasured({ graph, flow, layout }, { getNodes, setNodes });
+    }
 
-    const measured: MeasuredSizes = new Map(
-      getNodes().map((node) => [
-        node.id,
-        {
-          width: node.measured?.width ?? 0,
-          height: node.measured?.height ?? 0,
-        },
-      ])
-    );
-
-    const positions = layoutPositions(graph, flow, layout, measured);
-    setNodes((current) =>
-      current.map((node) => ({
-        ...node,
-        position: positions.get(node.id) ?? node.position,
-      }))
-    );
     // Land on the node a reference was followed into rather than on the whole chart, with
     // enough room around it to see what it connects to.
-    const landing = arrivedAt && positions.has(arrivedAt);
+    const landing =
+      arrivedAt && getNodes().some((node) => node.id === arrivedAt);
     void fitView(
       landing
         ? { nodes: [{ id: arrivedAt }], maxZoom: 1, padding: 1.2 }
