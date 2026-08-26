@@ -151,33 +151,13 @@ describe("RecommendationsSettingsPage", () => {
     expect(screen.getByText(/what we read from plex/i)).toBeInTheDocument();
   });
 
-  it("offers layout controls only where there is a layout", async () => {
+  it("switches nothing about the layout, which is not a choice any more", async () => {
     renderPage();
     await screen.findByText("Rating boost");
 
     expect(
-      screen.getByRole("group", { name: "Direction" })
-    ).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "Spacing" })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "List" }));
-
-    expect(
-      screen.queryByRole("group", { name: "Direction" })
-    ).not.toBeInTheDocument();
-  });
-
-  it("relays the graph out when the direction changes", async () => {
-    renderPage();
-    await screen.findByText("Rating boost");
-
-    fireEvent.click(screen.getByRole("button", { name: "Down" }));
-
-    expect(screen.getByRole("button", { name: "Down" })).toHaveAttribute(
-      "aria-pressed",
-      "true"
-    );
-    expect(screen.getByText("Rating boost")).toBeInTheDocument();
+      screen.getAllByRole("group").map((group) => group.ariaLabel)
+    ).toEqual(["Flow", "View"]);
   });
 
   it("resets every knob to its default", async () => {

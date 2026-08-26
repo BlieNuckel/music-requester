@@ -1,5 +1,4 @@
 import { FLOWS } from "@shared/recommenderGraph";
-import type { LayoutDirection, LayoutOptions, Spacing } from "./autoLayout";
 import type { FlowId } from "@shared/recommenderGraph";
 
 export type RecommenderView = "graph" | "list";
@@ -9,8 +8,6 @@ type RecommenderToolbarProps = {
   onViewChange: (view: RecommenderView) => void;
   flow: FlowId;
   onFlowChange: (flow: FlowId) => void;
-  layout: LayoutOptions;
-  onLayoutChange: (layout: LayoutOptions) => void;
   onReset: () => void;
 };
 
@@ -25,17 +22,6 @@ const FLOW_CHOICES: Choice<FlowId>[] = FLOWS.map((flow) => ({
   value: flow.id,
   label: flow.label,
 }));
-
-const DIRECTIONS: Choice<LayoutDirection>[] = [
-  { value: "LR", label: "Across" },
-  { value: "TB", label: "Down" },
-];
-
-const SPACINGS: Choice<Spacing>[] = [
-  { value: "compact", label: "Tight" },
-  { value: "comfortable", label: "Normal" },
-  { value: "roomy", label: "Loose" },
-];
 
 function Switch<T extends string>({
   label,
@@ -83,8 +69,6 @@ export default function RecommenderToolbar({
   onViewChange,
   flow,
   onFlowChange,
-  layout,
-  onLayoutChange,
   onReset,
 }: RecommenderToolbarProps) {
   return (
@@ -101,22 +85,6 @@ export default function RecommenderToolbar({
         value={view}
         onChange={onViewChange}
       />
-      {view === "graph" && (
-        <>
-          <Switch
-            label="Direction"
-            choices={DIRECTIONS}
-            value={layout.direction}
-            onChange={(direction) => onLayoutChange({ ...layout, direction })}
-          />
-          <Switch
-            label="Spacing"
-            choices={SPACINGS}
-            value={layout.spacing}
-            onChange={(spacing) => onLayoutChange({ ...layout, spacing })}
-          />
-        </>
-      )}
       <button
         type="button"
         onClick={onReset}

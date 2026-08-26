@@ -10,8 +10,8 @@ import RetiredParams from "../sections/recommendations/graph/RetiredParams";
 import { applyParamChange } from "../sections/recommendations/graph/paramCoupling";
 import { RecommenderParamsContext } from "../sections/recommendations/graph/paramsContext";
 import { useRecommenderGraph } from "../sections/recommendations/graph/useRecommenderGraph";
+import { DEFAULT_LAYOUT } from "../sections/recommendations/graph/autoLayout";
 import type { RecommenderView } from "../sections/recommendations/graph/RecommenderToolbar";
-import type { LayoutOptions } from "../sections/recommendations/graph/autoLayout";
 import type { FlowId } from "@shared/recommenderGraph";
 
 /**
@@ -41,10 +41,6 @@ export default function RecommendationsSettingsPage() {
   const { data: graph, loading, error } = useRecommenderGraph();
   const [view, setView] = useState<RecommenderView>("graph");
   const [flow, setFlow] = useState<FlowId>("spotlight");
-  const [layout, setLayout] = useState<LayoutOptions>({
-    direction: "LR",
-    spacing: "comfortable",
-  });
 
   const config = fields.promotedAlbum ?? DEFAULT_PROMOTED_ALBUM;
   const params = useMemo(
@@ -75,8 +71,6 @@ export default function RecommendationsSettingsPage() {
         onViewChange={setView}
         flow={flow}
         onFlowChange={setFlow}
-        layout={layout}
-        onLayoutChange={setLayout}
         onReset={() =>
           updateField("promotedAlbum", { ...DEFAULT_PROMOTED_ALBUM })
         }
@@ -97,7 +91,7 @@ export default function RecommendationsSettingsPage() {
               <RecommenderGraphCanvas
                 graph={graph}
                 flow={flow}
-                layout={layout}
+                layout={DEFAULT_LAYOUT}
               />
             </Suspense>
           ) : (

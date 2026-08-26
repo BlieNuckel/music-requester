@@ -10,6 +10,16 @@ export type Spacing = "compact" | "comfortable" | "roomy";
 
 export type LayoutOptions = { direction: LayoutDirection; spacing: Spacing };
 
+/**
+ * How every chart is drawn. Both were switchable in the toolbar while it was an open question
+ * how these should read; they are not any more, and a control nobody needs to touch is one
+ * more thing between a reader and the graph.
+ */
+export const DEFAULT_LAYOUT: LayoutOptions = {
+  direction: "LR",
+  spacing: "roomy",
+};
+
 export type NodeBox = Position & { width: number; height: number };
 
 /** What the browser reports a card actually is, once it has rendered. */
@@ -102,7 +112,7 @@ function sizeOf(
 export function autoLayout(
   nodes: FlowNode[],
   edges: GraphEdge[],
-  options: LayoutOptions = { direction: "LR", spacing: "comfortable" },
+  options: LayoutOptions = DEFAULT_LAYOUT,
   measured?: MeasuredSizes
 ): Map<string, Position> {
   const gap = GAPS[options.spacing];
