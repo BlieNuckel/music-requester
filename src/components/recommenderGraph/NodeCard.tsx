@@ -12,11 +12,14 @@ import {
 import { BAR_KINDS } from "./paramKinds";
 import { kindBadgeClass } from "./nodeKinds";
 import type { GraphNodeParam, ParamDef } from "@shared/recommenderGraph";
+import type { NodeRun, TraceFact } from "@shared/recommendationTrace";
 import { HANDLE_SIDES } from "./flowModel";
 import type { RecommenderNodeData } from "./flowModel";
 import type { NodeProps } from "@xyflow/react";
 
 type NodeCardProps = { node: RecommenderNodeData["node"] };
+
+type TraceProps = Pick<RecommenderNodeData, "run" | "skipped" | "source">;
 
 /**
  * A bar is as wide as the card and states its own value, so it takes a row to itself with
@@ -159,7 +162,7 @@ function UsedParams({
   reachable: ReadonlyMap<string, ParamDef>;
 }) {
   const { openFlow } = useRecommenderParams();
-  if (params.length === 0) return null;
+  if (params.length === 0 || !openFlow) return null;
 
   return (
     <div className="space-y-2 border-t border-dashed border-gray-300 dark:border-gray-600 pt-2">
@@ -198,13 +201,83 @@ export function ExternalCard({ node }: NodeCardProps) {
       <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300">
         {node.title}
       </h3>
-      <button
-        type="button"
-        onClick={() => openFlow(node.flow, node.id)}
-        className="nodrag text-[11px] font-bold text-gray-500 dark:text-gray-400 hover:text-amber-600"
-      >
-        Open that flow
-      </button>
+      {openFlow && (
+        <button
+          type="button"
+          onClick={() => openFlow(node.flow, node.id)}
+          className="nodrag text-[11px] font-bold text-gray-500 dark:text-gray-400 hover:text-amber-600"
+        >
+          Open that flow
+        </button>
+      )}
+    </div>
+  );
+}
+
+function FactItems({ fact }: { fact: TraceFact }) {
+  return (
+    <ul className="space-y-0.5">
+      {(fact.items ?? []).map((item) => (
+        <li
+          key={item.name}
+          data-testid={item.chosen ? "trace-chosen" : "trace-item"}
+          className={`flex gap-1.5 text-xs leading-snug ${
+            item.chosen
+              ? "font-bold text-amber-700 dark:text-amber-300"
+              : "text-gray-600 dark:text-gray-300"
+          }`}
+        >
+          <span aria-hidden className="text-gray-400 dark:text-gray-600">
+            {item.chosen ? "★" : "•"}
+          </span>
+          <span>
+            {item.name}
+            {item.detail && (
+              <span className="text-gray-400 dark:text-gray-500">
+                {" "}
+                — {item.detail}
+              </span>
+            )}
+          </span>
+        </li>
+      ))}
+      {fact.more !== undefined && (
+        <li className="text-[11px] italic text-gray-400 dark:text-gray-500">
+          and {fact.more} more
+        </li>
+      )}
+    </ul>
+  );
+}
+
+/**
+ * What this step did on the run being explained. The card keeps saying what the step is for
+ * above this: a fact reads as an answer only next to the question it answers.
+ */
+function Facts({ run }: { run: NodeRun }) {
+  return (
+    <div
+      data-testid="node-facts"
+      className="space-y-1.5 border-t-2 border-black pt-2"
+    >
+      {run.facts.length === 0 && (
+        <p className="text-xs italic text-gray-400 dark:text-gray-500">
+          {run.produced ? run.summary : "came up with nothing"}
+        </p>
+      )}
+      {run.facts.map((fact) => (
+        <div key={fact.label}>
+          <span className="block text-[10px] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+            {fact.label}
+          </span>
+          {fact.value && (
+            <p className="text-xs leading-snug text-gray-700 dark:text-gray-200">
+              {fact.value}
+            </p>
+          )}
+          {fact.items && <FactItems fact={fact} />}
+        </div>
+      ))}
     </div>
   );
 }
@@ -215,15 +288,26 @@ export function ExternalCard({ node }: NodeCardProps) {
  * for it: a card that grows when asked a question has to be laid out twice and pushes its
  * neighbours around to answer one.
  */
-export function NodeCard({ node }: NodeCardProps) {
+export function NodeCard({
+  node,
+  run,
+  skipped,
+  source,
+}: NodeCardProps & TraceProps) {
   const { arrivedAt } = useRecommenderParams();
   const reachable = reachableParams(node.params, node.usesParams);
+  const highlighted = arrivedAt === node.id || source;
+
   return (
     <div
       data-kind={node.kind}
       data-arrived={arrivedAt === node.id ? "true" : undefined}
+      data-skipped={skipped ? "true" : undefined}
+      data-source={source ? "true" : undefined}
       className={`w-[300px] rounded-xl border-2 border-black bg-white dark:bg-gray-800 shadow-cartoon-md overflow-hidden ${
-        arrivedAt === node.id
+        skipped ? "opacity-40 grayscale" : ""
+      } ${
+        highlighted
           ? "ring-4 ring-amber-400 ring-offset-2 ring-offset-gray-50 dark:ring-offset-gray-900"
           : ""
       }`}
@@ -271,6 +355,8 @@ export function NodeCard({ node }: NodeCardProps) {
 
         <UsedParams params={node.usesParams} reachable={reachable} />
 
+        {run && <Facts run={run} />}
+
         <EditCost node={node} />
       </div>
     </div>
@@ -289,7 +375,12 @@ export default function RecommenderNode({
       {data.external ? (
         <ExternalCard node={data.node} />
       ) : (
-        <NodeCard node={data.node} />
+        <NodeCard
+          node={data.node}
+          run={data.run}
+          skipped={data.skipped}
+          source={data.source}
+        />
       )}
       <Handle type="source" position={sides.source} />
     </>

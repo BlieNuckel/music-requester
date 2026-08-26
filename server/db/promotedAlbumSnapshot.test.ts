@@ -138,4 +138,22 @@ describe("promoted album snapshots", () => {
     )) as { count: number }[];
     expect(rows[0].count).toBe(0);
   });
+
+  /**
+   * A carousel written before a recommendation carried the record of the run that produced
+   * it. Serving one would draw a trace view with nothing to draw.
+   */
+  it("reports a carousel from before the run record as absent", async () => {
+    const userId = await createUser("alice");
+    const stale = {
+      ...entry("rg-old"),
+      trace: { kind: "within_taste", plexArtists: [], weightedTags: [] },
+    };
+    await getDataSource().query(
+      "INSERT INTO promoted_album_snapshots (user_id, albums_json, target_count, built_at) VALUES (?, ?, ?, ?)",
+      [userId, JSON.stringify([stale]), 1, new Date().toISOString()]
+    );
+
+    expect(await getPromotedAlbumSnapshot(userId)).toBeNull();
+  });
 });

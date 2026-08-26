@@ -23,17 +23,9 @@ function makeAlbum(index: number): PromotedAlbumData {
     tag: "alternative",
     inLibrary: false,
     trace: {
-      kind: "within_taste",
-      plexArtists: [],
-      weightedTags: [],
-      chosenTag: { name: "alternative", weight: 1 },
-      albumPool: {
-        page1Count: 1,
-        deepPage: 2,
-        deepPageCount: 1,
-        totalAfterDedup: 1,
-      },
-      selectionReason: "preferred_non_library",
+      source: "candidateWalk",
+      nodes: [],
+      budget: { label: "MusicBrainz lookups per build", remaining: 27, of: 30 },
     },
   };
 }

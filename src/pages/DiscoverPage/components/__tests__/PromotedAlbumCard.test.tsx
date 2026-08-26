@@ -140,35 +140,9 @@ const albumData: PromotedAlbumData = {
   tag: "alternative",
   inLibrary: false,
   trace: {
-    kind: "within_taste",
-    plexArtists: [
-      {
-        name: "Radiohead",
-        viewCount: 100,
-        picked: true,
-        tagContributions: [
-          { tagName: "alternative", rawCount: 100, weight: 10000 },
-        ],
-      },
-      {
-        name: "Bjork",
-        viewCount: 50,
-        picked: false,
-        tagContributions: [],
-      },
-    ],
-    weightedTags: [
-      { name: "alternative", weight: 10000, fromArtists: ["Radiohead"] },
-      { name: "rock", weight: 8000, fromArtists: ["Radiohead"] },
-    ],
-    chosenTag: { name: "alternative", weight: 10000 },
-    albumPool: {
-      page1Count: 50,
-      deepPage: 4,
-      deepPageCount: 50,
-      totalAfterDedup: 95,
-    },
-    selectionReason: "preferred_non_library",
+    source: "candidateWalk",
+    nodes: [],
+    budget: { label: "MusicBrainz lookups per build", remaining: 27, of: 30 },
   },
 };
 
@@ -187,25 +161,9 @@ const personalData: PromotedAlbumData = {
   sharedGenres: ["shoegaze"],
   inLibrary: false,
   trace: {
-    kind: "personal",
-    seedArtist: "Slowdive",
-    seedGenres: ["shoegaze", "dream pop"],
-    candidates: [
-      {
-        name: "Near Band",
-        score: 0.9,
-        genres: ["shoegaze", "noise pop"],
-        genreOverlap: 0.5,
-        isDifferentGenre: false,
-        chosen: true,
-      },
-    ],
-    chosenArtist: "Near Band",
-    chosenGenres: ["shoegaze", "noise pop"],
-    sharedGenres: ["shoegaze"],
-    widened: false,
-    relaxedPreference: false,
-    selectionReason: "preferred_non_library",
+    source: "personalAlbum",
+    nodes: [],
+    budget: { label: "MusicBrainz lookups per build", remaining: 27, of: 30 },
   },
 };
 
@@ -224,31 +182,9 @@ const exploreData: PromotedAlbumData = {
   newGenres: ["jazz", "bebop"],
   inLibrary: false,
   trace: {
-    kind: "explore",
-    seedArtist: "Radiohead",
-    seedGenres: ["alternative", "rock"],
-    candidates: [
-      {
-        name: "Jazz Cat",
-        score: 5000,
-        genres: ["jazz", "bebop"],
-        genreOverlap: 0,
-        isDifferentGenre: true,
-        chosen: true,
-      },
-      {
-        name: "Rock Clone",
-        score: 9000,
-        genres: ["alternative", "rock"],
-        genreOverlap: 1,
-        isDifferentGenre: false,
-        chosen: false,
-      },
-    ],
-    chosenArtist: "Jazz Cat",
-    chosenGenres: ["jazz", "bebop"],
-    newGenres: ["jazz", "bebop"],
-    selectionReason: "preferred_non_library",
+    source: "exploreAlbum",
+    nodes: [],
+    budget: { label: "MusicBrainz lookups per build", remaining: 27, of: 30 },
   },
 };
 

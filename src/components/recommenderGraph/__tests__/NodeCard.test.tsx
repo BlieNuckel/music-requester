@@ -10,6 +10,7 @@ import {
 } from "./fixtures";
 import { NODE_KIND_MEANING, SCOPE_EFFECT } from "@shared/recommenderGraph";
 import type { GraphNode } from "@shared/recommenderGraph";
+import type { NodeRun } from "@shared/recommendationTrace";
 import type { PromotedAlbumSettings } from "@/context/settingsContextDef";
 
 function renderCard(
@@ -384,5 +385,85 @@ describe("NodeCard", () => {
     renderCard(makeNode());
 
     expect(document.querySelector("[data-arrived]")).toBeNull();
+  });
+});
+
+/**
+ * The same card, drawn to explain one recommendation rather than to be edited. It has no
+ * provider around it, because a chart nobody can edit is not made to carry one.
+ */
+describe("NodeCard, explaining one run", () => {
+  const run: NodeRun = {
+    nodeId: "personalAlbum",
+    ms: 12,
+    summary: "{result}",
+    produced: true,
+    facts: [
+      { label: "Next to", value: "Slowdive" },
+      {
+        label: "Neighbours drawn from",
+        more: 4,
+        items: [
+          { name: "Near Band", detail: "40% genre overlap", chosen: true },
+          { name: "Other Band" },
+        ],
+      },
+    ],
+  };
+
+  it("renders without a provider to edit knobs through", () => {
+    render(<NodeCard node={makeNode({ params: [] })} run={run} />);
+
+    expect(screen.getByTestId("node-facts")).toBeInTheDocument();
+  });
+
+  it("still says what the step is for, above what it found", () => {
+    render(<NodeCard node={makeNode({ params: [] })} run={run} />);
+
+    expect(screen.getByText("Takes")).toBeInTheDocument();
+    expect(screen.getByText("Next to")).toBeInTheDocument();
+    expect(screen.getByText("Slowdive")).toBeInTheDocument();
+  });
+
+  it("marks the one the step went with, and counts the rest", () => {
+    render(<NodeCard node={makeNode({ params: [] })} run={run} />);
+
+    expect(screen.getByTestId("trace-chosen")).toHaveTextContent("Near Band");
+    expect(screen.getByTestId("trace-item")).toHaveTextContent("Other Band");
+    expect(screen.getByText("and 4 more")).toBeInTheDocument();
+  });
+
+  it("says so when a step ran and found nothing", () => {
+    render(
+      <NodeCard
+        node={makeNode({ params: [] })}
+        run={{ ...run, produced: false, facts: [] }}
+      />
+    );
+
+    expect(screen.getByText("came up with nothing")).toBeInTheDocument();
+  });
+
+  it("marks a step the run never reached", () => {
+    const { container } = render(
+      <NodeCard node={makeNode({ params: [] })} skipped />
+    );
+
+    expect(container.querySelector("[data-kind]")).toHaveAttribute(
+      "data-skipped",
+      "true"
+    );
+    expect(screen.queryByTestId("node-facts")).not.toBeInTheDocument();
+  });
+
+  it("rings the step the recommendation came from", () => {
+    const { container } = render(
+      <NodeCard node={makeNode({ params: [] })} run={run} source />
+    );
+
+    expect(container.querySelector("[data-kind]")).toHaveAttribute(
+      "data-source",
+      "true"
+    );
   });
 });

@@ -10,8 +10,12 @@ export type ParamValue = string | number | boolean | string[];
 export type RecommenderParams = {
   config: PromotedAlbumSettings;
   update: (key: ParamKey, value: ParamValue) => void;
-  /** Follow a boundary node into the flow that owns it, and land on the node itself. */
-  openFlow: (flow: FlowId, node: string) => void;
+  /**
+   * Follow a boundary node into the flow that owns it, and land on the node itself. Null
+   * where there is nowhere to go: a chart drawn to explain one recommendation shows a single
+   * flow, so an offer to open the neighbouring one would lead nowhere.
+   */
+  openFlow: ((flow: FlowId, node: string) => void) | null;
   /**
    * The node that was followed into this flow, marked so it can be found. Arriving at a
    * chart of a dozen cards with no idea which one you came for is most of the work of
@@ -28,12 +32,17 @@ export const RecommenderParamsContext = createContext<RecommenderParams | null>(
   null
 );
 
+/**
+ * A chart drawn to be read rather than edited carries no knobs and nothing to follow, so it
+ * is not made to wrap itself in a provider it would only be satisfying.
+ */
+const READ_ONLY: RecommenderParams = {
+  config: {} as PromotedAlbumSettings,
+  update: () => {},
+  openFlow: null,
+  arrivedAt: null,
+};
+
 export function useRecommenderParams(): RecommenderParams {
-  const value = useContext(RecommenderParamsContext);
-  if (!value) {
-    throw new Error(
-      "useRecommenderParams must be used inside a RecommenderParamsContext provider"
-    );
-  }
-  return value;
+  return useContext(RecommenderParamsContext) ?? READ_ONLY;
 }
