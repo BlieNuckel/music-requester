@@ -226,6 +226,42 @@ export type RecommenderGraph = {
   budgets: { id: string; label: string; amount: number; description: string }[];
 };
 
+/**
+ * What each kind is called on a card. Exhaustive, so every node says what it is rather than
+ * only the ones that are not plain steps: a type that shows up on the exceptions reads as a
+ * warning, and a type that shows up on all of them reads as a type.
+ */
+export const NODE_KIND_LABELS: Record<NodeKind, string> = {
+  source: "external service",
+  step: "step",
+  store: "stored",
+  repeat: "repeats",
+  fallback: "in order",
+  quota: "quota",
+  output: "shown",
+};
+
+/** What the label on the badge means, for the reader who has not met the word here before. */
+export const NODE_KIND_MEANING: Record<NodeKind, string> = {
+  source: "Reads from a service outside tunearr.",
+  step: "Runs once, on what the step before it produced.",
+  store: "Written down and read back rather than recomputed.",
+  repeat: "Runs more than once, and each run narrows the next.",
+  fallback: "Its inputs are tried in order, only until one answers.",
+  quota: "Divides a fixed allowance rather than taking a global top few.",
+  output: "What Discover shows.",
+};
+
+/**
+ * The kinds that exist because the pick flow is not a DAG. They are marked apart because
+ * reading one as a plain step is reading the chart wrong, not just reading it thinly.
+ */
+export const STRUCTURAL_KINDS: readonly NodeKind[] = [
+  "repeat",
+  "fallback",
+  "quota",
+];
+
 export const NODE_SCOPE_LABELS: Record<NodeScope, string> = {
   ingest: "Capture",
   profile: "Taste profile",

@@ -5,6 +5,7 @@ import { DEFAULT_PROMOTED_ALBUM } from "@/context/promotedAlbumDefaults";
 import { makeGraph, makeNode } from "./fixtures";
 import { ThemeContext } from "@/context/themeContextDef";
 import type { ActualTheme } from "@/context/themeContextDef";
+import { NODE_KIND_MEANING } from "@shared/recommenderGraph";
 import type { LayoutOptions } from "../autoLayout";
 
 const graph = makeGraph(
@@ -114,6 +115,13 @@ describe("RecommenderGraphCanvas", () => {
     expect(
       screen.getByText(/tried in order, and only until one answers/i)
     ).toBeInTheDocument();
+  });
+
+  it("explains the kinds of node this flow actually holds", () => {
+    renderCanvas();
+
+    expect(screen.getByText(NODE_KIND_MEANING.step)).toBeInTheDocument();
+    expect(screen.queryByText(NODE_KIND_MEANING.quota)).toBeNull();
   });
 
   it("shows the shared lookup budget as a resource rather than a step", () => {

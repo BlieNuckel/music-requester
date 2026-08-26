@@ -10,11 +10,20 @@ import {
 import RecommenderNode from "./NodeCard";
 import { buildFlow, layoutPositions } from "./flowModel";
 import { useRecommenderParams } from "./paramsContext";
+import { kindBadgeClass } from "./nodeKinds";
 import { useTheme } from "@/context/useTheme";
-import { FLOWS } from "@shared/recommenderGraph";
+import {
+  FLOWS,
+  NODE_KIND_LABELS,
+  NODE_KIND_MEANING,
+} from "@shared/recommenderGraph";
 import type { LayoutOptions, MeasuredSizes } from "./autoLayout";
 import type { ActualTheme } from "@/context/themeContextDef";
-import type { FlowId, RecommenderGraph } from "@shared/recommenderGraph";
+import type {
+  FlowId,
+  NodeKind,
+  RecommenderGraph,
+} from "@shared/recommenderGraph";
 import "@xyflow/react/dist/style.css";
 
 type RecommenderGraphCanvasProps = {
@@ -54,10 +63,23 @@ const LEGEND: LegendEntry[] = [
   },
 ];
 
+/**
+ * The kinds this flow actually contains, in the registry's own order. Listing all seven
+ * would explain four badges the reader cannot see from here.
+ */
+function kindsInFlow(graph: RecommenderGraph, flow: FlowId): NodeKind[] {
+  const seen = new Set<NodeKind>();
+  for (const node of graph.nodes) {
+    if (node.flow === flow) seen.add(node.kind);
+  }
+  return [...seen];
+}
+
 function Legend({ graph, flow }: Omit<RecommenderGraphCanvasProps, "layout">) {
   const spendsBudget = graph.nodes.some(
     (node) => node.flow === flow && node.spendsBudget
   );
+  const kinds = kindsInFlow(graph, flow);
 
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-gray-500 dark:text-gray-400">
@@ -72,6 +94,12 @@ function Legend({ graph, flow }: Omit<RecommenderGraphCanvasProps, "layout">) {
         <span className="w-6 border-t-2 border-dashed border-gray-400" />
         <span>dashed box: a step owned by another flow</span>
       </span>
+      {kinds.map((kind) => (
+        <span key={kind} className="flex items-center gap-2">
+          <span className={kindBadgeClass(kind)}>{NODE_KIND_LABELS[kind]}</span>
+          <span>{NODE_KIND_MEANING[kind]}</span>
+        </span>
+      ))}
       {spendsBudget &&
         graph.budgets.map((budget) => (
           <span key={budget.id} title={budget.description}>

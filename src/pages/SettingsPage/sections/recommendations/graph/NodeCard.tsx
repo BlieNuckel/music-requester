@@ -5,13 +5,15 @@ import { parseEffect, reachableParams } from "./effect";
 import { useRecommenderParams } from "./paramsContext";
 import {
   FLOWS,
+  NODE_KIND_LABELS,
+  NODE_KIND_MEANING,
   NODE_SCOPE_LABELS,
   SCOPE_EFFECT,
 } from "@shared/recommenderGraph";
 import { BAR_KINDS } from "./paramKinds";
+import { kindBadgeClass } from "./nodeKinds";
 import type {
   GraphNodeParam,
-  NodeKind,
   NodeScope,
   ParamDef,
 } from "@shared/recommenderGraph";
@@ -28,15 +30,6 @@ const SCOPE_CLASS: Record<NodeScope, string> = {
   pick: "bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100",
   serve:
     "bg-emerald-100 text-emerald-900 dark:bg-emerald-900 dark:text-emerald-100",
-};
-
-const KIND_BADGE: Partial<Record<NodeKind, string>> = {
-  repeat: "repeats",
-  fallback: "in order",
-  quota: "quota",
-  store: "stored",
-  source: "external service",
-  output: "shown",
 };
 
 /**
@@ -213,10 +206,9 @@ export function ExternalCard({ node }: NodeCardProps) {
 export function NodeCard({ node }: NodeCardProps) {
   const { arrivedAt } = useRecommenderParams();
   const reachable = reachableParams(node.params, node.usesParams);
-  const badge = KIND_BADGE[node.kind];
-
   return (
     <div
+      data-kind={node.kind}
       data-arrived={arrivedAt === node.id ? "true" : undefined}
       className={`w-[300px] rounded-xl border-2 border-black bg-white dark:bg-gray-800 shadow-cartoon-md overflow-hidden ${
         arrivedAt === node.id
@@ -248,11 +240,12 @@ export function NodeCard({ node }: NodeCardProps) {
               budget
             </span>
           )}
-          {badge && (
-            <span className="px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-[10px] font-bold text-gray-700 dark:text-gray-300">
-              {badge}
-            </span>
-          )}
+          <span
+            title={NODE_KIND_MEANING[node.kind]}
+            className={kindBadgeClass(node.kind)}
+          >
+            {NODE_KIND_LABELS[node.kind]}
+          </span>
         </div>
       </div>
 

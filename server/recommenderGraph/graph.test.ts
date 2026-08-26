@@ -5,7 +5,11 @@ import { buildRecommenderGraph, profileScopeParamKeys } from "./graph";
 import { NODE_REGISTRY, RETIRED_PARAMS } from "./nodes";
 import { PARAMS, PARAM_KEYS } from "./params";
 import { DEFAULT_PROMOTED_ALBUM } from "../../shared/settingsDefaults";
-import { FLOWS } from "../../shared/recommenderGraph";
+import {
+  FLOWS,
+  NODE_KIND_LABELS,
+  NODE_KIND_MEANING,
+} from "../../shared/recommenderGraph";
 
 /**
  * The knobs `computeConfigHash` (server/db/userProfile.ts) currently folds into a stored
@@ -211,6 +215,19 @@ describe("recommender graph registry", () => {
    * The iteration or the ordering *is* what these nodes mean, and a summary has no room to
    * say it. It has to be spelled out in what they take and do, which is where a reader looks.
    */
+  it("gives every node kind a name and a meaning to show on a card", () => {
+    const kinds = new Set(NODE_REGISTRY.map((node) => node.kind));
+
+    expect(kinds.size).toBeGreaterThan(1);
+    for (const kind of kinds) {
+      expect([kind, NODE_KIND_LABELS[kind], NODE_KIND_MEANING[kind]]).toEqual([
+        kind,
+        expect.any(String),
+        expect.stringContaining(" "),
+      ]);
+    }
+  });
+
   it("spells out a node whose iteration or order is the point", () => {
     const { nodes } = buildRecommenderGraph();
     const structural = nodes.filter((node) =>

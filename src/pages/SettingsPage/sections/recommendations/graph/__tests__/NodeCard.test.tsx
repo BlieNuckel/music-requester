@@ -8,7 +8,7 @@ import {
   ratingWeightParam,
   topArtistsParam,
 } from "./fixtures";
-import { SCOPE_EFFECT } from "@shared/recommenderGraph";
+import { NODE_KIND_MEANING, SCOPE_EFFECT } from "@shared/recommenderGraph";
 import type { GraphNode } from "@shared/recommenderGraph";
 import type { PromotedAlbumSettings } from "@/context/settingsContextDef";
 
@@ -230,6 +230,27 @@ describe("NodeCard", () => {
     renderCard(makeNode({ spendsBudget: true }));
 
     expect(screen.getByText("budget")).toBeInTheDocument();
+  });
+
+  it("says what every node is, including the plain ones", () => {
+    renderCard(makeNode({ kind: "step" }));
+
+    const badge = screen.getByText("step");
+
+    expect(badge).toHaveAttribute("title", NODE_KIND_MEANING.step);
+    expect(badge.closest("[data-kind]")).toHaveAttribute("data-kind", "step");
+  });
+
+  it("tints a kind that does not read as a single pass", () => {
+    renderCard(makeNode({ kind: "fallback" }));
+
+    expect(screen.getByText("in order").className).toContain("amber");
+  });
+
+  it("leaves a plain step's kind neutral", () => {
+    renderCard(makeNode({ kind: "step" }));
+
+    expect(screen.getByText("step").className).not.toContain("amber");
   });
 
   it("marks a repeat node rather than letting it read as one pass", () => {
