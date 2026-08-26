@@ -29,3 +29,22 @@ export function isAllowedReleaseType(
   if (secondaryTypes === null) return true;
   return secondaryTypes.every((t) => ALLOWED_SECONDARY_TYPES.has(t));
 }
+
+/**
+ * A release group worth recommending: identified, dated, and not a live/remix/compilation
+ * package. The three sources used to answer this two different ways — explore took
+ * `primary-type === "Album"` only, while the personal and tag paths took the type filter —
+ * so the same artist could yield a record from one source and nothing from another.
+ */
+export function isRecommendableRelease(release: {
+  id?: string;
+  "first-release-date"?: string;
+  "primary-type"?: string | null;
+  "secondary-types"?: string[] | null;
+}): boolean {
+  if (!release.id || !release["first-release-date"]) return false;
+  return isAllowedReleaseType(
+    release["primary-type"] ?? null,
+    release["secondary-types"] ?? null
+  );
+}

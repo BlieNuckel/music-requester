@@ -7,7 +7,7 @@ import type {
   SimilarGraphSeed,
   SimilarGraphCandidate,
 } from "../db/entity/UserProfile";
-import { isAllowedReleaseType } from "../services/discover/typeFilter";
+import { isRecommendableRelease } from "../services/discover/typeFilter";
 import { isPlaceholderArtist } from "../utils/artistFilter";
 import { weightedRandomPick, shuffle, type Rng } from "../utils/random";
 import { normalizeAlbumKey } from "../utils/albumKey";
@@ -147,28 +147,19 @@ export function preferredPool(
 }
 
 /**
- * A candidate artist's albums worth recommending: a release type that is an album rather than
- * a live/remix/compilation package, dated, and not one this user already listens to. The type
- * filter is wider than explore's `primary-type === "Album"` on purpose — an EP by an artist
- * adjacent to your listening is a fine recommendation, whereas explore is about genre reach.
+ * A candidate artist's albums worth recommending: {@link isRecommendableRelease}, and not one
+ * this user already listens to.
  */
 export function eligibleAlbums(
   releaseGroups: MusicBrainzReleaseGroup[],
   artistName: string,
   knownAlbums: Set<string>
 ): MusicBrainzReleaseGroup[] {
-  return releaseGroups.filter((rg) => {
-    if (!rg.id || !rg["first-release-date"]) return false;
-    if (
-      !isAllowedReleaseType(
-        rg["primary-type"] ?? null,
-        rg["secondary-types"] ?? null
-      )
-    ) {
-      return false;
-    }
-    return !knownAlbums.has(normalizeAlbumKey(artistName, rg.title));
-  });
+  return releaseGroups.filter(
+    (rg) =>
+      isRecommendableRelease(rg) &&
+      !knownAlbums.has(normalizeAlbumKey(artistName, rg.title))
+  );
 }
 
 async function pickAlbumFor(

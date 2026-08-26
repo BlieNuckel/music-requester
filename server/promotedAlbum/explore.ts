@@ -1,6 +1,7 @@
 import { getSimilarArtists } from "../api/listenbrainz/similarArtists";
 import { getArtistMbidByName } from "../api/musicbrainz/artists";
 import { fetchReleaseGroupsForArtist } from "../api/musicbrainz/releaseGroups";
+import { isRecommendableRelease } from "../services/discover/typeFilter";
 import type { MbPriority } from "../api/musicbrainz/queue";
 import { getArtistTopTags } from "../api/lastfm/artists";
 import type { MusicBrainzReleaseGroup } from "../api/musicbrainz/types";
@@ -181,9 +182,7 @@ async function pickAlbumFromArtist(
   priority: MbPriority
 ): Promise<MusicBrainzReleaseGroup | null> {
   const releaseGroups = await fetchReleaseGroupsForArtist(artistMbid, priority);
-  const albums = releaseGroups.filter(
-    (rg) => rg["primary-type"] === "Album" && rg["first-release-date"] && rg.id
-  );
+  const albums = releaseGroups.filter(isRecommendableRelease);
   if (albums.length === 0) return null;
 
   const shuffled = shuffle(albums, rng);

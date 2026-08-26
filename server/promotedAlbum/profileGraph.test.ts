@@ -51,6 +51,19 @@ describe("PROFILE_BODIES", () => {
     );
   });
 
+  /**
+   * A body that fetches what its declared input already holds is the drift the graph exists
+   * to stop: the picture says one read, the code does three.
+   */
+  it("reads the signal series once, through the node that loads it", async () => {
+    const { readFileSync } = await import("node:fs");
+    const body = readFileSync("server/promotedAlbum/profileGraph.ts", "utf8");
+
+    expect(body).not.toMatch(
+      /getSignalEvents|loadEpisodeSeries|loadArtistSeries/
+    );
+  });
+
   it("leaves the capture sweep out of a build, since it runs on its own clock", () => {
     expect(PROFILE_BODIES.has("plexCapture")).toBe(false);
     expect(PROFILE_BODIES.has("plexSessions")).toBe(false);

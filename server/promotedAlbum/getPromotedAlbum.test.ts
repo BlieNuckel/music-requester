@@ -29,12 +29,14 @@ vi.mock("./profileGraph", async (importOriginal) => {
         "loadSignals",
         async (_i: unknown, ctx: { userId: number; plexToken: string }) => {
           await mockLoadSignalBundle(ctx.userId, ctx.plexToken);
+          const { loadEpisodeSeries } =
+            await import("../services/profile/listenSessions");
           const { getSignalEvents } = await import("../db/userProfile");
           return {
             trackEvents: await getSignalEvents(ctx.userId, "plex_track_plays"),
             ratingEvents: await getSignalEvents(ctx.userId, "plex_rating"),
             albumEvents: [],
-            episodes: new Map(),
+            episodes: await loadEpisodeSeries(ctx.userId),
           };
         },
       ],
