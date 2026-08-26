@@ -424,10 +424,11 @@ describe("recommender graph registry", () => {
     for (const node of nodes) {
       for (const param of node.usesParams) {
         const owner = byId.get(param.owner);
-        expect([param.key, owner?.title, owner?.flow]).toEqual([
+        expect([param.key, owner?.title, owner?.flow, owner?.scope]).toEqual([
           param.key,
           param.ownerTitle,
           param.ownerFlow,
+          param.ownerScope,
         ]);
         expect([param.key, owner?.params.map((p) => p.key)]).toEqual([
           param.key,

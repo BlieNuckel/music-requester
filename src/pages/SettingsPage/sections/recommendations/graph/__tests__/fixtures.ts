@@ -29,6 +29,7 @@ export const listeningWeightParam: GraphNodeParam = {
   owner: "artistListening",
   ownerTitle: "Listening per artist",
   ownerFlow: "listening",
+  ownerScope: "profile",
 };
 
 export const topArtistsParam: GraphNodeParam = {
@@ -43,6 +44,7 @@ export const topArtistsParam: GraphNodeParam = {
   owner: "topArtists",
   ownerTitle: "Top artists",
   ownerFlow: "ranking",
+  ownerScope: "profile",
 };
 
 export function makeNode(partial: Partial<GraphNode> = {}): GraphNode {

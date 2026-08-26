@@ -7,30 +7,16 @@ import {
   FLOWS,
   NODE_KIND_LABELS,
   NODE_KIND_MEANING,
-  NODE_SCOPE_LABELS,
   SCOPE_EFFECT,
 } from "@shared/recommenderGraph";
 import { BAR_KINDS } from "./paramKinds";
 import { kindBadgeClass } from "./nodeKinds";
-import type {
-  GraphNodeParam,
-  NodeScope,
-  ParamDef,
-} from "@shared/recommenderGraph";
+import type { GraphNodeParam, ParamDef } from "@shared/recommenderGraph";
 import { HANDLE_SIDES } from "./flowModel";
 import type { RecommenderNodeData } from "./flowModel";
 import type { NodeProps } from "@xyflow/react";
 
 type NodeCardProps = { node: RecommenderNodeData["node"] };
-
-const SCOPE_CLASS: Record<NodeScope, string> = {
-  ingest: "bg-sky-100 text-sky-900 dark:bg-sky-900 dark:text-sky-100",
-  profile:
-    "bg-violet-100 text-violet-900 dark:bg-violet-900 dark:text-violet-100",
-  pick: "bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100",
-  serve:
-    "bg-emerald-100 text-emerald-900 dark:bg-emerald-900 dark:text-emerald-100",
-};
 
 /**
  * A bar is as wide as the card and states its own value, so it takes a row to itself with
@@ -38,6 +24,32 @@ const SCOPE_CLASS: Record<NodeScope, string> = {
  * expression to solve rather than a setting, which is the thing it was meant to spare
  * anyone doing.
  */
+/**
+ * What moving a knob on this card costs. Derived from scope, but stated per card rather than
+ * badged per node: it answers a question only a card with knobs can be asked, and two thirds
+ * of the chart has none. A shared knob answers for its owner, which is not always this node.
+ */
+function EditCost({ node }: NodeCardProps) {
+  const costs = new Set<string>();
+  if (node.params.length > 0) costs.add(SCOPE_EFFECT[node.scope]);
+  for (const param of node.usesParams)
+    costs.add(SCOPE_EFFECT[param.ownerScope]);
+  if (costs.size === 0) return null;
+
+  return (
+    <div className="border-t border-gray-200 dark:border-gray-700 pt-1.5">
+      {[...costs].map((cost) => (
+        <p
+          key={cost}
+          className="text-[10px] font-medium text-gray-400 dark:text-gray-500"
+        >
+          {cost}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function ParamBar({ param }: { param: ParamDef }) {
   return (
     <div className="space-y-0.5">
@@ -218,10 +230,10 @@ export function NodeCard({ node }: NodeCardProps) {
     >
       <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b-2 border-black">
         <span
-          title={SCOPE_EFFECT[node.scope]}
-          className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${SCOPE_CLASS[node.scope]}`}
+          title={NODE_KIND_MEANING[node.kind]}
+          className={`uppercase tracking-wide ${kindBadgeClass(node.kind)}`}
         >
-          {NODE_SCOPE_LABELS[node.scope]}
+          {NODE_KIND_LABELS[node.kind]}
         </span>
         <div className="flex items-center gap-1">
           {node.status === "ported" && (
@@ -240,12 +252,6 @@ export function NodeCard({ node }: NodeCardProps) {
               budget
             </span>
           )}
-          <span
-            title={NODE_KIND_MEANING[node.kind]}
-            className={kindBadgeClass(node.kind)}
-          >
-            {NODE_KIND_LABELS[node.kind]}
-          </span>
         </div>
       </div>
 
@@ -264,6 +270,8 @@ export function NodeCard({ node }: NodeCardProps) {
         ))}
 
         <UsedParams params={node.usesParams} reachable={reachable} />
+
+        <EditCost node={node} />
       </div>
     </div>
   );

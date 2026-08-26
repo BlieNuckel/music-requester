@@ -54,11 +54,11 @@ describe("ExternalCard", () => {
 });
 
 describe("NodeCard", () => {
-  it("renders the node's title, scope and summary", () => {
+  it("renders the node's title, kind and summary", () => {
     renderCard(makeNode());
 
     expect(screen.getByText("Rating boost")).toBeInTheDocument();
-    expect(screen.getByText("Taste profile")).toBeInTheDocument();
+    expect(screen.getByText("step")).toBeInTheDocument();
     expect(screen.getByText(/how highly you rate them/i)).toBeInTheDocument();
   });
 
@@ -166,13 +166,29 @@ describe("NodeCard", () => {
     ).toBeNull();
   });
 
-  it("says what editing this node costs on the badge that names its scope", () => {
+  it("says what moving a knob on this card costs", () => {
     renderCard(makeNode());
 
-    expect(screen.getByText("Taste profile")).toHaveAttribute(
-      "title",
-      SCOPE_EFFECT.profile
+    expect(screen.getByText(SCOPE_EFFECT.profile)).toBeInTheDocument();
+  });
+
+  it("stays quiet about cost on a card with nothing to move", () => {
+    renderCard(makeNode({ params: [], usesParams: [] }));
+
+    expect(screen.queryByText(SCOPE_EFFECT.profile)).toBeNull();
+  });
+
+  /**
+   * The knob for how many artists the profile covers rebuilds every stored profile whichever
+   * card it is moved on, and the card that reads it is a pick.
+   */
+  it("quotes a shared knob's own cost, not the cost of the card hosting it", () => {
+    renderCard(
+      makeNode({ scope: "pick", params: [], usesParams: [topArtistsParam] })
     );
+
+    expect(screen.getByText(SCOPE_EFFECT.profile)).toBeInTheDocument();
+    expect(screen.queryByText(SCOPE_EFFECT.pick)).toBeNull();
   });
 
   it("explains every knob it owns, not just the first", () => {

@@ -166,6 +166,12 @@ export type GraphNodeParam = ParamDef & {
   owner: string;
   ownerTitle: string;
   ownerFlow: FlowId;
+  /**
+   * The owner's scope, which is what an edit here costs — not the scope of the node the knob
+   * is being edited from. Drawing seed artists is a pick, but the knob for how many artists
+   * the profile covers rebuilds every stored profile whichever card you move it on.
+   */
+  ownerScope: NodeScope;
 };
 
 /**

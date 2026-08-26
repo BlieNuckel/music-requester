@@ -8,6 +8,7 @@ import type {
   GraphEdge,
   GraphNode,
   GraphNodeParam,
+  NodeScope,
   RecommenderGraph,
 } from "../../shared/recommenderGraph";
 
@@ -27,14 +28,19 @@ const BUDGETS: RecommenderGraph["budgets"] = [
 
 let cached: RecommenderGraph | null = null;
 
-type Owner = { id: string; title: string; flow: FlowId };
+type Owner = { id: string; title: string; flow: FlowId; scope: NodeScope };
 
 /** Which node owns each knob, so a node can show the knobs it merely reads. */
 function buildOwnerIndex(): Map<ParamKey, Owner> {
   const owners = new Map<ParamKey, Owner>();
   for (const node of NODE_REGISTRY) {
     for (const key of node.params ?? []) {
-      owners.set(key, { id: node.id, title: node.title, flow: node.flow });
+      owners.set(key, {
+        id: node.id,
+        title: node.title,
+        flow: node.flow,
+        scope: node.scope,
+      });
     }
   }
   return owners;
@@ -51,6 +57,7 @@ function toUsedParams(
       owner: owner?.id ?? "",
       ownerTitle: owner?.title ?? "",
       ownerFlow: owner?.flow ?? node.flow,
+      ownerScope: owner?.scope ?? node.scope,
     };
   });
 }
