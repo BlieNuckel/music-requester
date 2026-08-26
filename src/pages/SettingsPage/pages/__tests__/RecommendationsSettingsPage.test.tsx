@@ -33,7 +33,7 @@ const graph: RecommenderGraph = {
           min: 0,
           max: 3,
           step: 0.1,
-          formula: "weight x (1 + {ratingWeight} x stars/10)",
+          effect: "weight x (1 + {ratingWeight} x stars/10)",
           description: "How much your ratings boost an artist.",
         },
       ],

@@ -2,7 +2,12 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { ExternalCard, NodeCard } from "../NodeCard";
 import { RecommenderParamsContext } from "../paramsContext";
 import { DEFAULT_PROMOTED_ALBUM } from "@/context/promotedAlbumDefaults";
-import { listeningWeightParam, makeNode, ratingWeightParam } from "./fixtures";
+import {
+  listeningWeightParam,
+  makeNode,
+  ratingWeightParam,
+  topArtistsParam,
+} from "./fixtures";
 import type { GraphNode } from "@shared/recommenderGraph";
 import type { PromotedAlbumSettings } from "@/context/settingsContextDef";
 
@@ -56,7 +61,7 @@ describe("NodeCard", () => {
     expect(screen.getByText(/how highly you rate them/i)).toBeInTheDocument();
   });
 
-  it("puts a live input inside the node's formula", () => {
+  it("puts a live input inside the line that says what the knob does", () => {
     renderCard(makeNode());
 
     expect(screen.getByText("weight x (1 +")).toBeInTheDocument();
@@ -72,18 +77,18 @@ describe("NodeCard", () => {
         params: [
           {
             ...ratingWeightParam,
-            formula: "weight x (1 + {listeningWeight} x stars/10)",
+            effect: "boosted for the top {topArtistsCount} artists",
           },
         ],
-        usesParams: [listeningWeightParam],
+        usesParams: [topArtistsParam],
       })
     );
 
-    fireEvent.change(screen.getByLabelText("Listening time vs plays"), {
-      target: { value: "0.6" },
+    fireEvent.change(screen.getByLabelText("Top artists"), {
+      target: { value: "12" },
     });
 
-    expect(update).toHaveBeenCalledWith("listeningWeight", 0.6);
+    expect(update).toHaveBeenCalledWith("topArtistsCount", 12);
     expect(screen.queryByLabelText("Rating weight")).not.toBeInTheDocument();
   });
 
@@ -105,6 +110,45 @@ describe("NodeCard", () => {
     });
 
     expect(update).toHaveBeenCalledWith("ratingWeight", 3);
+  });
+
+  it("gives a bar a row of its own, named above and explained below", () => {
+    renderCard(
+      makeNode({
+        params: [
+          {
+            ...listeningWeightParam,
+            effect:
+              "whether one long set or twenty short plays counts for more",
+          },
+        ],
+      })
+    );
+
+    expect(screen.getByText("Listening time vs plays")).toBeInTheDocument();
+    expect(screen.getByRole("slider")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "whether one long set or twenty short plays counts for more"
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("keeps a bar's value on the bar rather than in its line", () => {
+    renderCard(
+      makeNode({
+        params: [
+          {
+            ...listeningWeightParam,
+            effect:
+              "whether one long set or twenty short plays counts for more",
+          },
+        ],
+      })
+    );
+
+    expect(screen.getAllByRole("slider")).toHaveLength(1);
+    expect(screen.queryByText(/\{/)).not.toBeInTheDocument();
   });
 
   it("keeps the long explanation folded away until asked", () => {

@@ -142,11 +142,16 @@ export type ParamDef = {
    */
   ends?: { low: string; high: string };
   /**
-   * The sentence the node reads as, with `{key}` placeholders rendered as live inputs:
-   * `"weight x (1 + {ratingWeight} x stars/10)"`. Absent when the knob is not part of a
-   * formula, in which case it renders as a plain labelled field.
+   * One short line saying what this knob changes, in the words someone would use to describe
+   * the consequence: `"keep the top {topArtistsCount} artists"`. Never the arithmetic behind
+   * it — a reader who wanted the expression can read the code, and everyone else was left
+   * doing algebra to find out what a number did.
+   *
+   * A knob rendered as a bar states its value on the bar, so its line carries no placeholder
+   * and says only what the bar affects. Every other knob interpolates its own key, which is
+   * where the reader edits it. Absent entirely, the knob renders as a plain labelled field.
    */
-  formula?: string;
+  effect?: string;
   /** The longer explanation, shown on demand rather than filling the node. */
   description: string;
 };

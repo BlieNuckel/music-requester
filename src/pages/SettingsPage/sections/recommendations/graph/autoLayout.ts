@@ -1,4 +1,5 @@
 import { graphlib, layout } from "@dagrejs/dagre";
+import { BAR_KINDS } from "./paramKinds";
 import type { FlowNode } from "./flowSelection";
 import type { GraphEdge, GraphNode } from "@shared/recommenderGraph";
 
@@ -66,8 +67,12 @@ export function estimateNodeHeight(node: GraphNode, external: boolean): number {
   if (node.note) height += wrapped(node.note) + 8;
 
   for (const param of node.params) {
-    height += param.formula
-      ? wrapped(param.formula) + INPUT_ROW
+    if (BAR_KINDS.has(param.kind)) {
+      height += LINE_HEIGHT + INPUT_ROW + wrapped(param.effect ?? "");
+      continue;
+    }
+    height += param.effect
+      ? wrapped(param.effect) + INPUT_ROW
       : INPUT_ROW + LINE_HEIGHT;
   }
   if (node.params.length > 0) height += DISCLOSURE;

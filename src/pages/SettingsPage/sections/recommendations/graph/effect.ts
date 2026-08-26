@@ -1,6 +1,6 @@
 import type { ParamDef } from "@shared/recommenderGraph";
 
-export type FormulaSegment =
+export type EffectSegment =
   { kind: "text"; text: string } | { kind: "param"; key: string };
 
 /** Anything that can answer "is this placeholder a param the node can reach". */
@@ -14,11 +14,11 @@ const PLACEHOLDER = /\{(\w+)\}/g;
  * goes. A placeholder naming an unknown param is left as literal text rather than dropped:
  * a broken sentence is easier to notice than a silently missing term.
  */
-export function parseFormula(
+export function parseEffect(
   formula: string,
   known: KeyLookup
-): FormulaSegment[] {
-  const segments: FormulaSegment[] = [];
+): EffectSegment[] {
+  const segments: EffectSegment[] = [];
   let cursor = 0;
 
   for (const match of formula.matchAll(PLACEHOLDER)) {

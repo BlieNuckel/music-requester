@@ -352,7 +352,7 @@ describe("recommender graph registry", () => {
     );
 
     for (const param of Object.values(PARAMS)) {
-      for (const match of param.formula?.matchAll(/\{(\w+)\}/g) ?? []) {
+      for (const match of param.effect?.matchAll(/\{(\w+)\}/g) ?? []) {
         expect([param.key, split.has(match[1] as never)]).toEqual([
           param.key,
           false,
@@ -361,7 +361,41 @@ describe("recommender graph registry", () => {
     }
   });
 
-  it("names every formula placeholder after a param the node can reach", () => {
+  it("says what a knob does rather than the arithmetic behind it", () => {
+    for (const param of Object.values(PARAMS)) {
+      if (!param.effect) continue;
+      // The placeholder is a param name, and names hold letters an operator regex would hit.
+      const prose = param.effect.replace(/\{\w+\}/g, "");
+      expect([param.key, /\s[x*/=+-]\s|\(1 /.test(prose)]).toEqual([
+        param.key,
+        false,
+      ]);
+    }
+  });
+
+  it("leaves the value to the bar on a knob rendered as one", () => {
+    for (const param of Object.values(PARAMS)) {
+      if (param.kind !== "ratio" && param.kind !== "split") continue;
+      expect([param.key, param.effect?.includes("{")]).toEqual([
+        param.key,
+        false,
+      ]);
+    }
+  });
+
+  it("puts every other knob's value where the reader edits it", () => {
+    for (const param of Object.values(PARAMS)) {
+      if (!param.effect || param.kind === "ratio" || param.kind === "split") {
+        continue;
+      }
+      expect([param.key, param.effect.includes(`{${param.key}}`)]).toEqual([
+        param.key,
+        true,
+      ]);
+    }
+  });
+
+  it("names every placeholder after a param the node can reach", () => {
     const { nodes } = buildRecommenderGraph();
 
     for (const node of nodes) {
@@ -370,7 +404,7 @@ describe("recommender graph registry", () => {
         ...node.usesParams.map((param) => param.key),
       ]);
       for (const param of node.params) {
-        for (const match of param.formula?.matchAll(/\{(\w+)\}/g) ?? []) {
+        for (const match of param.effect?.matchAll(/\{(\w+)\}/g) ?? []) {
           expect(reachable.has(match[1] as never)).toBe(true);
         }
       }

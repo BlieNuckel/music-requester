@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { Handle } from "@xyflow/react";
 import ParamControl from "./ParamControl";
-import { parseFormula, reachableParams } from "./formula";
+import { parseEffect, reachableParams } from "./effect";
 import { useRecommenderParams } from "./paramsContext";
 import {
   FLOWS,
   NODE_SCOPE_LABELS,
   SCOPE_EFFECT,
 } from "@shared/recommenderGraph";
+import { BAR_KINDS } from "./paramKinds";
 import type { NodeKind, NodeScope, ParamDef } from "@shared/recommenderGraph";
 import { HANDLE_SIDES } from "./flowModel";
 import type { RecommenderNodeData } from "./flowModel";
@@ -33,6 +34,28 @@ const KIND_BADGE: Partial<Record<NodeKind, string>> = {
   output: "shown",
 };
 
+/**
+ * A bar is as wide as the card and states its own value, so it takes a row to itself with
+ * its name above and what it changes underneath. Threaded into a sentence it read as an
+ * expression to solve rather than a setting, which is the thing it was meant to spare
+ * anyone doing.
+ */
+function ParamBar({ param }: { param: ParamDef }) {
+  return (
+    <div className="space-y-0.5">
+      <span className="block text-xs font-medium text-gray-600 dark:text-gray-400">
+        {param.label}
+      </span>
+      <ParamControl param={param} variant="inline" />
+      {param.effect && (
+        <p className="text-[11px] leading-snug text-gray-500 dark:text-gray-400">
+          {param.effect}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ParamSentence({
   param,
   reachable,
@@ -40,7 +63,9 @@ function ParamSentence({
   param: ParamDef;
   reachable: ReadonlyMap<string, ParamDef>;
 }) {
-  if (!param.formula) {
+  if (BAR_KINDS.has(param.kind)) return <ParamBar param={param} />;
+
+  if (!param.effect) {
     return (
       <div className="space-y-1">
         <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -53,7 +78,7 @@ function ParamSentence({
 
   return (
     <div className="flex flex-wrap items-center gap-x-1 gap-y-1 text-xs text-gray-700 dark:text-gray-300">
-      {parseFormula(param.formula, reachable).map((segment, index) =>
+      {parseEffect(param.effect, reachable).map((segment, index) =>
         segment.kind === "text" ? (
           <span key={index}>{segment.text}</span>
         ) : (

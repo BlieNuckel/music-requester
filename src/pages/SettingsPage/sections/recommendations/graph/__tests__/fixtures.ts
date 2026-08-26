@@ -13,7 +13,7 @@ export const ratingWeightParam: ParamDef = {
   min: 0,
   max: 3,
   step: 0.1,
-  formula: "weight x (1 + {ratingWeight} x stars/10)",
+  effect: "weight x (1 + {ratingWeight} x stars/10)",
   description: "How much your Plex star ratings boost an artist's weight.",
 };
 
@@ -27,6 +27,18 @@ export const listeningWeightParam: GraphNodeParam = {
   ends: { low: "plays", high: "listening time" },
   description: "What counts as listening to an artist more.",
   owner: "playWeights",
+};
+
+export const topArtistsParam: GraphNodeParam = {
+  key: "topArtistsCount",
+  kind: "int",
+  label: "Top artists",
+  min: 1,
+  max: 50,
+  step: 1,
+  effect: "keep the top {topArtistsCount} artists",
+  description: "How many of your most-played artists the profile covers.",
+  owner: "topArtists",
 };
 
 export function makeNode(partial: Partial<GraphNode> = {}): GraphNode {

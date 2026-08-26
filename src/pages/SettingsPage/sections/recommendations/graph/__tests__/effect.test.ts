@@ -1,9 +1,9 @@
-import { parseFormula, reachableParams } from "../formula";
+import { parseEffect, reachableParams } from "../effect";
 import { listeningWeightParam, ratingWeightParam } from "./fixtures";
 
-describe("parseFormula", () => {
+describe("parseEffect", () => {
   it("splits a formula into text around its placeholders", () => {
-    const segments = parseFormula(
+    const segments = parseEffect(
       "weight x (1 + {ratingWeight} x stars/10)",
       new Set(["ratingWeight"])
     );
@@ -16,7 +16,7 @@ describe("parseFormula", () => {
   });
 
   it("handles a formula that starts and ends with a placeholder", () => {
-    const segments = parseFormula("{a} to {b}", new Set(["a", "b"]));
+    const segments = parseEffect("{a} to {b}", new Set(["a", "b"]));
 
     expect(segments).toEqual([
       { kind: "param", key: "a" },
@@ -26,7 +26,7 @@ describe("parseFormula", () => {
   });
 
   it("leaves an unknown placeholder as literal text", () => {
-    const segments = parseFormula("keep {mystery} tags", new Set(["other"]));
+    const segments = parseEffect("keep {mystery} tags", new Set(["other"]));
 
     expect(segments).toEqual([
       { kind: "text", text: "keep " },
@@ -36,7 +36,7 @@ describe("parseFormula", () => {
   });
 
   it("returns plain text unchanged", () => {
-    expect(parseFormula("no placeholders", new Set())).toEqual([
+    expect(parseEffect("no placeholders", new Set())).toEqual([
       { kind: "text", text: "no placeholders" },
     ]);
   });

@@ -142,11 +142,7 @@ function RatioControl({ param, variant, disabled }: ParamControlProps) {
 
   return (
     <span
-      className={
-        variant === "inline"
-          ? "inline-flex items-center gap-2"
-          : "flex w-full items-center gap-2 sm:max-w-xs"
-      }
+      className={`flex w-full items-center gap-2 ${variant === "block" ? "sm:max-w-xs" : ""}`}
     >
       <input
         type="range"
@@ -159,7 +155,7 @@ function RatioControl({ param, variant, disabled }: ParamControlProps) {
         onChange={(e) =>
           update(param.key, clamp(Number(e.target.value), min, max))
         }
-        className={`${SLIDER_CLASS} ${variant === "inline" ? "w-20" : "flex-1"}`}
+        className={`${SLIDER_CLASS} flex-1`}
       />
       <span className={`w-9 text-right ${PERCENT_CLASS}`}>
         {Math.round(value * 100)}%
@@ -172,7 +168,7 @@ function RatioControl({ param, variant, disabled }: ParamControlProps) {
  * One value read from both ends. A knob that divides a quantity between two named things is
  * still one setting, so it gets one control: a second slider for the other side would have
  * to fight the first, and a lone fraction leaves the reader working out what it was taken
- * from. Naming both ends is what makes the number mean something without the formula.
+ * from. Naming both ends is what makes the number mean something on its own.
  */
 function SplitControl({ param, variant, disabled }: ParamControlProps) {
   const { config, update } = useRecommenderParams();
