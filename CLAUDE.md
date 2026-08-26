@@ -105,6 +105,16 @@ The result: Lidarr sees a normal indexer and download client, but downloads actu
 - **When modifying existing features**, update or add tests to cover the changes. Never leave existing tests broken.
 - **Run both test suites** (`pnpm test` and `pnpm test:server`) before considering any work complete. All tests must pass.
 
+## Version Control
+
+**Commit at every reasonable checkpoint — don't wait until the whole task is done.** Long uncommitted stretches make partial work impossible to revert. Commit when a logical unit lands: a migration written, an endpoint working, a component extracted, a test suite passing, a refactor finished.
+
+- Never commit directly to `main` — branch first if the current branch is `main`.
+- Each commit should be self-contained and leave the repo in a working state (typecheck and the relevant test suite passing).
+- Conventional Commits format for messages; explain the "why" in the body only when it isn't obvious from the diff.
+- Don't bundle unrelated changes into one commit — split them.
+- Committing does not mean pushing. Push or open a PR only when asked.
+
 ## Code Style
 
 - JSDoc comments for type annotations are encouraged
