@@ -161,6 +161,43 @@ describe("recommender graph registry", () => {
     }
   });
 
+  it("settles the listening window once, for every derivation measured over it", () => {
+    const { edges } = buildRecommenderGraph();
+    const readers = edges
+      .filter((edge) => edge.from === "listeningWindow")
+      .map((edge) => edge.to);
+
+    expect([...readers].sort()).toEqual([
+      "albumWeights",
+      "playWeights",
+      "windowedTrackPlays",
+    ]);
+  });
+
+  it("stores everything the profile scope derives", () => {
+    const { edges } = buildRecommenderGraph();
+    const feeds = new Map<string, string[]>();
+    for (const edge of edges) {
+      feeds.set(edge.from, [...(feeds.get(edge.from) ?? []), edge.to]);
+    }
+
+    const reaching = new Set(["profileDocument"]);
+    for (let added = true; added;) {
+      added = false;
+      for (const [from, targets] of feeds) {
+        if (reaching.has(from)) continue;
+        if (!targets.some((target) => reaching.has(target))) continue;
+        reaching.add(from);
+        added = true;
+      }
+    }
+
+    for (const node of NODE_REGISTRY) {
+      if (node.scope !== "profile") continue;
+      expect([node.id, reaching.has(node.id)]).toEqual([node.id, true]);
+    }
+  });
+
   it("matches the profile config hash to the profile-scope params", () => {
     expect(profileScopeParamKeys()).toEqual(CONFIG_HASH_KEYS);
   });

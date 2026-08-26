@@ -114,7 +114,10 @@ export type GraphNode = {
   usesParams: GraphNodeParam[];
   /** Whether this node spends the build's shared MusicBrainz resolution budget. */
   spendsBudget: boolean;
-  /** For `repeat` and `fallback` nodes: what the iteration or the ordering means. */
+  /**
+   * The aside shown under the summary. Required on `repeat`, `fallback` and `quota` nodes,
+   * where the iteration or the ordering *is* the meaning; optional on any other node.
+   */
   note?: string;
 };
 

@@ -27,7 +27,10 @@ export type NodeRegistration = {
   /** Knobs owned elsewhere that also change what this node does. */
   usesParams?: ParamKey[];
   spendsBudget?: boolean;
-  /** For repeat, fallback and quota nodes: what the structure means. */
+  /**
+   * The aside a card carries under its summary. Required on repeat, fallback and quota
+   * nodes, where the structure is the meaning; optional elsewhere.
+   */
   note?: string;
 };
 
@@ -103,19 +106,28 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     inputs: [data("signalLog")],
   },
   {
+    id: "listeningWindow",
+    title: "Choose the window",
+    scope: "profile",
+    kind: "step",
+    summary:
+      "Settles the span every per-artist, per-album and per-track figure is measured over, and which series answers for it: the episode log where it reaches back that far, the difference of two cumulative snapshots before that, all-time when neither reaches or nothing was played inside it. One or the other, never both, or every play in the covered span counts twice.",
+    note: "One decision, read by all three derivations downstream. Settling the span per derivation is what once left the weights windowed while the one-hit discount was measured all-time, so the discount scaled a weight it did not describe.",
+    flow: "profile",
+    inputs: [data("signalBundle")],
+    params: ["playTrendWindowDays"],
+    usesParams: ["listeningWeight", "maxTrackMinutesForWeight"],
+  },
+  {
     id: "playWeights",
     title: "Listening per artist",
     scope: "profile",
     kind: "step",
     summary:
-      "How much each artist was listened to in the recent window, from the episode log where it reaches and from snapshot differences before that. Never both, or every play in the covered span would count twice.",
+      "How much each artist was listened to over that window, as play-equivalents: one number trading plays off against time spent.",
     flow: "profile",
-    inputs: [data("signalBundle")],
-    params: [
-      "playTrendWindowDays",
-      "listeningWeight",
-      "maxTrackMinutesForWeight",
-    ],
+    inputs: [data("listeningWindow")],
+    params: ["listeningWeight", "maxTrackMinutesForWeight"],
   },
   {
     id: "windowedTrackPlays",
@@ -123,9 +135,9 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     scope: "profile",
     kind: "step",
     summary:
-      "The same window, per track. Everything downstream reads this one map, so the discount and the rating join necessarily describe the span the weight was measured over.",
+      "The same window, per track: each track's count less what it stood at when the window opened. Everything downstream reads this one map, so the discount and the rating join necessarily describe the span the weight was measured over.",
     flow: "profile",
-    inputs: [data("signalBundle"), data("playWeights", "window")],
+    inputs: [data("signalBundle"), data("listeningWindow")],
   },
   {
     id: "artistDistributions",
@@ -157,9 +169,9 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     scope: "profile",
     kind: "step",
     summary:
-      "How many tracks the library holds per artist, floored by every track ever seen played or rated so it works before the first catalogue sweep.",
+      "How many tracks the library holds per artist, floored by every track ever seen played or rated so it works before the first catalogue sweep. Read all-time rather than over the window on purpose: a track the library holds does not stop existing because nobody played it lately.",
     flow: "profile",
-    inputs: [data("signalBundle"), data("windowedTrackPlays")],
+    inputs: [data("signalBundle")],
   },
   {
     id: "distributionFactor",
@@ -201,6 +213,7 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     flow: "profile",
     inputs: [data("signalLog")],
     params: ["seriesBucketDays", "seriesSpanDays", "momentumRecentBuckets"],
+    usesParams: ["listeningWeight", "maxTrackMinutesForWeight"],
   },
   {
     id: "attachSeries",
@@ -239,9 +252,9 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     scope: "profile",
     kind: "step",
     summary:
-      "The same window split by album, measured from the same source the artist weights came from.",
+      "The same window split by album, read from whichever series the window settled on. An album's share has to be measured over the span its artist's weight was, or splitting that weight silently re-weights the artist.",
     flow: "profile",
-    inputs: [data("signalBundle"), data("playWeights", "window")],
+    inputs: [data("signalBundle"), data("listeningWindow")],
     usesParams: ["listeningWeight", "maxTrackMinutesForWeight"],
   },
   {
@@ -328,6 +341,7 @@ export const NODE_REGISTRY: NodeRegistration[] = [
       data("albumTags"),
       data("similarGraph"),
       data("attachSeries"),
+      data("artistSeries", "stored buckets"),
       data("knownAlbums"),
     ],
   },
