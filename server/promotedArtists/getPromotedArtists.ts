@@ -1,4 +1,4 @@
-import { loadArtistWeights } from "../promotedAlbum/artistWeights";
+import { loadProfileForRequest } from "../promotedAlbum/profileService";
 import { getSimilarArtists } from "../api/lastfm/artists";
 import { enrichArtistsWithImages } from "../services/lastfm";
 import { lidarrGet } from "../api/lidarr/get";
@@ -8,11 +8,7 @@ import { weightedRandomPick, shuffle } from "../utils/random";
 import { createTtlMap } from "../utils/ttlMap";
 import { isPlaceholderArtist } from "../utils/artistFilter";
 import { findUserById } from "../auth/users";
-import {
-  getUserProfile,
-  updateExplorationHistory,
-  parseDerivedProfile,
-} from "../db/userProfile";
+import { updateExplorationHistory } from "../db/userProfile";
 import type { PromotedArtist, PromotedArtistsResult } from "./types";
 
 export type { PromotedArtistsResult } from "./types";
@@ -105,6 +101,19 @@ function pickArtists(
     .sort((a, b) => b.match - a.match);
 }
 
+/**
+ * The grid, drawn from the stored taste profile rather than derived again.
+ *
+ * The weighting this needs is already persisted — `artistTags` carries each top artist and
+ * the weight it was ranked by — so re-running it here replayed the whole signal log on a
+ * request path for an answer the database already held. Worse, the carousel ranks from the
+ * stored profile while this ranked from a fresh derivation, so between a settings change and
+ * the next rebuild the two halves of Discover disagreed about the same user.
+ *
+ * A user with nothing usable stored now gets an empty grid while the build runs, rather than
+ * a request that ingests and derives inline. That is what the spotlight carousel already
+ * does, and `loadProfileForRequest` starts the build either way.
+ */
 export async function getPromotedArtists(
   userId: number,
   forceRefresh = false
@@ -119,20 +128,13 @@ export async function getPromotedArtists(
   const plexToken = user?.plexToken;
   if (!plexToken) return null;
 
-  const weighted = await loadArtistWeights(userId, plexToken, {
-    windowMs: config.playTrendWindowDays * 24 * 60 * 60 * 1000,
-    ratingWeight: config.ratingWeight,
-    distributionWeight: config.distributionWeight,
-    minPlaysForDistribution: config.minPlaysForDistribution,
-    minAvailableTracksForDistribution: config.minAvailableTracksForDistribution,
-    listeningWeight: config.listeningWeight,
-    maxTrackMinutesForWeight: config.maxTrackMinutesForWeight,
-  });
-  if (weighted.length === 0) return null;
+  const load = await loadProfileForRequest(userId, plexToken, config);
+  if (load.status === "building") return null;
 
-  const topArtists = [...weighted]
-    .sort((a, b) => b.viewCount - a.viewCount)
-    .slice(0, config.topArtistsCount);
+  // Already the top `topArtistsCount` by weight, in that order: the profile build sorts and
+  // slices before it fetches tags, so the stored list is the draw pool as it stands.
+  const topArtists = load.profile.artistTags;
+  if (topArtists.length === 0) return null;
 
   const seeds = weightedRandomPick(
     topArtists,
@@ -149,10 +151,7 @@ export async function getPromotedArtists(
   const merged = mergeSimilar(similarLists, topNames);
   if (merged.length === 0) return null;
 
-  const profileRow = await getUserProfile(userId);
-  const recentArtists = profileRow
-    ? parseDerivedProfile(profileRow.profile_json).explorationHistory.artists
-    : [];
+  const recentArtists = load.profile.explorationHistory.artists;
   const chosen = pickArtists(merged, new Set(recentArtists));
 
   const enriched = await enrichArtistsWithImages(chosen);

@@ -135,9 +135,9 @@ describe("recommender graph registry", () => {
   });
 
   /**
-   * The one edge from the build into a pick: the promoted-artists grid re-runs the weighting
-   * instead of reading the stored profile, which is duplicate work rather than a data path.
-   * It leaves this list when that is fixed; nothing else may join it.
+   * A pick reads the stored profile, never a step that builds one. An edge across that line
+   * is a pick re-deriving on the request path what the build already persisted, which is how
+   * the promoted-artists grid came to rank from a different weighting than the carousel.
    */
   it("reads the pick sources off the served profile, not off the build", () => {
     const { nodes, edges } = buildRecommenderGraph();
@@ -153,9 +153,7 @@ describe("recommender graph registry", () => {
         nodes.find((node) => node.id === edge.to)?.scope === "pick"
     );
 
-    expect(leaking.map((edge) => edge.id)).toEqual([
-      "attachSeries->promotedArtistSeeds",
-    ]);
+    expect(leaking.map((edge) => edge.id)).toEqual([]);
   });
 
   it("resolves the owner of every referenced param", () => {

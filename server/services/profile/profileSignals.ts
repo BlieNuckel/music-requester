@@ -1,14 +1,13 @@
 import { getSignalEvents } from "../../db/userProfile";
-import { allTimeListening } from "./listeningWindow";
 import { loadEpisodeSeries } from "./listenSessions";
 import {
   ingestUserTrackPlays,
   latestRatings,
   reconstructAlbumTrackCounts,
+  reconstructTrackPlayCounts,
 } from "./signalIngestion";
 import type { ListenEpisode } from "./listenHistory";
-import type { WindowedPlay } from "./listeningWindow";
-import type { PlexRatingPayload } from "./signalIngestion";
+import type { PlexRatingPayload, TrackPlayState } from "./signalIngestion";
 import type { UserSignalEvent } from "../../db/entity/UserSignalEvent";
 
 /**
@@ -34,7 +33,12 @@ export type ProfileSignals = {
  * by it either way.
  */
 export type FoldedSignals = {
-  tracks: Map<string, WindowedPlay>;
+  /**
+   * The cumulative play fold, not a windowed measurement: no per-play ceiling has been
+   * applied, because a ceiling belongs to the window that measures against it. Anything
+   * wanting rows asks {@link listeningRows} for them under the cap it is measuring with.
+   */
+  tracks: Map<string, TrackPlayState>;
   ratings: Map<string, PlexRatingPayload>;
   /** Plex's own agent genres per album key, for albums Last.fm has nothing on. */
   albumGenres: Map<string, string[]>;
@@ -74,15 +78,13 @@ export async function loadProfileSignals(
 /**
  * Replay the log into current state, once, for everything that reads it as it stands.
  *
- * `capMs` is required rather than defaulted: `tracks` becomes the all-time fallback a
- * listening window compares its own capped rows against, and a caller holding a cap for one
- * and taking a default on the other gets a mismatch nothing downstream can detect. See
- * {@link allTimeListening}.
+ * Takes no listening cap. It used to, and a caller holding `maxTrackMinutesForWeight` for
+ * the window while taking a default here produced an uncapped total scaled by a capped
+ * ratio — a mismatch nothing downstream could see. Folding and measuring are now separate
+ * steps, so there is only one place left to state a ceiling and no second one to disagree
+ * with it.
  */
-export function foldSignalsToNow(
-  signals: ProfileSignals,
-  capMs: number
-): FoldedSignals {
+export function foldSignalsToNow(signals: ProfileSignals): FoldedSignals {
   const albumGenres = new Map<string, string[]>();
   for (const [key, album] of reconstructAlbumTrackCounts(
     signals.albumEvents,
@@ -94,7 +96,7 @@ export function foldSignalsToNow(
   }
 
   return {
-    tracks: allTimeListening(signals.trackEvents, capMs),
+    tracks: reconstructTrackPlayCounts(signals.trackEvents, Infinity),
     ratings: latestRatings(signals.ratingEvents),
     albumGenres,
   };

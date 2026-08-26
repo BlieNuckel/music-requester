@@ -1,17 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { PromotedAlbumConfig } from "../config";
 
-const mockLoadArtistWeights = vi.fn();
+const mockLoadProfileForRequest = vi.fn();
 const mockGetSimilarArtists = vi.fn();
 const mockEnrichArtistsWithImages = vi.fn();
 const mockLidarrGet = vi.fn();
 const mockGetConfigValue = vi.fn();
 
-vi.mock("../promotedAlbum/artistWeights", () => ({
-  loadArtistWeights: (...args: unknown[]) => mockLoadArtistWeights(...args),
-  loadSignalBundle: async () => ({ albumEvents: [] }),
-  deriveArtistWeights: () => [],
-  deriveAlbumWeights: () => [],
+vi.mock("../promotedAlbum/profileService", () => ({
+  loadProfileForRequest: (...args: unknown[]) =>
+    mockLoadProfileForRequest(...args),
 }));
 
 vi.mock("../api/lastfm/artists", () => ({
@@ -87,11 +85,20 @@ const baseConfig: PromotedAlbumConfig = {
   albumTagsPerArtist: 4,
 };
 
+/** `artistTags` as the profile stores it: already the top N, already in weight order. */
 const TOP_ARTISTS = [
-  { name: "Aphex Twin", viewCount: 100, thumb: "", genres: [] },
-  { name: "Plaid", viewCount: 50, thumb: "", genres: [] },
-  { name: "Autechre", viewCount: 25, thumb: "", genres: [] },
+  { name: "Aphex Twin", viewCount: 100, tags: [] },
+  { name: "Plaid", viewCount: 50, tags: [] },
+  { name: "Autechre", viewCount: 25, tags: [] },
 ];
+
+const readyProfile = (artistTags = TOP_ARTISTS, artists: string[] = []) => ({
+  status: "ready" as const,
+  profile: {
+    artistTags,
+    explorationHistory: { albums: [], artists },
+  },
+});
 
 const SIMILAR: Record<string, SimilarArtist[]> = {
   "Aphex Twin": [
@@ -112,7 +119,7 @@ beforeEach(async () => {
   vi.spyOn(Math, "random").mockReturnValue(0);
 
   mockGetConfigValue.mockReturnValue(baseConfig);
-  mockLoadArtistWeights.mockResolvedValue(TOP_ARTISTS);
+  mockLoadProfileForRequest.mockResolvedValue(readyProfile());
   mockGetSimilarArtists.mockImplementation((name: string) =>
     Promise.resolve(SIMILAR[name] ?? [])
   );
@@ -139,25 +146,33 @@ describe("getPromotedArtists", () => {
       "INSERT INTO users (user_type, enabled) VALUES ('local', 1) RETURNING id"
     )) as { id: number }[];
     expect(await getPromotedArtists(rows[0].id)).toBeNull();
-    expect(mockLoadArtistWeights).not.toHaveBeenCalled();
+    expect(mockLoadProfileForRequest).not.toHaveBeenCalled();
   });
 
-  it("returns null when the user has no top artists", async () => {
-    mockLoadArtistWeights.mockResolvedValue([]);
+  it("returns null when the profile holds no artists", async () => {
+    mockLoadProfileForRequest.mockResolvedValue(readyProfile([]));
     expect(await getPromotedArtists(userId)).toBeNull();
   });
 
-  it("loads artist weights from the plays series for this user", async () => {
+  it("draws its seeds from the stored profile rather than deriving again", async () => {
     await getPromotedArtists(userId);
-    expect(mockLoadArtistWeights).toHaveBeenCalledWith(userId, "token", {
-      windowMs: 90 * 24 * 60 * 60 * 1000,
-      ratingWeight: 0.5,
-      distributionWeight: 0,
-      minPlaysForDistribution: 5,
-      minAvailableTracksForDistribution: 0,
-      listeningWeight: 1,
-      maxTrackMinutesForWeight: 0,
-    });
+
+    expect(mockLoadProfileForRequest).toHaveBeenCalledWith(
+      userId,
+      "token",
+      baseConfig
+    );
+  });
+
+  /**
+   * The build fans out to four services and can run for minutes. An empty grid while it runs
+   * is what the spotlight carousel already shows, and `loadProfileForRequest` starts it.
+   */
+  it("shows nothing rather than deriving inline while the profile builds", async () => {
+    mockLoadProfileForRequest.mockResolvedValue({ status: "building" });
+
+    expect(await getPromotedArtists(userId)).toBeNull();
+    expect(mockGetSimilarArtists).not.toHaveBeenCalled();
   });
 
   it("returns similar artists seeded from the top artists", async () => {
@@ -248,10 +263,10 @@ describe("getPromotedArtists", () => {
   it("caches results per user and recomputes on refresh", async () => {
     await getPromotedArtists(userId);
     await getPromotedArtists(userId);
-    expect(mockLoadArtistWeights).toHaveBeenCalledTimes(1);
+    expect(mockLoadProfileForRequest).toHaveBeenCalledTimes(1);
 
     await getPromotedArtists(userId, true);
-    expect(mockLoadArtistWeights).toHaveBeenCalledTimes(2);
+    expect(mockLoadProfileForRequest).toHaveBeenCalledTimes(2);
   });
 
   it("persists anti-repeat memory so a refresh avoids re-showing artists", async () => {

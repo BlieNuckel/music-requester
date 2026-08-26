@@ -1,14 +1,17 @@
 import { describe, it, expect } from "vitest";
 import {
-  allTimeListening,
   artistRollupsByName,
   deriveKnownAlbums,
   resolveListeningWindow,
   rollupWindowToAlbums,
+  listeningRows,
   rollupWindowToArtists,
   type WindowedPlay,
 } from "./listeningWindow";
-import { NOMINAL_TRACK_MS } from "./signalIngestion";
+import {
+  NOMINAL_TRACK_MS,
+  reconstructTrackPlayCounts,
+} from "./signalIngestion";
 import type { ListenEpisode } from "./listenHistory";
 import type { UserSignalEvent } from "../../db/entity/UserSignalEvent";
 
@@ -85,11 +88,31 @@ const resolveWindow = (
   resolveListeningWindow(
     trackEvents,
     episodes,
-    allTimeListening(trackEvents, opts.capMs),
+    reconstructTrackPlayCounts(trackEvents, Infinity),
     opts
   );
 
 describe("resolveListeningWindow", () => {
+  /**
+   * The deltas branch subtracts the window's baseline from the fold it was handed, rather
+   * than replaying the events to build that fold a second time. Proven by handing it a fold
+   * that disagrees with the events: a resolver that re-folded would ignore this map, and the
+   * delta would come out against 10 rather than against 100.
+   */
+  it("subtracts from the fold it was given rather than folding again", () => {
+    const events = [
+      trackEvent([{ ratingKey: "1", artistName: "A", playCount: 4 }], 60),
+      trackEvent([{ ratingKey: "1", artistName: "A", playCount: 10 }], 5),
+    ];
+    const handed = reconstructTrackPlayCounts(events, Infinity);
+    handed.set("1", { ...handed.get("1")!, playCount: 100 });
+
+    const window = resolveListeningWindow(events, new Map(), handed, options());
+
+    expect(window.source).toBe("deltas");
+    expect(window.plays.get("1")?.plays).toBe(96);
+  });
+
   it("measures the window as the increase since it opened", () => {
     const window = resolveWindow(
       [
@@ -240,10 +263,13 @@ describe("resolveListeningWindow", () => {
   });
 });
 
-describe("allTimeListening", () => {
+describe("listeningRows", () => {
   it("applies no window at all", () => {
-    const rows = allTimeListening(
-      [trackEvent([{ ratingKey: "1", artistName: "A", playCount: 10 }], 400)],
+    const rows = listeningRows(
+      reconstructTrackPlayCounts(
+        [trackEvent([{ ratingKey: "1", artistName: "A", playCount: 10 }], 400)],
+        Infinity
+      ),
       0
     );
 
