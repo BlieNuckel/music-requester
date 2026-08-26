@@ -19,7 +19,7 @@ import {
   fetchAlbumTags,
   selectTagTargets,
 } from "./albumGenres";
-import { attachSeriesSignals, loadArtistSeries } from "./artistSeries";
+import { attachSeriesSignals, deriveArtistSeries } from "./artistSeries";
 import { buildSimilarGraph } from "./explore";
 import {
   buildArtistTags,
@@ -146,17 +146,29 @@ export const PROFILE_BODIES: ReadonlyMap<
       ),
   ],
 
+  /**
+   * Buckets from the signals already loaded rather than re-reading them. The node has always
+   * declared `loadSignals` as its input; the body used to fetch both series again anyway,
+   * which is two SQLite round-trips per build for rows already in hand.
+   *
+   * It still takes the raw events rather than the fold: this buckets per boundary, which is
+   * a different question from the one window `listeningWindow` settles.
+   */
   [
     "artistSeries",
-    (_i, ctx) =>
-      loadArtistSeries(ctx.userId, {
-        now: ctx.now,
-        bucketMs: ctx.config.seriesBucketDays * DAY_MS,
-        spanMs: ctx.config.seriesSpanDays * DAY_MS,
-        recentBuckets: ctx.config.momentumRecentBuckets,
-        capMs: capMsOf(ctx.config),
-        listeningWeight: ctx.config.listeningWeight,
-      }),
+    (inputs, ctx) =>
+      deriveArtistSeries(
+        asSignals(inputs).trackEvents,
+        asSignals(inputs).episodes,
+        {
+          now: ctx.now,
+          bucketMs: ctx.config.seriesBucketDays * DAY_MS,
+          spanMs: ctx.config.seriesSpanDays * DAY_MS,
+          recentBuckets: ctx.config.momentumRecentBuckets,
+          capMs: capMsOf(ctx.config),
+          listeningWeight: ctx.config.listeningWeight,
+        }
+      ),
   ],
 
   [
