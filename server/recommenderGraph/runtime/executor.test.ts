@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { runGraph } from "./executor";
+import { fallbackOrder, runGraph } from "./executor";
 import { NODE_REGISTRY } from "../nodes";
 import type { NodeBody } from "./executor";
 
@@ -144,5 +144,97 @@ describe("runGraph", () => {
     );
 
     expect(seen).toEqual(["one-run", "one-run", "one-run"]);
+  });
+  /**
+   * The whole point of a fallback edge is that it is tried only when the one before it
+   * produced nothing. Settling all three before the body starts would spend the paced
+   * lookups the ordering exists to avoid.
+   */
+  it("leaves a fallback input alone until a body asks for it", async () => {
+    const explore = vi.fn(() => "explore album");
+    const personal = vi.fn(() => "personal album");
+
+    const { outputs } = await runGraph(
+      ["sourceChain"],
+      bodies({
+        exploreAlbum: explore,
+        personalCandidates: () => [],
+        personalBand: () => [],
+        personalPreference: () => [],
+        personalAlbum: personal,
+        candidateWalk: () => "tag album",
+        sourceChain: (inputs, _ctx, resolve) => {
+          expect(inputs).toEqual({});
+          return resolve("personalAlbum");
+        },
+      }),
+      { label: "t" },
+      new Map([["profileFreshness", "profile"]])
+    );
+
+    expect(outputs.get("sourceChain")).toBe("personal album");
+    expect(explore).not.toHaveBeenCalled();
+    expect(personal).toHaveBeenCalledTimes(1);
+  });
+
+  it("declares the order a fallback node tries its inputs in", () => {
+    expect(fallbackOrder("sourceChain")).toEqual([
+      "exploreAlbum",
+      "personalAlbum",
+      "candidateWalk",
+    ]);
+  });
+
+  it("refuses to order the fallbacks of a node nobody declared", () => {
+    expect(() => fallbackOrder("nonesuch")).toThrow(/No node registered/);
+  });
+
+  /**
+   * A repeat node's input is the thing it runs many times, so running it once up front is
+   * the iteration the node exists to own.
+   */
+  it("leaves a repeat node to run its own input, once per turn", async () => {
+    const attempt = vi.fn(() => "one pick");
+
+    const { outputs } = await runGraph(
+      ["pickLoop"],
+      bodies({
+        exploreQuota: () => 0,
+        sourceChain: attempt,
+        pickLoop: async (inputs, _ctx, resolve) => {
+          expect(inputs).toEqual({});
+          return [
+            await resolve("sourceChain"),
+            await resolve("sourceChain"),
+            await resolve("sourceChain"),
+          ];
+        },
+      }),
+      { label: "t" }
+    );
+
+    expect(registered("pickLoop").kind).toBe("repeat");
+    expect(attempt).toHaveBeenCalledTimes(3);
+    expect(outputs.get("pickLoop")).toHaveLength(3);
+  });
+
+  /**
+   * A `pick`-scope node is never cached, so without this a caller asking for one would run
+   * the whole flow and be handed nothing back.
+   */
+  it("hands back a target it refuses to cache", async () => {
+    const { outputs } = await runGraph(
+      ["tagDraw"],
+      bodies({
+        artistSample: () => ["one artist"],
+        pickVector: () => "vector",
+        tagDraw: () => "shoegaze",
+      }),
+      { label: "t" },
+      new Map([["profileFreshness", "profile"]])
+    );
+
+    expect(registered("tagDraw").scope).toBe("pick");
+    expect(outputs.get("tagDraw")).toBe("shoegaze");
   });
 });
