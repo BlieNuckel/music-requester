@@ -143,7 +143,6 @@ export function bucketEpisodes(
  */
 export function bucketCountDeltas(
   trackEvents: UserSignalEvent[],
-  legacyEvents: UserSignalEvent[],
   windows: BucketWindow[],
   capMs: number,
   untilIndex: number
@@ -151,17 +150,11 @@ export function bucketCountDeltas(
   const byArtist = new Map<string, SeriesBucket[]>();
   if (untilIndex <= 0) return byArtist;
 
-  let before = reconstructArtistTotals(
-    trackEvents,
-    legacyEvents,
-    windows[0].startMs,
-    capMs
-  );
+  let before = reconstructArtistTotals(trackEvents, windows[0].startMs, capMs);
 
   for (let index = 0; index < untilIndex; index += 1) {
     const after = reconstructArtistTotals(
       trackEvents,
-      legacyEvents,
       windows[index].endMs,
       capMs
     );
@@ -299,7 +292,6 @@ function summarize(
  */
 export function deriveArtistSeries(
   trackEvents: UserSignalEvent[],
-  legacyEvents: UserSignalEvent[],
   episodes: Map<string, ListenEpisode>,
   options: ArtistSeriesOptions
 ): ArtistSeries[] {
@@ -310,13 +302,7 @@ export function deriveArtistSeries(
   const merged = bucketEpisodes(episodes, windows, options.capMs, covered);
   mergeSeries(
     merged,
-    bucketCountDeltas(
-      trackEvents,
-      legacyEvents,
-      windows,
-      options.capMs,
-      covered
-    ),
+    bucketCountDeltas(trackEvents, windows, options.capMs, covered),
     windows
   );
 
@@ -410,7 +396,6 @@ export async function loadArtistSeries(
 ): Promise<ArtistSeries[]> {
   return deriveArtistSeries(
     await getSignalEvents(userId, "plex_track_plays"),
-    await getSignalEvents(userId, "plex_plays"),
     await loadEpisodeSeries(userId),
     options
   );

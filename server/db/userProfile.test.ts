@@ -276,29 +276,29 @@ describe("touchProfileUsed", () => {
 describe("appendSignalEvent / getSignalEvents", () => {
   it("appends and reads back events for a user", async () => {
     const userId = await createUser("alice");
-    await appendSignalEvent(userId, "plex_plays", { artists: 3 });
+    await appendSignalEvent(userId, "plex_track_plays", { artists: 3 });
 
     const events = await getSignalEvents(userId);
     expect(events).toHaveLength(1);
-    expect(events[0].kind).toBe("plex_plays");
+    expect(events[0].kind).toBe("plex_track_plays");
     expect(JSON.parse(events[0].payload)).toEqual({ artists: 3 });
   });
 
   it("filters by kind", async () => {
     const userId = await createUser("alice");
-    await appendSignalEvent(userId, "plex_plays", {});
+    await appendSignalEvent(userId, "plex_track_plays", {});
     await appendSignalEvent(userId, "plex_rating", { rating: 8 });
-    await appendSignalEvent(userId, "plex_plays", {});
+    await appendSignalEvent(userId, "plex_track_plays", {});
 
-    expect(await getSignalEvents(userId, "plex_plays")).toHaveLength(2);
+    expect(await getSignalEvents(userId, "plex_track_plays")).toHaveLength(2);
     expect(await getSignalEvents(userId, "plex_rating")).toHaveLength(1);
   });
 
   it("scopes events to the owning user", async () => {
     const alice = await createUser("alice");
     const bob = await createUser("bob");
-    await appendSignalEvent(alice, "plex_plays", {});
-    await appendSignalEvent(bob, "plex_plays", {});
+    await appendSignalEvent(alice, "plex_track_plays", {});
+    await appendSignalEvent(bob, "plex_track_plays", {});
 
     expect(await getSignalEvents(alice)).toHaveLength(1);
     expect(await getSignalEvents(bob)).toHaveLength(1);

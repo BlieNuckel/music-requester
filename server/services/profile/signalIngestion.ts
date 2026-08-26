@@ -35,17 +35,6 @@ export type PlexRatingPayload = {
   rating: number;
 };
 
-/**
- * Payload of a `kind = "plex_plays"` event — the legacy artist-level plays series,
- * superseded by `plex_track_plays`. Still read (it is the only record of pre-cutover
- * history) but no longer written. Each event is a delta: only the artists whose
- * cumulative play count *increased* since the previous capture. Reconstruct a full
- * state by folding the series (see {@link reconstructPlayCounts}).
- */
-export type PlexPlaysPayload = {
-  artists: { name: string; playCount: number }[];
-};
-
 /** One track's cumulative play count plus the album/artist it rolls up into. */
 export type TrackPlayState = {
   ratingKey: string;
@@ -359,27 +348,6 @@ export async function ingestUserRatings(
     }
   }
   return changes.length + removals;
-}
-
-/**
- * Cumulative per-artist play count reconstructed from the delta series, considering only
- * events recorded at or before `cutoffMs`. Folds last-write-wins per artist; unchanged
- * artists are absent from later deltas and carry their prior value forward. Events arrive
- * oldest-first, so we stop as soon as one is past the cutoff.
- */
-export function reconstructPlayCounts(
-  events: UserSignalEvent[],
-  cutoffMs: number
-): Map<string, number> {
-  return foldEvents<PlexPlaysPayload, number>(
-    events,
-    cutoffMs,
-    (payload) =>
-      (payload.artists ?? []).map(
-        (artist) => [artist.name, artist.playCount] as [string, number]
-      ),
-    "plex_plays"
-  );
 }
 
 /**
@@ -749,32 +717,22 @@ export function toPlayEquivalents(
 }
 
 /**
- * Cumulative all-time plays *and* listening per artist at `cutoffMs`, merged across the
- * track series and the legacy artist series. Both are monotonic and cumulative, so the
- * higher of the two is the safe estimate on each quantity: it never under-counts a baseline
- * (which would inflate a windowed delta), and it lets the track series take over on its own
- * as the legacy series stops being written. Keyed by artist name, which is what the ratings
- * series joins on and the only key the legacy series has.
+ * Cumulative all-time plays *and* listening per artist at `cutoffMs`, folded from the track
+ * series. Keyed by artist name, which is what the ratings series joins on; the rollup itself
+ * groups by `artistKey`, so two artists sharing a name merge here on the higher of each
+ * quantity rather than one silently replacing the other.
  *
- * The legacy series is artist-level and carries no durations, so its counts enter as
- * listening at the nominal length — numerically identical to how they compared before this
- * became a listening merge.
+ * The series is monotonic and cumulative, so this never under-counts a baseline — which
+ * would inflate the windowed delta measured against it.
  */
 export function reconstructArtistTotals(
   trackEvents: UserSignalEvent[],
-  legacyEvents: UserSignalEvent[],
   cutoffMs: number,
   capMs = 0
 ): Map<string, ArtistListenTotals> {
   const merged = new Map<string, ArtistListenTotals>();
-  for (const [name, plays] of reconstructPlayCounts(legacyEvents, cutoffMs)) {
-    merged.set(name, {
-      plays,
-      listenedMs: inferListenedMs(plays, undefined, capMs),
-    });
-  }
-
   const tracks = reconstructTrackPlayCounts(trackEvents, cutoffMs);
+
   for (const artist of rollupToArtists(tracks, undefined, capMs)) {
     if (!artist.name) continue;
     const known = merged.get(artist.name);

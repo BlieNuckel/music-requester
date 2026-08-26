@@ -11,9 +11,12 @@ import { User } from "./User";
 /**
  * The `kind` discriminator for an append-only raw signal. The set grows over time
  * (plays, ratings, behaviour) without a migration — a new signal is a new string.
+ *
+ * `plex_plays` is gone: the artist-level series it named was superseded by
+ * `plex_track_plays`, carried no per-track detail, and stopped being written long before it
+ * stopped being read. Rows may still exist and are simply never folded.
  */
 export type SignalKind =
-  | "plex_plays"
   | "plex_track_plays"
   | "plex_listen_history"
   | "plex_listen_sessions"

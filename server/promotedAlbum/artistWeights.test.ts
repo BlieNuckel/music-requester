@@ -73,19 +73,6 @@ function weightOptions(overrides: Partial<ArtistWeightOptions> = {}) {
 }
 const NOW = Date.parse("2026-06-28T00:00:00.000Z");
 
-function legacyEvent(
-  artists: { name: string; playCount: number }[],
-  daysAgo: number
-): UserSignalEvent {
-  return {
-    id: 0,
-    user_id: 1,
-    kind: "plex_plays",
-    payload: JSON.stringify({ artists }),
-    recorded_at: new Date(NOW - daysAgo * DAY).toISOString(),
-  } as UserSignalEvent;
-}
-
 function trackEvent(tracks: TrackSpec[], daysAgo: number): UserSignalEvent {
   return {
     id: 0,
@@ -158,7 +145,6 @@ describe("reconstructArtistTotals", () => {
           0
         ),
       ],
-      [],
       Infinity
     );
     expect(counts.get("A")).toEqual({
@@ -194,7 +180,6 @@ describe("reconstructArtistTotals", () => {
           0
         ),
       ],
-      [],
       Infinity
     );
     expect([...counts.values()].map((t) => t.plays)).toEqual([8]);
@@ -221,19 +206,9 @@ describe("reconstructArtistTotals", () => {
           0
         ),
       ],
-      [],
       Infinity
     );
     expect(counts.get("Nova")?.plays).toBe(5);
-  });
-
-  it("takes the higher of the two series per artist", () => {
-    const counts = reconstructArtistTotals(
-      [trackEvent([{ ratingKey: "1", artistName: "A", playCount: 4 }], 0)],
-      [legacyEvent([{ name: "A", playCount: 30 }], 0)],
-      Infinity
-    );
-    expect(counts.get("A")?.plays).toBe(30);
   });
 
   it("ignores events recorded after the cutoff", () => {
@@ -242,7 +217,6 @@ describe("reconstructArtistTotals", () => {
         trackEvent([{ ratingKey: "1", artistName: "A", playCount: 4 }], 40),
         trackEvent([{ ratingKey: "1", artistName: "A", playCount: 90 }], 0),
       ],
-      [],
       NOW - 30 * DAY
     );
     expect(counts.get("A")?.plays).toBe(4);
@@ -263,7 +237,6 @@ describe("reconstructArtistTotals", () => {
           0
         ),
       ],
-      [],
       Infinity
     );
     expect(counts.get("A")).toEqual({ plays: 2, listenedMs: 10_800_000 });
@@ -284,23 +257,10 @@ describe("reconstructArtistTotals", () => {
           0
         ),
       ],
-      [],
       Infinity,
       600_000
     );
     expect(counts.get("A")?.listenedMs).toBe(1_200_000);
-  });
-
-  it("enters the legacy artist series at the nominal length", () => {
-    const counts = reconstructArtistTotals(
-      [],
-      [legacyEvent([{ name: "A", playCount: 30 }], 0)],
-      Infinity
-    );
-    expect(counts.get("A")).toEqual({
-      plays: 30,
-      listenedMs: 30 * NOMINAL_TRACK_MS,
-    });
   });
 });
 
@@ -316,7 +276,7 @@ describe("derivePlayWeights", () => {
       ),
       trackEvent([{ ratingKey: "1", artistName: "A", playCount: 30 }], 0),
     ];
-    const result = derivePlayWeights(trackEvents, [], new Map(), playOptions());
+    const result = derivePlayWeights(trackEvents, new Map(), playOptions());
     expect(result.weights).toEqual([{ name: "A", viewCount: 20 }]);
     expect(result.windowStart).toBe(NOW - 30 * DAY);
   });
@@ -326,7 +286,7 @@ describe("derivePlayWeights", () => {
       trackEvent([{ ratingKey: "1", artistName: "A", playCount: 10 }], 5),
       trackEvent([{ ratingKey: "1", artistName: "A", playCount: 12 }], 0),
     ];
-    const result = derivePlayWeights(trackEvents, [], new Map(), playOptions());
+    const result = derivePlayWeights(trackEvents, new Map(), playOptions());
     expect(result.weights).toEqual([{ name: "A", viewCount: 12 }]);
     expect(result.windowStart).toBeNull();
   });
@@ -336,73 +296,16 @@ describe("derivePlayWeights", () => {
       trackEvent([{ ratingKey: "1", artistName: "A", playCount: 10 }], 40),
       trackEvent([{ ratingKey: "1", artistName: "A", playCount: 10 }], 0),
     ];
-    const result = derivePlayWeights(trackEvents, [], new Map(), playOptions());
+    const result = derivePlayWeights(trackEvents, new Map(), playOptions());
     expect(result.weights).toEqual([{ name: "A", viewCount: 10 }]);
     expect(result.windowStart).toBeNull();
   });
 
-  it("returns empty when neither series has captures", () => {
-    expect(derivePlayWeights([], [], new Map(), playOptions())).toEqual({
+  it("returns empty when the series has no captures", () => {
+    expect(derivePlayWeights([], new Map(), playOptions())).toEqual({
       weights: [],
       windowStart: null,
     });
-  });
-
-  it("still derives windowed weights from a legacy-only series", () => {
-    const legacyEvents = [
-      legacyEvent(
-        [
-          { name: "A", playCount: 10 },
-          { name: "B", playCount: 5 },
-        ],
-        40
-      ),
-      legacyEvent([{ name: "A", playCount: 30 }], 0),
-    ];
-    const result = derivePlayWeights(
-      [],
-      legacyEvents,
-      new Map(),
-      playOptions()
-    );
-    expect(result.weights).toEqual([{ name: "A", viewCount: 20 }]);
-  });
-
-  it("bridges a legacy baseline to a track-series latest across the cutover", () => {
-    const legacyEvents = [legacyEvent([{ name: "A", playCount: 10 }], 40)];
-    const trackEvents = [
-      trackEvent(
-        [
-          { ratingKey: "1", artistName: "A", playCount: 12 },
-          { ratingKey: "2", artistName: "A", playCount: 13 },
-        ],
-        0
-      ),
-    ];
-    const result = derivePlayWeights(
-      trackEvents,
-      legacyEvents,
-      new Map(),
-      playOptions()
-    );
-    expect(result.weights).toEqual([{ name: "A", viewCount: 15 }]);
-  });
-
-  it("reports the all-time window when a legacy-only baseline covers it", () => {
-    const legacyEvents = [
-      legacyEvent([{ name: "A", playCount: 10 }], 40),
-      legacyEvent([{ name: "A", playCount: 30 }], 0),
-    ];
-    const trackEvents = [
-      trackEvent([{ ratingKey: "1", artistName: "A", playCount: 4 }], 0),
-    ];
-    const result = derivePlayWeights(
-      trackEvents,
-      legacyEvents,
-      new Map(),
-      playOptions()
-    );
-    expect(result.windowStart).toBe(NOW - 30 * DAY);
   });
 });
 
@@ -462,7 +365,6 @@ describe("derivePlayWeights with episodes", () => {
   it("weights from the episodes when history covers the window", () => {
     const result = derivePlayWeights(
       [trackEvent([{ ratingKey: "1", artistName: "A", playCount: 40 }], 60)],
-      [],
       episodes(episode("1", "A", 40, 210_000), episode("1", "A", 10, 630_000)),
       playOptions()
     );
@@ -478,7 +380,6 @@ describe("derivePlayWeights with episodes", () => {
     ];
     const fromEpisodes = derivePlayWeights(
       trackEvents,
-      [],
       episodes(episode("1", "A", 40, 210_000), episode("1", "A", 10, 210_000)),
       playOptions()
     );
@@ -492,7 +393,6 @@ describe("derivePlayWeights with episodes", () => {
         trackEvent([{ ratingKey: "1", artistName: "A", playCount: 10 }], 60),
         trackEvent([{ ratingKey: "1", artistName: "A", playCount: 14 }], 0),
       ],
-      [],
       episodes(episode("1", "A", 10, 210_000)),
       playOptions()
     );
@@ -503,7 +403,6 @@ describe("derivePlayWeights with episodes", () => {
   it("caps what one very long episode is worth", () => {
     const result = derivePlayWeights(
       [trackEvent([{ ratingKey: "1", artistName: "A", playCount: 1 }], 60)],
-      [],
       episodes(
         episode("1", "A", 40, 210_000),
         episode("1", "A", 10, 5_400_000)
@@ -517,7 +416,6 @@ describe("derivePlayWeights with episodes", () => {
   it("ignores episodes started outside the window", () => {
     const result = derivePlayWeights(
       [trackEvent([{ ratingKey: "1", artistName: "A", playCount: 1 }], 60)],
-      [],
       episodes(episode("1", "A", 40, 210_000)),
       playOptions()
     );
@@ -1118,7 +1016,6 @@ describe("deriveAlbumWeights", () => {
   function bundle(overrides: Partial<SignalBundle> = {}): SignalBundle {
     return {
       trackEvents: [],
-      legacyEvents: [],
       ratingEvents: [],
       albumEvents: [],
       episodes: new Map(),
@@ -1461,17 +1358,6 @@ describe("loadArtistWeights (with DB)", () => {
     const result = await loadArtistWeights(1, "tok", weightOptions());
 
     expect(result[0].viewCount).toBeCloseTo(5_400_000 / NOMINAL_TRACK_MS, 5);
-  });
-
-  it("does not fetch live when only a legacy series exists", async () => {
-    await appendSignalEvent(1, "plex_plays", {
-      artists: [{ name: "A", playCount: 100 }],
-    });
-
-    const result = await loadArtistWeights(1, "tok", weightOptions());
-
-    expect(mockGetAllTrackPlayCounts).not.toHaveBeenCalled();
-    expect(result).toEqual([{ name: "A", viewCount: 100 }]);
   });
 
   it("drops Various Artists from the weight set", async () => {

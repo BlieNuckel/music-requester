@@ -23,7 +23,6 @@ import {
   diffRatings,
   detectUnratings,
   captureDue,
-  reconstructPlayCounts,
   reconstructTrackPlayCounts,
   rollupToArtists,
   rollupToAlbums,
@@ -142,59 +141,6 @@ describe("diffRatings", () => {
     const stored = { ...ratedTrack, albumKey: "88", artistKey: "7" };
     const previous = new Map<string, PlexRatingPayload>([["451", stored]]);
     expect(diffRatings(previous, [stored])).toEqual([]);
-  });
-});
-
-function playsEvent(
-  artists: { name: string; playCount: number }[],
-  recordedAt: string
-): UserSignalEvent {
-  return {
-    id: 0,
-    user_id: 1,
-    kind: "plex_plays",
-    payload: JSON.stringify({ artists }),
-    recorded_at: recordedAt,
-  } as UserSignalEvent;
-}
-
-describe("reconstructPlayCounts", () => {
-  it("folds deltas last-write-wins and carries unchanged artists forward", () => {
-    const events = [
-      playsEvent(
-        [
-          { name: "A", playCount: 10 },
-          { name: "B", playCount: 5 },
-        ],
-        "2026-01-01T00:00:00.000Z"
-      ),
-      playsEvent([{ name: "A", playCount: 30 }], "2026-02-01T00:00:00.000Z"),
-    ];
-    const counts = reconstructPlayCounts(events, Infinity);
-    expect(counts.get("A")).toBe(30);
-    expect(counts.get("B")).toBe(5);
-  });
-
-  it("ignores events recorded after the cutoff", () => {
-    const events = [
-      playsEvent([{ name: "A", playCount: 10 }], "2026-01-01T00:00:00.000Z"),
-      playsEvent([{ name: "A", playCount: 30 }], "2026-03-01T00:00:00.000Z"),
-    ];
-    const counts = reconstructPlayCounts(
-      events,
-      Date.parse("2026-02-01T00:00:00.000Z")
-    );
-    expect(counts.get("A")).toBe(10);
-  });
-
-  it("skips corrupt rows", () => {
-    const events = [
-      { ...playsEvent([], "2026-01-01T00:00:00.000Z"), payload: "not json" },
-      playsEvent([{ name: "A", playCount: 7 }], "2026-02-01T00:00:00.000Z"),
-    ];
-    const counts = reconstructPlayCounts(events as UserSignalEvent[], Infinity);
-    expect(counts.get("A")).toBe(7);
-    expect(counts.size).toBe(1);
   });
 });
 
