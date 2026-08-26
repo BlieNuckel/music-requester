@@ -64,6 +64,44 @@ function ParamSentence({
   );
 }
 
+/**
+ * What a step takes, does and gives, as three scannable lists. This is the description now:
+ * the same facts written as prose read as wordy to everyone who did not already know the
+ * code, because a paragraph makes the reader work out which half is the input.
+ */
+function Anatomy({ node }: NodeCardProps) {
+  return (
+    <div className="space-y-1.5">
+      <Lines label="Takes" lines={node.takes} />
+      <Lines label="Does" lines={node.does} />
+      <Lines label="Gives" lines={[node.gives]} />
+    </div>
+  );
+}
+
+function Lines({ label, lines }: { label: string; lines: string[] }) {
+  return (
+    <div>
+      <span className="block text-[10px] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+        {label}
+      </span>
+      <ul className="space-y-0.5">
+        {lines.map((line) => (
+          <li
+            key={line}
+            className="flex gap-1.5 text-xs leading-snug text-gray-600 dark:text-gray-300"
+          >
+            <span aria-hidden className="text-gray-400 dark:text-gray-600">
+              •
+            </span>
+            <span>{line}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function UsedParams({ params }: { params: ParamDef[] }) {
   if (params.length === 0) return null;
 
@@ -159,6 +197,8 @@ export function NodeCard({ node }: NodeCardProps) {
         <p className="text-xs text-gray-500 dark:text-gray-400">
           {node.summary}
         </p>
+
+        <Anatomy node={node} />
 
         {node.note && (
           <p className="text-xs italic text-amber-700 dark:text-amber-300">

@@ -22,7 +22,14 @@ export type NodeRegistration = {
   title: string;
   scope: NodeScope;
   kind: NodeKind;
+  /** One sentence. The detail goes in `takes`, `does` and `gives`. */
   summary: string;
+  /** What arrives, one line each. */
+  takes: string[];
+  /** What the step does to it, in order, one line each. */
+  does: string[];
+  /** What it hands on. */
+  gives: string;
   flow: FlowId;
   /** Omitted for a node the recommender already runs; see {@link NodeStatus}. */
   status?: NodeStatus;
@@ -74,8 +81,17 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Daily Plex sweep",
     scope: "ingest",
     kind: "source",
-    summary:
-      "Reads ratings, per-track play counts, the album catalogue and Plex's own play history, and appends whatever changed.",
+    summary: "Reads what Plex knows about your listening, once a day.",
+    takes: [
+      "Your Plex library, ratings and play history",
+      "Whatever the last sweep already recorded",
+    ],
+    does: [
+      "Reads star ratings, per-track play counts, the album catalogue and Plex's own play history",
+      "Compares each against the last capture",
+      "Appends only what changed, chunked so no single event gets huge",
+    ],
+    gives: "New events on whichever series moved",
     flow: "ingestion",
     inputs: [],
     params: ["ratingsBackupEnabled"],
@@ -86,7 +102,14 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     scope: "ingest",
     kind: "source",
     summary:
-      "Watches live playback every few seconds to measure listening that was never committed as a play, such as a long set abandoned halfway.",
+      "Watches live playback to catch listening Plex never commits as a play.",
+    takes: ["Plex's current sessions, polled every few seconds"],
+    does: [
+      "Tracks how far into each track playback has reached",
+      "Retires a watch when playback stops or moves on",
+      "Records the time actually listened, committed play or not",
+    ],
+    gives: "Measured episodes, including the abandoned half of a long set",
     flow: "ingestion",
     inputs: [],
     usesParams: ["ratingsBackupEnabled"],
@@ -96,8 +119,13 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Signal log",
     scope: "ingest",
     kind: "store",
-    summary:
-      "The append-only record of everything Plex has told us. Nothing is updated in place, so every series can be replayed as it stood at any past moment.",
+    summary: "The append-only record of everything Plex has told us.",
+    takes: [
+      "Capture events from the daily sweep",
+      "Measured episodes from the session poller",
+    ],
+    does: ["Appends, and never updates a row in place"],
+    gives: "Every series, replayable as it stood at any past moment",
     flow: "ingestion",
     inputs: [data("plexCapture"), data("plexSessions")],
   },
@@ -107,8 +135,14 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Load the series",
     scope: "profile",
     kind: "step",
-    summary:
-      "Reads the four series one rebuild needs, concurrently, and ingests on demand for a user who has never been captured. Raw rather than folded: the window and the listening series fold at cutoffs of their own and cannot work from current state.",
+    summary: "Reads the four series one rebuild needs.",
+    takes: ["The signal log, for one user"],
+    does: [
+      "Reads plays, ratings, the album catalogue and listening episodes concurrently",
+      "Ingests on demand for a user who has never been captured",
+    ],
+    gives: "The four series, raw",
+    note: "Raw rather than folded. The window and the listening series fold at cutoffs of their own and cannot work from current state.",
     flow: "listening",
     status: "ported",
     module: "server/services/profile/profileSignals.ts",
@@ -119,8 +153,14 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Fold to now",
     scope: "profile",
     kind: "step",
-    summary:
-      "Replays those series into current state — listening per track, the latest rating per item, Plex's own album genres — once, for everything that reads the log as it stands.",
+    summary: "Replays those series into their current state.",
+    takes: ["The four raw series"],
+    does: [
+      "Folds the play deltas into listening per track",
+      "Keeps the latest rating for each rated item",
+      "Collects Plex's own genres per album",
+    ],
+    gives: "Current state: listening per track, ratings, album genres",
     note: "The fold used to happen inside each consumer, so the play series alone was replayed about five times per rebuild and read from the database three times. One fold is the whole point of the node.",
     flow: "listening",
     status: "ported",
@@ -133,8 +173,18 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Choose the window",
     scope: "profile",
     kind: "step",
-    summary:
-      "Settles the recent span, and measures the listening inside it as one row per track. The episode log answers where it reaches back that far, the difference of two folds answers before that, and all-time answers when neither reaches or nothing was played inside it.",
+    summary: "Settles the recent span, and measures the listening inside it.",
+    takes: [
+      "The raw plays and episodes",
+      "The all-time fold, for the fallback",
+    ],
+    does: [
+      "Takes the span from the trend setting",
+      "Reads the episode log where it reaches back that far",
+      "Falls back to the difference of two folds, then to all-time",
+      "Normalises whichever answered into one row per track",
+    ],
+    gives: "One row per track: plays and listening time inside the window",
     note: "One decision and one measurement, read by everything downstream. Both series normalize into the same row here, so a rollup can no longer disagree with the weight it scales about which series the window came from.",
     flow: "listening",
     status: "ported",
@@ -150,8 +200,15 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Listening per artist",
     scope: "profile",
     kind: "step",
-    summary:
-      "How much each artist was listened to over the window, and how that listening spread across their tracks — one rollup, so the spread necessarily describes the listening it will scale.",
+    summary: "Rolls the window up by artist.",
+    takes: ["The window's rows"],
+    does: [
+      "Groups by artist, keeping a rename together and two same-named artists apart",
+      "Trades plays off against listening time into one weight",
+      "Counts distinct tracks played, and the share sitting on the top one",
+      "Drops artists with nothing in the window",
+    ],
+    gives: "Each artist's weight, and how their listening spread",
     flow: "listening",
     status: "ported",
     module: "server/services/profile/artistWeighting.ts",
@@ -163,8 +220,14 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Ratings per artist",
     scope: "profile",
     kind: "step",
-    summary:
-      "Stars joined onto the listening they cover, as a play-weighted mean plus how many separate things the artist has rated. Counting what was rated rather than which track it was leaves the ratings independent of the spread.",
+    summary: "Joins your stars onto the listening they cover.",
+    takes: ["The latest rating for each rated item", "The window's rows"],
+    does: [
+      "Resolves each rating to an artist, by key or by name",
+      "Weights it by the plays it covers, so an unplayed star still counts once",
+      "Counts how many separate things the artist has rated",
+    ],
+    gives: "A rating and a breadth per artist",
     flow: "listening",
     status: "ported",
     module: "server/services/profile/artistWeighting.ts",
@@ -175,8 +238,15 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Adjust the weight",
     scope: "profile",
     kind: "step",
-    summary:
-      "Discounts an artist whose listening concentrates on one track, then boosts by how highly they are rated. Concentration is measured against spreading the same listening evenly, so one track played scores nothing and needs no catalogue lookup to be exempted.",
+    summary: "Discounts a one-hit habit, then boosts by rating.",
+    takes: ["Each artist's weight and spread", "Their rating and breadth"],
+    does: [
+      "Measures concentration against spreading the same listening evenly",
+      "Leaves artists below the play floor alone",
+      "Discounts by concentration, refuted by how widely they are rated",
+      "Multiplies by the rating",
+    ],
+    gives: "The effective weight the recommender ranks by",
     note: "One node because the two terms are coupled: the discount is scaled by rating breadth so that starring an artist argues against the one-hit read. Drawn apart they read as independent, which is the thing people get wrong about them.",
     flow: "ranking",
     status: "ported",
@@ -189,8 +259,15 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Listening over time",
     scope: "profile",
     kind: "step",
-    summary:
-      "Per-artist listening bucketed into a series, and what its shape says: momentum, emergence, decay. Reads the raw series because it folds once per bucket boundary rather than once.",
+    summary: "Buckets each artist's listening over time.",
+    takes: ["The raw plays and episodes"],
+    does: [
+      "Buckets listening from the episodes where they reach",
+      "Fills earlier buckets from the difference between two snapshots",
+      "Reads the shape: momentum, emergence, decay",
+    ],
+    gives: "A dense series per artist, and what its shape says",
+    note: "Reads the raw series rather than current state, because it folds once per bucket boundary rather than once.",
     flow: "ranking",
     inputs: [data("loadSignals")],
     params: ["seriesBucketDays", "seriesSpanDays", "momentumRecentBuckets"],
@@ -201,8 +278,11 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Attach series signals",
     scope: "profile",
     kind: "step",
-    summary:
-      "Copies momentum, emergence and decay onto the weights. Deliberately does not fold them into the ranking: they are exposed for a picker to read.",
+    summary: "Copies the series signals onto the weights.",
+    takes: ["The adjusted weights", "The listening series"],
+    does: ["Copies momentum, emergence and decay onto each artist"],
+    gives: "The weight set, carrying how its listening arrived",
+    note: "Deliberately not folded into the ranking. These are exposed for a picker to read, not baked into the number.",
     flow: "ranking",
     inputs: [data("weightAdjust"), data("artistSeries")],
   },
@@ -211,7 +291,10 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Top artists",
     scope: "profile",
     kind: "step",
-    summary: "The ranked head of the weight set, which the profile covers.",
+    summary: "Takes the ranked head of the weight set.",
+    takes: ["The weight set"],
+    does: ["Sorts by weight", "Keeps the top few"],
+    gives: "The artists the profile covers",
     flow: "ranking",
     inputs: [data("attachSeries")],
     params: ["topArtistsCount"],
@@ -221,8 +304,15 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Artist tags",
     scope: "profile",
     kind: "step",
-    summary:
-      "Last.fm tags for every top artist, generic ones dropped. Fetched for all of them rather than a sample, so the sample can be re-drawn per recommendation instead of being frozen into the profile.",
+    summary: "Fetches Last.fm tags for every top artist.",
+    takes: ["The top artists"],
+    does: [
+      "Asks Last.fm for each artist's top tags",
+      "Drops tags that describe nothing, like seen live or favourites",
+      "Keeps a few per artist",
+    ],
+    gives: "Tags per artist, with the artist's weight",
+    note: "Fetched for all of them rather than a sample, so the sample can be re-drawn per recommendation instead of frozen into the profile.",
     flow: "profile",
     inputs: [data("topArtists")],
     params: ["tagsPerArtist", "genericTags"],
@@ -232,8 +322,13 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Listening per album",
     scope: "profile",
     kind: "step",
-    summary:
-      "The same window rolled up by album instead of by artist, off the same rows, carrying how many of the record's tracks were played.",
+    summary: "Rolls the same window up by album.",
+    takes: ["The window's rows"],
+    does: [
+      "Groups by album",
+      "Counts how many of the record's tracks were played",
+    ],
+    gives: "Each album's plays and listening inside the window",
     flow: "listening",
     status: "ported",
     module: "server/services/profile/listeningWindow.ts",
@@ -244,8 +339,14 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Split weight across albums",
     scope: "profile",
     kind: "step",
-    summary:
-      "Each artist's weight divided across their records by how much each was listened to. The shares sum to the artist's weight, so moving genre down to the album divides influence rather than adding it.",
+    summary: "Divides each artist's weight across their records.",
+    takes: ["The top artists", "Each album's listening"],
+    does: [
+      "Matches albums to the artist they belong to",
+      "Splits that artist's weight by how much each record was listened to",
+    ],
+    gives: "Albums, each carrying a share of its artist's weight",
+    note: "The shares sum to the artist's weight, so moving genre down to the album divides influence rather than adding it.",
     flow: "profile",
     inputs: [data("topArtists"), data("albumListening")],
     usesParams: ["listeningWeight"],
@@ -255,8 +356,10 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Album tag budget",
     scope: "profile",
     kind: "quota",
-    summary:
-      "Decides which albums are worth spending a Last.fm call on: the most-listened first, bounded per artist.",
+    summary: "Chooses which albums are worth a Last.fm call.",
+    takes: ["Each artist's albums, most-listened first"],
+    does: ["Takes the most-listened few from each artist"],
+    gives: "The albums to look up",
     note: "A quota per artist, not a global top-N. One dominant artist would otherwise spend the whole allowance and leave every other artist's records resolving on Plex genres alone.",
     flow: "profile",
     inputs: [data("albumsByArtist")],
@@ -267,8 +370,19 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Resolve album genres",
     scope: "profile",
     kind: "step",
-    summary:
-      "Last.fm album tags first, then the Plex agent genre, then the artist's own tags. A source that yields no genre is skipped rather than accepted, and tags that are regions or eras are kept aside rather than counted as genres.",
+    summary: "Resolves a genre for every album.",
+    takes: [
+      "Each artist's albums",
+      "The albums picked for a lookup",
+      "The artist's own tags",
+      "Plex's album genres",
+    ],
+    does: [
+      "Tries Last.fm, then the Plex genre, then the artist's tags",
+      "Skips a source that yields no genre rather than accepting the silence",
+      "Sets aside tags that name a region or an era",
+    ],
+    gives: "Tags per album, with the album's weight",
     flow: "profile",
     inputs: [
       data("albumsByArtist"),
@@ -283,8 +397,13 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Genre vector",
     scope: "profile",
     kind: "step",
-    summary:
-      "Every album's tags summed into one weighted vector, each album contributing exactly its share. This is what the tag path draws from.",
+    summary: "Sums every album's tags into one vector.",
+    takes: ["Tags per album"],
+    does: [
+      "Normalises each album's tags so it contributes exactly its own share",
+      "Sums them into one weighted vector",
+    ],
+    gives: "One genre vector for the whole profile",
     flow: "profile",
     inputs: [data("albumTags")],
   },
@@ -293,8 +412,15 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Similar-artist graph",
     scope: "profile",
     kind: "step",
-    summary:
-      "Each top artist resolved to MusicBrainz, its ListenBrainz neighbours fetched, and every neighbour genre-tagged. The expensive fan-out, done once per rebuild instead of per recommendation.",
+    summary: "Fetches the neighbours of every top artist.",
+    takes: ["The top artists"],
+    does: [
+      "Resolves each artist to MusicBrainz",
+      "Asks ListenBrainz for its neighbours",
+      "Genre-tags every neighbour",
+    ],
+    gives: "A graph of your artists and who sits next to them",
+    note: "The expensive fan-out, done once per rebuild instead of once per recommendation.",
     flow: "profile",
     inputs: [data("topArtists")],
     params: ["exploreCandidateCount"],
@@ -305,8 +431,15 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Albums you already play",
     scope: "profile",
     kind: "step",
-    summary:
-      "Records played enough, across enough of their tracks, to count as ones the user knows — so recommendations stay off them. Plays alone marked a record known off one hit on repeat, which is the case most worth recommending.",
+    summary: "Lists the records you have already been through.",
+    takes: ["All-time listening per track"],
+    does: [
+      "Groups by album",
+      "Keeps records with enough plays across enough of their tracks",
+      "Caps the list so the profile stays small",
+    ],
+    gives: "Albums to keep recommendations off",
+    note: "Plays alone marked a record known off one hit on repeat, which is the case most worth recommending.",
     flow: "listening",
     status: "ported",
     module: "server/services/profile/listeningWindow.ts",
@@ -317,8 +450,19 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Taste profile",
     scope: "profile",
     kind: "store",
-    summary:
-      "One persisted document per user. Every recommender reads this rather than Plex, and a change to any knob above invalidates it.",
+    summary: "One stored document per user.",
+    takes: [
+      "The genre vector",
+      "Tags per artist and per album",
+      "The similar-artist graph",
+      "The weight set and its series",
+      "The albums you already play",
+    ],
+    does: [
+      "Writes them as one row, stamped with the settings they were derived under",
+    ],
+    gives: "The profile every recommender reads",
+    note: "A change to any knob on the steps above invalidates it, and every stored profile rebuilds.",
     flow: "profile",
     inputs: [
       data("genreVector"),
@@ -336,8 +480,14 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Fresh enough?",
     scope: "serve",
     kind: "step",
-    summary:
-      "Serves the stored profile when it is fresh, and a stale one while a rebuild runs behind it. Only a user with nothing stored waits.",
+    summary: "Serves the stored profile, rebuilding when it is stale.",
+    takes: ["The stored profile"],
+    does: [
+      "Serves it while it is inside its lifetime and matches the settings",
+      "Serves a stale one while a rebuild runs behind it",
+      "Builds on demand only for a user with nothing stored",
+    ],
+    gives: "A profile to recommend from",
     flow: "profile",
     inputs: [data("profileDocument")],
     params: ["profileTtlMinutes"],
@@ -347,8 +497,10 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Background rebuild",
     scope: "serve",
     kind: "step",
-    summary:
-      "Rebuilds stale profiles off-request for users who have looked at recommendations recently, so nobody's page load pays for a rebuild.",
+    summary: "Rebuilds stale profiles off the request path.",
+    takes: ["Profiles that are stale, for users who looked recently"],
+    does: ["Sweeps on an interval", "Rebuilds each one in the background"],
+    gives: "Fresh profiles, without a page load paying for one",
     flow: "profile",
     inputs: [control("profileFreshness", "stale + active")],
     params: [
@@ -363,8 +515,13 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Fill the carousel",
     scope: "pick",
     kind: "repeat",
-    summary:
-      "Builds five recommendations, adding each pick to an exclusion set so the next one differs.",
+    summary: "Builds the carousel one recommendation at a time.",
+    takes: ["A profile to recommend from"],
+    does: [
+      "Runs once per slot",
+      "Adds each pick to an exclusion set so the next one differs",
+    ],
+    gives: "Five recommendations",
     note: "Runs up to 5 + 3 attempts. The three spares exist so a dead tag or a duplicate pick shortens the carousel by nothing.",
     flow: "spotlight",
     inputs: [data("profileFreshness")],
@@ -374,8 +531,13 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Explore slots",
     scope: "pick",
     kind: "quota",
-    summary:
-      "Decides up front how many of this set's slots attempt a genre jump.",
+    summary: "Decides how many slots attempt a genre jump.",
+    takes: ["The number of slots to fill"],
+    does: [
+      "Turns the exploration rate into a whole number of slots",
+      "Leaves the fraction over as a coin flip",
+    ],
+    gives: "Which of this build's slots explore",
     note: "A quota over the whole build, not a coin flip per album. The fractional remainder stays a coin so the dial still means something for a single pick.",
     flow: "spotlight",
     inputs: [control("pickLoop")],
@@ -387,8 +549,10 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Draw a seed",
     scope: "pick",
     kind: "step",
-    summary:
-      "Picks one of your artists from the graph, weighted by how much you play them.",
+    summary: "Draws one of your artists to jump away from.",
+    takes: ["The similar-artist graph"],
+    does: ["Draws one of your own artists, weighted by how much you play them"],
+    gives: "A seed artist",
     flow: "spotlight",
     inputs: [
       control("exploreQuota", "explore slot"),
@@ -400,8 +564,14 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Genre-distant neighbours",
     scope: "pick",
     kind: "step",
-    summary:
-      "Keeps only the seed's neighbours in a genre it doesn't share, ranked by similarity.",
+    summary: "Keeps the seed's neighbours in genres it does not share.",
+    takes: ["The seed and its neighbours"],
+    does: [
+      "Compares each neighbour's genres against the seed's",
+      "Keeps only those past the distance line",
+      "Ranks what is left by similarity",
+    ],
+    gives: "Neighbours far enough away to count as a jump",
     flow: "spotlight",
     inputs: [data("exploreSeed")],
     params: ["genreOverlapThreshold"],
@@ -411,8 +581,13 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Album from a distant artist",
     scope: "pick",
     kind: "step",
-    summary:
-      "Walks the ranked neighbours until one has an album worth recommending.",
+    summary: "Takes an album from the first distant artist that has one.",
+    takes: ["The ranked distant neighbours"],
+    does: [
+      "Walks them in order",
+      "Resolves each artist's records until one is worth recommending",
+    ],
+    gives: "An album from a genre you do not already play",
     flow: "spotlight",
     inputs: [data("exploreBand")],
     spendsBudget: true,
@@ -423,8 +598,14 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Every neighbour",
     scope: "pick",
     kind: "step",
-    summary:
-      "Collapses the graph into one candidate set, each neighbour weighted by how much you play the seeds it came from times how strongly they are tied. Reachable from several seeds means stronger evidence.",
+    summary: "Collapses the graph into one candidate set.",
+    takes: ["The similar-artist graph"],
+    does: [
+      "Weights each neighbour by how much you play the seeds it came from",
+      "Multiplies by how strongly they are tied",
+      "Adds the evidence up where several seeds reach the same neighbour",
+    ],
+    gives: "Every neighbour, with how strongly your taste points at it",
     flow: "spotlight",
     inputs: [
       control("pickLoop"),
@@ -436,8 +617,14 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Close enough to your taste",
     scope: "pick",
     kind: "step",
-    summary:
-      "Keeps the neighbours on the near side of the same line explore reads from the far side, so the two modes partition the graph instead of competing for it. Widens to the whole graph when nothing is close enough.",
+    summary: "Keeps the neighbours close to your taste.",
+    takes: ["The candidate set"],
+    does: [
+      "Keeps neighbours on the near side of the line explore reads from the far side",
+      "Widens to the whole graph when nothing is close enough",
+    ],
+    gives: "Neighbours close enough to recommend",
+    note: "One line, two modes: the near side is personal and the far side is explore, so they partition the graph instead of competing for it.",
     flow: "spotlight",
     inputs: [data("personalCandidates")],
     usesParams: ["genreOverlapThreshold"],
@@ -447,8 +634,14 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Library side",
     scope: "pick",
     kind: "step",
-    summary:
-      "Filters to the preferred side of the library line before the draw, so for someone who owns most of their graph an unowned neighbour can still surface. Relaxes when that side is empty.",
+    summary: "Filters to the preferred side of the library line.",
+    takes: ["The close neighbours"],
+    does: [
+      "Keeps the artists on the preferred side of the library line",
+      "Relaxes when that side is empty",
+    ],
+    gives: "The artists to draw from",
+    note: "Filtering before the draw rather than after is what lets an unowned neighbour surface for someone who owns most of their graph.",
     flow: "spotlight",
     inputs: [data("personalBand")],
     params: ["libraryPreference"],
@@ -458,8 +651,13 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Album from a neighbour",
     scope: "pick",
     kind: "step",
-    summary:
-      "Draws up to three candidate artists and takes the first album that is a real album, dated, and not one you already play.",
+    summary: "Takes an album from a neighbouring artist.",
+    takes: ["The artists to draw from", "The albums you already play"],
+    does: [
+      "Draws up to three artists",
+      "Takes the first record that is a real album, dated, and not one you already play",
+    ],
+    gives: "An album from next door to your taste",
     flow: "spotlight",
     inputs: [
       data("personalPreference"),
@@ -473,8 +671,11 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Sample your artists",
     scope: "pick",
     kind: "step",
-    summary:
-      "Draws a few of your top artists, weighted by listening, re-rolled for every recommendation rather than fixed when the profile was built.",
+    summary: "Draws a few of your artists for this one pick.",
+    takes: ["Tags per artist"],
+    does: ["Draws a few artists, weighted by listening"],
+    gives: "The artists this recommendation comes from",
+    note: "Re-rolled per recommendation rather than fixed when the profile was built, so two picks in one set can come from different corners of your taste.",
     flow: "spotlight",
     inputs: [control("pickLoop"), data("profileFreshness", "artist tags")],
     params: ["pickedArtistsCount"],
@@ -484,8 +685,14 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "This pick's genre vector",
     scope: "pick",
     kind: "step",
-    summary:
-      "Builds a vector from just the sampled artists' albums, so two picks in one set can come from different corners of your taste.",
+    summary: "Builds a genre vector from just those artists.",
+    takes: [
+      "The sampled artists",
+      "Tags per album",
+      "The whole profile vector, when the sample yields no genres",
+    ],
+    does: ["Sums the sampled artists' records into one vector"],
+    gives: "This pick's genre vector",
     flow: "spotlight",
     inputs: [
       data("artistSample"),
@@ -498,7 +705,10 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Draw a genre",
     scope: "pick",
     kind: "step",
-    summary: "Picks one tag from that vector, weighted by its weight.",
+    summary: "Draws one genre from that vector.",
+    takes: ["This pick's genre vector"],
+    does: ["Draws one tag, weighted by how much of your listening it covers"],
+    gives: "A genre to look for records in",
     flow: "spotlight",
     inputs: [data("pickVector")],
   },
@@ -507,8 +717,14 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Tag album chart",
     scope: "pick",
     kind: "step",
-    summary:
-      "Fetches the tag's global chart: page one plus a random deeper page, so the pool is not only the famous records of that genre.",
+    summary: "Fetches the genre's album chart.",
+    takes: ["A genre"],
+    does: [
+      "Fetches page one of the tag's global chart",
+      "Fetches one random deeper page as well",
+    ],
+    gives: "A pool of records in that genre",
+    note: "The deeper page is what stops the pool being only the famous records of a genre.",
     flow: "spotlight",
     inputs: [data("tagDraw")],
     params: ["deepPageMin", "deepPageMax"],
@@ -518,8 +734,14 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Walk the pool",
     scope: "pick",
     kind: "step",
-    summary:
-      "Visits candidates in library-preference order and takes the first that resolves, is a release type worth recommending, and hasn't been shown recently.",
+    summary: "Takes the first record in the pool worth showing.",
+    takes: ["The pool of records"],
+    does: [
+      "Visits candidates in library-preference order",
+      "Resolves each and checks it is a release type worth recommending",
+      "Skips anything shown recently",
+    ],
+    gives: "An album from the genre chart",
     note: "When every qualifying candidate was shown recently, the walk repeats with the memory switched off: a repeat beats an empty slot, and the second pass is served from cache.",
     flow: "spotlight",
     inputs: [data("albumPool")],
@@ -532,8 +754,16 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "First source that answers",
     scope: "pick",
     kind: "fallback",
-    summary:
-      "Takes the first of the three sources to produce an album. The tag chart is last because it knows nothing about you past one tag string, and first only when no graph exists yet.",
+    summary: "Takes the first of the three sources to answer.",
+    takes: [
+      "An album from a distant artist, in an explore slot",
+      "An album from a neighbour",
+      "An album from the genre chart",
+    ],
+    does: [
+      "Tries each in order and stops at the first that produced something",
+    ],
+    gives: "One recommendation",
     note: "Ordered, not parallel. Explore is tried only in an explore slot; personal is the default; the tag chart is the fallback.",
     flow: "spotlight",
     inputs: [
@@ -547,8 +777,10 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Remember what was shown",
     scope: "pick",
     kind: "step",
-    summary:
-      "Records the picks so the next builds avoid them, keeping the last 25 albums.",
+    summary: "Remembers what was shown.",
+    takes: ["The chosen albums"],
+    does: ["Records them against the user, keeping the last 25"],
+    gives: "Picks the next builds will avoid",
     flow: "spotlight",
     inputs: [data("sourceChain")],
   },
@@ -557,8 +789,14 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Spotlight carousel",
     scope: "serve",
     kind: "output",
-    summary:
-      "The built set, held in memory and mirrored to the database so a restart doesn't make the next visitor pay for a rebuild. A build that came up short lapses sooner.",
+    summary: "Holds the built set until it lapses.",
+    takes: ["The built recommendations"],
+    does: [
+      "Holds them in memory and mirrors them to the database",
+      "Lapses a short build sooner than a full one",
+    ],
+    gives: "The spotlight carousel on Discover",
+    note: "Mirrored to the database so a restart does not make the next visitor pay for a rebuild.",
     flow: "spotlight",
     inputs: [data("antiRepeat")],
     params: ["cacheDurationMinutes"],
@@ -569,8 +807,10 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Seed artists",
     scope: "pick",
     kind: "step",
-    summary:
-      "Draws seeds from the same weighted artist set the profile ranks, for the promoted-artists grid.",
+    summary: "Draws seed artists for the grid.",
+    takes: ["The weighted artist set"],
+    does: ["Takes the ranked head", "Draws a few, weighted by listening"],
+    gives: "Seed artists",
     note: "Re-derives that set rather than reading the stored profile, which is why this edge points at the weighting and not at the document. Pointing it at the profile is what would remove the duplicate work.",
     flow: "artists",
     inputs: [data("attachSeries")],
@@ -581,8 +821,14 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Similar artists",
     scope: "pick",
     kind: "step",
-    summary:
-      "Asks Last.fm for each seed's similar artists and merges them, keeping the best match per name and dropping artists you already play.",
+    summary: "Asks Last.fm who is similar to each seed.",
+    takes: ["The seed artists"],
+    does: [
+      "Asks Last.fm for each seed's similar artists",
+      "Merges them, keeping the best match per name",
+      "Drops artists you already play",
+    ],
+    gives: "Candidate artists, with how well they match",
     flow: "artists",
     inputs: [data("promotedArtistSeeds")],
   },
@@ -591,8 +837,11 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     title: "Promoted artists",
     scope: "serve",
     kind: "output",
-    summary:
-      "Six artists, shuffled to decide which appear and then sorted by match so the grid reads strongest first.",
+    summary: "Six artists to show.",
+    takes: ["The candidate artists"],
+    does: ["Shuffles to decide which six appear", "Sorts those six by match"],
+    gives: "The promoted-artists grid on Discover",
+    note: "Shuffled to choose and then sorted to display, so the grid varies between builds but always reads strongest first.",
     flow: "artists",
     inputs: [data("promotedArtistSimilar")],
     usesParams: ["cacheDurationMinutes"],

@@ -62,4 +62,18 @@ describe("RecommenderListView", () => {
 
     expect(update).toHaveBeenCalledWith("ratingWeight", 2);
   });
+
+  it("carries the same anatomy the cards show", () => {
+    renderList(
+      makeGraph([
+        makeNode({
+          does: ["Groups by artist"],
+          gives: "A ranked artist set",
+        }),
+      ])
+    );
+
+    expect(screen.getByText("Groups by artist")).toBeInTheDocument();
+    expect(screen.getByText("A ranked artist set")).toBeInTheDocument();
+  });
 });

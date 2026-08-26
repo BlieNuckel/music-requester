@@ -21,6 +21,9 @@ const graph: RecommenderGraph = {
       scope: "profile",
       kind: "step",
       summary: "Scales each artist's weight by how highly you rate them.",
+      takes: ["Each artist's weight"],
+      does: ["Multiplies the weight by the rating"],
+      gives: "The weight the recommender ranks by",
       flow: "spotlight",
       params: [
         {

@@ -145,8 +145,18 @@ export type GraphNode = {
   title: string;
   scope: NodeScope;
   kind: NodeKind;
-  /** One or two sentences. The paragraph belongs on the params, not here. */
+  /**
+   * One sentence, at a glance. Anything longer belongs in the three fields below, which say
+   * the same thing in a shape a reader can scan: prose describing a pipeline step reads as
+   * wordy to everyone who does not already know the code it describes.
+   */
   summary: string;
+  /** What arrives, one line each. */
+  takes: string[];
+  /** What the step does to it, in order, one line each. */
+  does: string[];
+  /** What it hands on. */
+  gives: string;
   flow: FlowId;
   /** Params this node owns, resolved from the shared definitions. */
   params: ParamDef[];

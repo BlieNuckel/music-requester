@@ -180,4 +180,21 @@ describe("NodeCard", () => {
 
     expect(screen.queryByText("not live")).not.toBeInTheDocument();
   });
+
+  it("lays the step out as what it takes, does and gives", () => {
+    renderCard(
+      makeNode({
+        takes: ["The window's rows"],
+        does: ["Groups by artist", "Counts distinct tracks played"],
+        gives: "Each artist's weight",
+      })
+    );
+
+    expect(screen.getByText("Takes")).toBeInTheDocument();
+    expect(screen.getByText("Groups by artist")).toBeInTheDocument();
+    expect(
+      screen.getByText("Counts distinct tracks played")
+    ).toBeInTheDocument();
+    expect(screen.getByText("Each artist's weight")).toBeInTheDocument();
+  });
 });

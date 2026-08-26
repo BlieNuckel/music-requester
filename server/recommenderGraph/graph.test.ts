@@ -165,6 +165,48 @@ describe("recommender graph registry", () => {
     }
   });
 
+  /**
+   * The summary is the one-line answer; the detail belongs in the three fields, where a
+   * reader can scan it. Left unbounded it grows back into the paragraph of prose that only
+   * made sense to someone who already knew the code.
+   */
+  it("says what every node takes, does and gives", () => {
+    const { nodes } = buildRecommenderGraph();
+
+    for (const node of nodes) {
+      expect([node.id, node.takes.length > 0]).toEqual([node.id, true]);
+      expect([node.id, node.does.length > 0]).toEqual([node.id, true]);
+      expect([node.id, node.gives.length > 0]).toEqual([node.id, true]);
+    }
+  });
+
+  it("keeps every summary to a single sentence", () => {
+    const { nodes } = buildRecommenderGraph();
+
+    for (const node of nodes) {
+      expect([node.id, node.summary.length]).toEqual([
+        node.id,
+        expect.any(Number),
+      ]);
+      expect(node.summary.length).toBeLessThanOrEqual(90);
+      expect(node.summary.split(". ")).toHaveLength(1);
+    }
+  });
+
+  it("writes the lines as fragments, not as paragraphs", () => {
+    const { nodes } = buildRecommenderGraph();
+    const lines = nodes.flatMap((node) => [
+      ...node.takes.map((line) => [node.id, line] as const),
+      ...node.does.map((line) => [node.id, line] as const),
+      [node.id, node.gives] as const,
+    ]);
+
+    for (const [id, line] of lines) {
+      expect([id, line.endsWith(".")]).toEqual([id, false]);
+      expect([id, line.length <= 110]).toEqual([id, true]);
+    }
+  });
+
   it("explains its repeat, quota and fallback nodes", () => {
     const { nodes } = buildRecommenderGraph();
     const structural = nodes.filter((node) =>

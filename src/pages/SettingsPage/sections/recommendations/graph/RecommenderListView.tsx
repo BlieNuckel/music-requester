@@ -23,6 +23,28 @@ function NodeSection({ node }: { node: GraphNode }) {
         <p className="text-xs text-gray-500 dark:text-gray-400">
           {node.summary}
         </p>
+        <dl className="mt-2 space-y-1 text-xs text-gray-500 dark:text-gray-400">
+          {(
+            [
+              ["Takes", node.takes],
+              ["Does", node.does],
+              ["Gives", [node.gives]],
+            ] as const
+          ).map(([label, lines]) => (
+            <div key={label} className="flex gap-2">
+              <dt className="w-12 shrink-0 font-bold uppercase tracking-wide text-[10px] pt-0.5 text-gray-400 dark:text-gray-500">
+                {label}
+              </dt>
+              <dd>
+                <ul className="list-disc pl-4 space-y-0.5">
+                  {lines.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </dd>
+            </div>
+          ))}
+        </dl>
       </div>
 
       {node.params.map((param) => (
