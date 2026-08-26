@@ -39,17 +39,20 @@ export function makeNode(partial: Partial<GraphNode> = {}): GraphNode {
     params: [ratingWeightParam],
     usesParams: [],
     spendsBudget: false,
+    status: "live",
     ...partial,
   };
 }
 
 export function makeGraph(
   nodes: GraphNode[],
-  edges: GraphEdge[] = []
+  edges: GraphEdge[] = [],
+  retiredParams: RecommenderGraph["retiredParams"] = []
 ): RecommenderGraph {
   return {
     nodes,
     edges,
+    retiredParams,
     budgets: [
       {
         id: "resolutionBudget",

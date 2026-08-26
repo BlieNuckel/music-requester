@@ -76,9 +76,22 @@ const options = (overrides = {}) => ({
   ...overrides,
 });
 
+/** The window always reads the all-time fold the rest of the build already holds. */
+const resolveWindow = (
+  trackEvents: UserSignalEvent[],
+  episodes: Map<string, ListenEpisode>,
+  opts: ReturnType<typeof options>
+) =>
+  resolveListeningWindow(
+    trackEvents,
+    episodes,
+    allTimeListening(trackEvents, opts.capMs),
+    opts
+  );
+
 describe("resolveListeningWindow", () => {
   it("measures the window as the increase since it opened", () => {
-    const window = resolveListeningWindow(
+    const window = resolveWindow(
       [
         trackEvent([{ ratingKey: "1", artistName: "A", playCount: 10 }], 40),
         trackEvent([{ ratingKey: "1", artistName: "A", playCount: 30 }], 0),
@@ -93,7 +106,7 @@ describe("resolveListeningWindow", () => {
   });
 
   it("prefers the episode log wherever it reaches back far enough", () => {
-    const window = resolveListeningWindow(
+    const window = resolveWindow(
       [trackEvent([{ ratingKey: "1", artistName: "A", playCount: 40 }], 60)],
       episodes(episode("1", "A", 40), episode("1", "A", 10)),
       options()
@@ -104,7 +117,7 @@ describe("resolveListeningWindow", () => {
   });
 
   it("counts a play once, not once per series", () => {
-    const window = resolveListeningWindow(
+    const window = resolveWindow(
       [
         trackEvent([{ ratingKey: "1", artistName: "A", playCount: 0 }], 60),
         trackEvent([{ ratingKey: "1", artistName: "A", playCount: 5 }], 0),
@@ -117,7 +130,7 @@ describe("resolveListeningWindow", () => {
   });
 
   it("falls back to the deltas when history starts inside the window", () => {
-    const window = resolveListeningWindow(
+    const window = resolveWindow(
       [
         trackEvent([{ ratingKey: "1", artistName: "A", playCount: 10 }], 60),
         trackEvent([{ ratingKey: "1", artistName: "A", playCount: 14 }], 0),
@@ -131,7 +144,7 @@ describe("resolveListeningWindow", () => {
   });
 
   it("falls back to all-time until the series is deep enough", () => {
-    const window = resolveListeningWindow(
+    const window = resolveWindow(
       [trackEvent([{ ratingKey: "1", artistName: "A", playCount: 12 }], 5)],
       new Map(),
       options()
@@ -143,7 +156,7 @@ describe("resolveListeningWindow", () => {
   });
 
   it("falls back to all-time when nothing was played in the window", () => {
-    const window = resolveListeningWindow(
+    const window = resolveWindow(
       [
         trackEvent([{ ratingKey: "1", artistName: "A", playCount: 10 }], 40),
         trackEvent([{ ratingKey: "1", artistName: "A", playCount: 10 }], 0),
@@ -157,7 +170,7 @@ describe("resolveListeningWindow", () => {
   });
 
   it("ignores episodes started outside the window", () => {
-    const window = resolveListeningWindow(
+    const window = resolveWindow(
       [trackEvent([{ ratingKey: "1", artistName: "A", playCount: 1 }], 60)],
       episodes(episode("1", "A", 40)),
       options()
@@ -167,7 +180,7 @@ describe("resolveListeningWindow", () => {
   });
 
   it("keeps a track played only before the window, at zero", () => {
-    const window = resolveListeningWindow(
+    const window = resolveWindow(
       [
         trackEvent(
           [
@@ -186,7 +199,7 @@ describe("resolveListeningWindow", () => {
   });
 
   it("caps what one play of a very long track is worth", () => {
-    const window = resolveListeningWindow(
+    const window = resolveWindow(
       [
         trackEvent(
           [
@@ -208,7 +221,7 @@ describe("resolveListeningWindow", () => {
   });
 
   it("caps what one very long episode is worth", () => {
-    const window = resolveListeningWindow(
+    const window = resolveWindow(
       [trackEvent([{ ratingKey: "1", artistName: "A", playCount: 1 }], 60)],
       episodes(episode("1", "A", 40), episode("1", "A", 10, 5_400_000)),
       options({ capMs: 600_000 })
@@ -218,7 +231,7 @@ describe("resolveListeningWindow", () => {
   });
 
   it("returns an empty window when the play series has no captures", () => {
-    const window = resolveListeningWindow([], episodes(episode("1", "A", 1)), {
+    const window = resolveWindow([], episodes(episode("1", "A", 1)), {
       ...options(),
     });
 

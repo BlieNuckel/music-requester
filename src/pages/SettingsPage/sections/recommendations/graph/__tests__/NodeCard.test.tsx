@@ -166,4 +166,18 @@ describe("NodeCard", () => {
 
     expect(update).toHaveBeenCalledWith("libraryPreference", "prefer_library");
   });
+
+  it("marks a node whose body is written but not yet wired up", () => {
+    renderCard(
+      makeNode({ status: "ported", module: "server/services/profile/x.ts" })
+    );
+
+    expect(screen.getByText("not live")).toBeInTheDocument();
+  });
+
+  it("says nothing about wiring for a node the recommender runs", () => {
+    renderCard(makeNode());
+
+    expect(screen.queryByText("not live")).not.toBeInTheDocument();
+  });
 });

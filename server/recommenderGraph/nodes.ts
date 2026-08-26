@@ -3,7 +3,10 @@ import type {
   FlowId,
   NodeKind,
   NodeScope,
+  NodeStatus,
+  RetiredParam,
 } from "../../shared/recommenderGraph";
+import { PARAMS } from "./params";
 import type { ParamKey } from "./params";
 
 export type NodeInput = {
@@ -21,6 +24,10 @@ export type NodeRegistration = {
   kind: NodeKind;
   summary: string;
   flow: FlowId;
+  /** Omitted for a node the recommender already runs; see {@link NodeStatus}. */
+  status?: NodeStatus;
+  /** Repo-relative file holding this node's body, where one has been written. */
+  module?: string;
   inputs: NodeInput[];
   /** Knobs this node owns. Every knob is owned exactly once; see `graph.test.ts`. */
   params?: ParamKey[];
@@ -96,14 +103,30 @@ export const NODE_REGISTRY: NodeRegistration[] = [
   },
 
   {
-    id: "signalBundle",
-    title: "Fold the log",
+    id: "loadSignals",
+    title: "Load the series",
     scope: "profile",
     kind: "step",
     summary:
-      "Replays the log into current state: play counts, ratings, album catalogue, and one merged episode series where measured listening replaces inferred.",
+      "Reads the four series one rebuild needs, concurrently, and ingests on demand for a user who has never been captured. Raw rather than folded: the window and the listening series fold at cutoffs of their own and cannot work from current state.",
     flow: "profile",
+    status: "ported",
+    module: "server/services/profile/profileSignals.ts",
     inputs: [data("signalLog")],
+  },
+  {
+    id: "foldToNow",
+    title: "Fold to now",
+    scope: "profile",
+    kind: "step",
+    summary:
+      "Replays those series into current state — listening per track, the latest rating per item, Plex's own album genres — once, for everything that reads the log as it stands.",
+    note: "The fold used to happen inside each consumer, so the play series alone was replayed about five times per rebuild and read from the database three times. One fold is the whole point of the node.",
+    flow: "profile",
+    status: "ported",
+    module: "server/services/profile/profileSignals.ts",
+    inputs: [data("loadSignals")],
+    usesParams: ["maxTrackMinutesForWeight"],
   },
   {
     id: "listeningWindow",
@@ -111,43 +134,29 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     scope: "profile",
     kind: "step",
     summary:
-      "Settles the span every per-artist, per-album and per-track figure is measured over, and which series answers for it: the episode log where it reaches back that far, the difference of two cumulative snapshots before that, all-time when neither reaches or nothing was played inside it. One or the other, never both, or every play in the covered span counts twice.",
-    note: "One decision, read by all three derivations downstream. Settling the span per derivation is what once left the weights windowed while the one-hit discount was measured all-time, so the discount scaled a weight it did not describe.",
+      "Settles the recent span, and measures the listening inside it as one row per track. The episode log answers where it reaches back that far, the difference of two folds answers before that, and all-time answers when neither reaches or nothing was played inside it.",
+    note: "One decision and one measurement, read by everything downstream. Both series normalize into the same row here, so a rollup can no longer disagree with the weight it scales about which series the window came from.",
     flow: "profile",
-    inputs: [data("signalBundle")],
-    params: ["playTrendWindowDays"],
-    usesParams: ["listeningWeight", "maxTrackMinutesForWeight"],
+    status: "ported",
+    module: "server/services/profile/listeningWindow.ts",
+    inputs: [
+      data("loadSignals", "plays + episodes"),
+      data("foldToNow", "all-time fallback"),
+    ],
+    params: ["playTrendWindowDays", "maxTrackMinutesForWeight"],
   },
   {
-    id: "playWeights",
+    id: "artistListening",
     title: "Listening per artist",
     scope: "profile",
     kind: "step",
     summary:
-      "How much each artist was listened to over that window, as play-equivalents: one number trading plays off against time spent.",
+      "How much each artist was listened to over the window, and how that listening spread across their tracks — one rollup, so the spread necessarily describes the listening it will scale.",
     flow: "profile",
+    status: "ported",
+    module: "server/services/profile/artistWeighting.ts",
     inputs: [data("listeningWindow")],
-    params: ["listeningWeight", "maxTrackMinutesForWeight"],
-  },
-  {
-    id: "windowedTrackPlays",
-    title: "Per-track plays in the window",
-    scope: "profile",
-    kind: "step",
-    summary:
-      "The same window, per track: each track's count less what it stood at when the window opened. Everything downstream reads this one map, so the discount and the rating join necessarily describe the span the weight was measured over.",
-    flow: "profile",
-    inputs: [data("signalBundle"), data("listeningWindow")],
-  },
-  {
-    id: "artistDistributions",
-    title: "Spread across tracks",
-    scope: "profile",
-    kind: "step",
-    summary:
-      "What share of an artist's listening sits on their single most-listened track.",
-    flow: "profile",
-    inputs: [data("windowedTrackPlays")],
+    params: ["listeningWeight"],
   },
   {
     id: "artistRatings",
@@ -155,53 +164,25 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     scope: "profile",
     kind: "step",
     summary:
-      "Star ratings joined onto the tracks they actually cover, as a play-weighted mean plus the breadth of where those stars sit.",
+      "Stars joined onto the listening they cover, as a play-weighted mean plus how many separate things the artist has rated. Counting what was rated rather than which track it was leaves the ratings independent of the spread.",
     flow: "profile",
-    inputs: [
-      data("signalBundle"),
-      data("windowedTrackPlays"),
-      data("artistDistributions"),
-    ],
+    status: "ported",
+    module: "server/services/profile/artistWeighting.ts",
+    inputs: [data("foldToNow", "latest ratings"), data("listeningWindow")],
   },
   {
-    id: "trackAvailability",
-    title: "Catalogue size",
+    id: "weightAdjust",
+    title: "Adjust the weight",
     scope: "profile",
     kind: "step",
     summary:
-      "How many tracks the library holds per artist, floored by every track ever seen played or rated so it works before the first catalogue sweep. Read all-time rather than over the window on purpose: a track the library holds does not stop existing because nobody played it lately.",
+      "Discounts an artist whose listening concentrates on one track, then boosts by how highly they are rated. Concentration is measured against spreading the same listening evenly, so one track played scores nothing and needs no catalogue lookup to be exempted.",
+    note: "One node because the two terms are coupled: the discount is scaled by rating breadth so that starring an artist argues against the one-hit read. Drawn apart they read as independent, which is the thing people get wrong about them.",
     flow: "profile",
-    inputs: [data("signalBundle")],
-  },
-  {
-    id: "distributionFactor",
-    title: "One-hit discount",
-    scope: "profile",
-    kind: "step",
-    summary:
-      "Discounts an artist whose listening is concentrated on one track, unless their ratings are spread widely enough to refute it or their catalogue is too small to have spread at all.",
-    flow: "profile",
-    inputs: [
-      data("playWeights"),
-      data("artistDistributions"),
-      data("artistRatings"),
-      data("trackAvailability"),
-    ],
-    params: [
-      "distributionWeight",
-      "minPlaysForDistribution",
-      "minAvailableTracksForDistribution",
-    ],
-  },
-  {
-    id: "ratingMultiplier",
-    title: "Rating boost",
-    scope: "profile",
-    kind: "step",
-    summary: "Scales each artist's weight by how highly you rate them.",
-    flow: "profile",
-    inputs: [data("distributionFactor"), data("artistRatings")],
-    params: ["ratingWeight"],
+    status: "ported",
+    module: "server/services/profile/artistWeighting.ts",
+    inputs: [data("artistListening"), data("artistRatings")],
+    params: ["distributionWeight", "minPlaysForDistribution", "ratingWeight"],
   },
   {
     id: "artistSeries",
@@ -209,9 +190,9 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     scope: "profile",
     kind: "step",
     summary:
-      "Per-artist listening bucketed into a series, and what its shape says: momentum, emergence, decay.",
+      "Per-artist listening bucketed into a series, and what its shape says: momentum, emergence, decay. Reads the raw series because it folds once per bucket boundary rather than once.",
     flow: "profile",
-    inputs: [data("signalLog")],
+    inputs: [data("loadSignals")],
     params: ["seriesBucketDays", "seriesSpanDays", "momentumRecentBuckets"],
     usesParams: ["listeningWeight", "maxTrackMinutesForWeight"],
   },
@@ -223,7 +204,7 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     summary:
       "Copies momentum, emergence and decay onto the weights. Deliberately does not fold them into the ranking: they are exposed for a picker to read.",
     flow: "profile",
-    inputs: [data("ratingMultiplier"), data("artistSeries")],
+    inputs: [data("weightAdjust"), data("artistSeries")],
   },
   {
     id: "topArtists",
@@ -247,15 +228,16 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     params: ["tagsPerArtist", "genericTags"],
   },
   {
-    id: "albumWeights",
+    id: "albumListening",
     title: "Listening per album",
     scope: "profile",
     kind: "step",
     summary:
-      "The same window split by album, read from whichever series the window settled on. An album's share has to be measured over the span its artist's weight was, or splitting that weight silently re-weights the artist.",
+      "The same window rolled up by album instead of by artist, off the same rows, carrying how many of the record's tracks were played.",
     flow: "profile",
-    inputs: [data("signalBundle"), data("listeningWindow")],
-    usesParams: ["listeningWeight", "maxTrackMinutesForWeight"],
+    status: "ported",
+    module: "server/services/profile/listeningWindow.ts",
+    inputs: [data("listeningWindow")],
   },
   {
     id: "albumsByArtist",
@@ -265,16 +247,17 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     summary:
       "Each artist's weight divided across their records by how much each was listened to. The shares sum to the artist's weight, so moving genre down to the album divides influence rather than adding it.",
     flow: "profile",
-    inputs: [data("topArtists"), data("albumWeights")],
+    inputs: [data("topArtists"), data("albumListening")],
     usesParams: ["listeningWeight"],
   },
   {
     id: "albumTagLookups",
-    title: "Album tag lookups",
+    title: "Album tag budget",
     scope: "profile",
-    kind: "step",
+    kind: "quota",
     summary:
-      "Spends Last.fm calls on the most-listened albums per artist. Bounded per artist so one dominant artist can't eat the whole budget.",
+      "Decides which albums are worth spending a Last.fm call on: the most-listened first, bounded per artist.",
+    note: "A quota per artist, not a global top-N. One dominant artist would otherwise spend the whole allowance and leave every other artist's records resolving on Plex genres alone.",
     flow: "profile",
     inputs: [data("albumsByArtist")],
     params: ["albumTagsPerArtist"],
@@ -291,7 +274,7 @@ export const NODE_REGISTRY: NodeRegistration[] = [
       data("albumsByArtist"),
       data("albumTagLookups"),
       data("artistTags", "fallback source"),
-      data("signalBundle", "Plex genres"),
+      data("foldToNow", "Plex genres"),
     ],
     usesParams: ["genericTags", "tagsPerArtist"],
   },
@@ -323,9 +306,11 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     scope: "profile",
     kind: "step",
     summary:
-      "Records with enough plays to count as known, so recommendations stay off things you already have.",
+      "Records played enough, across enough of their tracks, to count as ones the user knows — so recommendations stay off them. Plays alone marked a record known off one hit on repeat, which is the case most worth recommending.",
     flow: "profile",
-    inputs: [data("signalLog")],
+    status: "ported",
+    module: "server/services/profile/listeningWindow.ts",
+    inputs: [data("foldToNow", "all-time plays")],
   },
   {
     id: "profileDocument",
@@ -601,5 +586,17 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     flow: "artists",
     inputs: [data("promotedArtistSimilar")],
     usesParams: ["cacheDurationMinutes"],
+  },
+];
+
+/**
+ * Knobs the settings still carry, and a stored profile's config hash still covers, that no
+ * node reads any more. They leave both when the nodes that replaced their work go live.
+ */
+export const RETIRED_PARAMS: RetiredParam[] = [
+  {
+    ...PARAMS.minAvailableTracksForDistribution,
+    reason:
+      "The one-hit discount now measures concentration against spreading the same listening evenly across the tracks actually played, so an artist with one played track scores nothing on its own. The exemption this knob bought falls out of that arithmetic, and the library catalogue no longer has to be captured to grant it.",
   },
 ];

@@ -6,6 +6,7 @@ import Skeleton from "@/components/Skeleton";
 import SaveStatusIndicator from "../shared/SaveStatusIndicator";
 import RecommenderListView from "../sections/recommendations/graph/RecommenderListView";
 import RecommenderToolbar from "../sections/recommendations/graph/RecommenderToolbar";
+import RetiredParams from "../sections/recommendations/graph/RetiredParams";
 import { applyParamChange } from "../sections/recommendations/graph/paramCoupling";
 import { RecommenderParamsContext } from "../sections/recommendations/graph/paramsContext";
 import { useRecommenderGraph } from "../sections/recommendations/graph/useRecommenderGraph";
@@ -102,6 +103,7 @@ export default function RecommendationsSettingsPage() {
           ) : (
             <RecommenderListView graph={graph} flow={flow} />
           )}
+          <RetiredParams params={graph.retiredParams} />
         </RecommenderParamsContext.Provider>
       )}
     </div>

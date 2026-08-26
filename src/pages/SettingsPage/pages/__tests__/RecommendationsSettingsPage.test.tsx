@@ -36,9 +36,22 @@ const graph: RecommenderGraph = {
       ],
       usesParams: [],
       spendsBudget: false,
+      status: "live",
     },
   ],
   edges: [],
+  retiredParams: [
+    {
+      key: "minAvailableTracksForDistribution",
+      kind: "int",
+      label: "Small catalogue exemption",
+      min: 0,
+      max: 50,
+      step: 1,
+      description: "Artists with few tracks keep their full weight.",
+      reason: "The discount measures concentration against chance now.",
+    },
+  ],
   budgets: [],
 };
 

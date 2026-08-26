@@ -73,6 +73,17 @@ export type NodeKind =
  */
 export type EdgeKind = "data" | "fallback" | "control";
 
+/**
+ * How far the code has got. `live` means the recommender executes this node today.
+ * `ported` means its body is written against the graph's shapes and tested, but nothing
+ * calls it yet — the old path is still what runs.
+ *
+ * The field exists so a half-migrated pipeline can be drawn honestly. Without it the graph
+ * has to choose between showing the shape being built and describing what executes, and
+ * either choice makes it lie for the length of the migration.
+ */
+export type NodeStatus = "live" | "ported";
+
 export type ParamKind =
   "ratio" | "int" | "days" | "minutes" | "enum" | "tags" | "boolean";
 
@@ -100,6 +111,14 @@ export type ParamDef = {
 
 export type GraphNodeParam = ParamDef & { owner: string };
 
+/**
+ * A knob still carried by the settings — and still folded into a stored profile's config
+ * hash — that the pipeline no longer has a use for. It leaves both when the node that
+ * replaced its work goes live; until then it is declared here rather than parked on a node
+ * that does not read it.
+ */
+export type RetiredParam = ParamDef & { reason: string };
+
 export type GraphNode = {
   id: string;
   title: string;
@@ -114,6 +133,9 @@ export type GraphNode = {
   usesParams: GraphNodeParam[];
   /** Whether this node spends the build's shared MusicBrainz resolution budget. */
   spendsBudget: boolean;
+  status: NodeStatus;
+  /** Repo-relative file holding this node's body, where one has been written. */
+  module?: string;
   /**
    * The aside shown under the summary. Required on `repeat`, `fallback` and `quota` nodes,
    * where the iteration or the ordering *is* the meaning; optional on any other node.
@@ -134,6 +156,7 @@ export type GraphEdge = {
 export type RecommenderGraph = {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  retiredParams: RetiredParam[];
   /**
    * Shared resources that are spent rather than passed. Drawing these as edges would say
    * the sources hand them to each other, when in fact they compete for one allowance.

@@ -189,18 +189,21 @@ export function allTimeListening(
  * A user with no play captures gets an empty window rather than one derived from episodes
  * alone. The episode series joins durations from the play series, so without it there is
  * nothing to measure against.
+ *
+ * `allTimePlays` is passed in rather than folded here: it is the same fold the rest of the
+ * build already reads, and folding it twice is what this whole pass exists to stop.
  */
 export function resolveListeningWindow(
   trackEvents: UserSignalEvent[],
   episodes: Map<string, ListenEpisode>,
+  allTimePlays: Map<string, WindowedPlay>,
   options: WindowOptions
 ): ListeningWindow {
   const { now, windowMs, capMs } = options;
-  const latest = reconstructTrackPlayCounts(trackEvents, Infinity);
   const allTime: ListeningWindow = {
     startMs: null,
     source: "allTime",
-    plays: rowsFromTracks(latest, undefined, capMs),
+    plays: allTimePlays,
   };
 
   const earliest = earliestRecordedAt(trackEvents);
@@ -216,7 +219,7 @@ export function resolveListeningWindow(
   if (earliest > startMs) return allTime;
 
   const plays = rowsFromTracks(
-    latest,
+    reconstructTrackPlayCounts(trackEvents, Infinity),
     reconstructTrackPlayCounts(trackEvents, startMs),
     capMs
   );

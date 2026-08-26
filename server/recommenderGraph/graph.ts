@@ -1,4 +1,4 @@
-import { NODE_REGISTRY } from "./nodes";
+import { NODE_REGISTRY, RETIRED_PARAMS } from "./nodes";
 import { PARAMS } from "./params";
 import type { ParamKey } from "./params";
 import type { NodeRegistration } from "./nodes";
@@ -61,6 +61,8 @@ function toNode(
     params: (node.params ?? []).map((key) => PARAMS[key]),
     usesParams: toUsedParams(node, owners),
     spendsBudget: node.spendsBudget ?? false,
+    status: node.status ?? "live",
+    ...(node.module ? { module: node.module } : {}),
     ...(node.note ? { note: node.note } : {}),
   };
 }
@@ -87,6 +89,7 @@ export function buildRecommenderGraph(): RecommenderGraph {
   cached = {
     nodes: NODE_REGISTRY.map((node) => toNode(node, owners)),
     edges: NODE_REGISTRY.flatMap(toEdges),
+    retiredParams: RETIRED_PARAMS,
     budgets: BUDGETS,
   };
   return cached;

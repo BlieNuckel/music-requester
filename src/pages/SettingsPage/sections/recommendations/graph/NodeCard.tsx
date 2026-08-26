@@ -128,6 +128,14 @@ export function NodeCard({ node }: NodeCardProps) {
           {NODE_SCOPE_LABELS[node.scope]}
         </span>
         <div className="flex items-center gap-1">
+          {node.status === "ported" && (
+            <span
+              title={`Written for the graph but not wired up yet — the recommender still runs the old path. Body: ${node.module ?? ""}`}
+              className="px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900 text-[10px] font-bold text-indigo-900 dark:text-indigo-100"
+            >
+              not live
+            </span>
+          )}
           {node.spendsBudget && (
             <span
               title="Spends the build's shared MusicBrainz lookup budget"

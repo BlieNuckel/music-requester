@@ -29,8 +29,9 @@ export type ProfileSignals = {
  * series alone was replayed about five times per rebuild — because the loader was named for
  * a fold it never performed.
  *
- * `tracks` is uncapped on purpose: the per-play ceiling exists to stop one long play
- * dominating a *window*, and nothing reading all-time state is measuring listening time.
+ * `tracks` carries the per-play ceiling the window measures under, because the window's
+ * own all-time fallback reads this very map. Consumers that only count plays are unaffected
+ * by it either way.
  */
 export type FoldedSignals = {
   tracks: Map<string, WindowedPlay>;
@@ -71,7 +72,10 @@ export async function loadProfileSignals(
 }
 
 /** Replay the log into current state, once, for everything that reads it as it stands. */
-export function foldSignalsToNow(signals: ProfileSignals): FoldedSignals {
+export function foldSignalsToNow(
+  signals: ProfileSignals,
+  capMs = 0
+): FoldedSignals {
   const albumGenres = new Map<string, string[]>();
   for (const [key, album] of reconstructAlbumTrackCounts(
     signals.albumEvents,
@@ -83,7 +87,7 @@ export function foldSignalsToNow(signals: ProfileSignals): FoldedSignals {
   }
 
   return {
-    tracks: allTimeListening(signals.trackEvents),
+    tracks: allTimeListening(signals.trackEvents, capMs),
     ratings: latestRatings(signals.ratingEvents),
     albumGenres,
   };

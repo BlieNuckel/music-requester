@@ -47,16 +47,39 @@ describe("GET /graph", () => {
   it("carries resolved param definitions rather than bare keys", async () => {
     const res = await request(app).get("/graph");
     const node = res.body.nodes.find(
-      (n: { id: string }) => n.id === "ratingMultiplier"
+      (n: { id: string }) => n.id === "weightAdjust"
     );
 
-    expect(node.params).toEqual([
+    expect(node.params).toContainEqual(
       expect.objectContaining({
         key: "ratingWeight",
         label: "Rating weight",
         kind: "int",
-      }),
-    ]);
+      })
+    );
+  });
+
+  it("carries the knobs no node reads any more, with their reason", async () => {
+    const res = await request(app).get("/graph");
+
+    expect(res.body.retiredParams).toContainEqual(
+      expect.objectContaining({
+        key: "minAvailableTracksForDistribution",
+        reason: expect.any(String),
+      })
+    );
+  });
+
+  it("says which nodes the recommender does not run yet", async () => {
+    const res = await request(app).get("/graph");
+    const ported = res.body.nodes.filter(
+      (n: { status: string }) => n.status === "ported"
+    );
+
+    expect(ported.length).toBeGreaterThan(0);
+    for (const node of ported) {
+      expect(node.module).toEqual(expect.any(String));
+    }
   });
 
   it("carries no settings values, which the client already holds", async () => {

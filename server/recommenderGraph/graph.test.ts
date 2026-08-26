@@ -1,6 +1,8 @@
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
 import { buildRecommenderGraph, profileScopeParamKeys } from "./graph";
-import { NODE_REGISTRY } from "./nodes";
+import { NODE_REGISTRY, RETIRED_PARAMS } from "./nodes";
 import { PARAMS, PARAM_KEYS } from "./params";
 import { DEFAULT_PROMOTED_ALBUM } from "../../shared/settingsDefaults";
 import { FLOWS } from "../../shared/recommenderGraph";
@@ -12,6 +14,9 @@ import { FLOWS } from "../../shared/recommenderGraph";
  * Pinned here so the graph's own answer to "which knobs shape the profile" can be checked
  * against the hand-maintained list *before* phase 2 replaces the list with the graph. A
  * mismatch at that point would silently invalidate every stored profile on deploy.
+ *
+ * Retired knobs count towards it: they are still in the settings and still in the hash, and
+ * they leave both in the commit that puts their replacement live.
  */
 const CONFIG_HASH_KEYS = [
   "albumTagsPerArtist",
@@ -32,11 +37,20 @@ const CONFIG_HASH_KEYS = [
 ];
 
 describe("recommender graph registry", () => {
-  it("owns every recommender setting exactly once", () => {
+  it("accounts for every recommender setting exactly once", () => {
     const owned = NODE_REGISTRY.flatMap((node) => node.params ?? []);
+    const retired = RETIRED_PARAMS.map((param) => param.key);
 
-    expect([...owned].sort()).toEqual([...PARAM_KEYS].sort());
-    expect(new Set(owned).size).toBe(owned.length);
+    expect([...owned, ...retired].sort()).toEqual([...PARAM_KEYS].sort());
+    expect(new Set([...owned, ...retired]).size).toBe(
+      owned.length + retired.length
+    );
+  });
+
+  it("says why every retired knob is still in the settings", () => {
+    for (const param of RETIRED_PARAMS) {
+      expect(param.reason.length).toBeGreaterThan(0);
+    }
   });
 
   it("declares a param for every key the settings type carries", () => {
@@ -168,10 +182,33 @@ describe("recommender graph registry", () => {
       .map((edge) => edge.to);
 
     expect([...readers].sort()).toEqual([
-      "albumWeights",
-      "playWeights",
-      "windowedTrackPlays",
+      "albumListening",
+      "artistListening",
+      "artistRatings",
     ]);
+  });
+
+  it("points every ported node at a file that exists", () => {
+    const { nodes } = buildRecommenderGraph();
+    const ported = nodes.filter((node) => node.status === "ported");
+
+    expect(ported.length).toBeGreaterThan(0);
+    for (const node of ported) {
+      expect([node.id, node.module]).toEqual([node.id, expect.any(String)]);
+      expect([
+        node.id,
+        existsSync(resolve(process.cwd(), node.module!)),
+      ]).toEqual([node.id, true]);
+    }
+  });
+
+  it("keeps a node that names no module out of the ported set", () => {
+    const { nodes } = buildRecommenderGraph();
+
+    for (const node of nodes) {
+      if (node.module) continue;
+      expect([node.id, node.status]).toEqual([node.id, "live"]);
+    }
   });
 
   it("stores everything the profile scope derives", () => {
@@ -199,7 +236,11 @@ describe("recommender graph registry", () => {
   });
 
   it("matches the profile config hash to the profile-scope params", () => {
-    expect(profileScopeParamKeys()).toEqual(CONFIG_HASH_KEYS);
+    const retired = RETIRED_PARAMS.map((param) => param.key);
+
+    expect([...profileScopeParamKeys(), ...retired].sort()).toEqual(
+      CONFIG_HASH_KEYS
+    );
   });
 
   it("names every formula placeholder after a param the node can reach", () => {
