@@ -26,7 +26,9 @@ export const listeningWeightParam: GraphNodeParam = {
   step: 0.05,
   ends: { low: "plays", high: "listening time" },
   description: "What counts as listening to an artist more.",
-  owner: "playWeights",
+  owner: "artistListening",
+  ownerTitle: "Listening per artist",
+  ownerFlow: "listening",
 };
 
 export const topArtistsParam: GraphNodeParam = {
@@ -39,6 +41,8 @@ export const topArtistsParam: GraphNodeParam = {
   effect: "keep the top {topArtistsCount} artists",
   description: "How many of your most-played artists the profile covers.",
   owner: "topArtists",
+  ownerTitle: "Top artists",
+  ownerFlow: "ranking",
 };
 
 export function makeNode(partial: Partial<GraphNode> = {}): GraphNode {

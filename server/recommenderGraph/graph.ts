@@ -4,6 +4,7 @@ import { PARAMS } from "./params";
 import type { ParamKey } from "./params";
 import type { NodeRegistration } from "./nodes";
 import type {
+  FlowId,
   GraphEdge,
   GraphNode,
   GraphNodeParam,
@@ -26,28 +27,37 @@ const BUDGETS: RecommenderGraph["budgets"] = [
 
 let cached: RecommenderGraph | null = null;
 
+type Owner = { id: string; title: string; flow: FlowId };
+
 /** Which node owns each knob, so a node can show the knobs it merely reads. */
-function buildOwnerIndex(): Map<ParamKey, string> {
-  const owners = new Map<ParamKey, string>();
+function buildOwnerIndex(): Map<ParamKey, Owner> {
+  const owners = new Map<ParamKey, Owner>();
   for (const node of NODE_REGISTRY) {
-    for (const key of node.params ?? []) owners.set(key, node.id);
+    for (const key of node.params ?? []) {
+      owners.set(key, { id: node.id, title: node.title, flow: node.flow });
+    }
   }
   return owners;
 }
 
 function toUsedParams(
   node: NodeRegistration,
-  owners: Map<ParamKey, string>
+  owners: Map<ParamKey, Owner>
 ): GraphNodeParam[] {
-  return (node.usesParams ?? []).map((key) => ({
-    ...PARAMS[key],
-    owner: owners.get(key) ?? "",
-  }));
+  return (node.usesParams ?? []).map((key) => {
+    const owner = owners.get(key);
+    return {
+      ...PARAMS[key],
+      owner: owner?.id ?? "",
+      ownerTitle: owner?.title ?? "",
+      ownerFlow: owner?.flow ?? node.flow,
+    };
+  });
 }
 
 function toNode(
   node: NodeRegistration,
-  owners: Map<ParamKey, string>
+  owners: Map<ParamKey, Owner>
 ): GraphNode {
   return {
     id: node.id,

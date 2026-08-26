@@ -156,7 +156,17 @@ export type ParamDef = {
   description: string;
 };
 
-export type GraphNodeParam = ParamDef & { owner: string };
+/**
+ * A knob a node reads but does not own, carrying enough about its owner to say so and to
+ * offer a way there. Editable here as well as there: it is one stored value, so a node that
+ * changes what it does when the knob moves is a node someone might reasonably reach for it
+ * from, and sending them elsewhere to move it teaches nothing the label does not.
+ */
+export type GraphNodeParam = ParamDef & {
+  owner: string;
+  ownerTitle: string;
+  ownerFlow: FlowId;
+};
 
 /**
  * A knob still carried by the settings — and still folded into a stored profile's config

@@ -85,7 +85,7 @@ describe("NodeCard", () => {
       })
     );
 
-    fireEvent.change(screen.getByLabelText("Top artists"), {
+    fireEvent.change(screen.getAllByLabelText("Top artists")[0], {
       target: { value: "12" },
     });
 
@@ -183,12 +183,47 @@ describe("NodeCard", () => {
     expect(screen.getAllByRole("note")).toHaveLength(2);
   });
 
-  it("names the knobs it reads but does not own", () => {
+  it("makes a knob it reads editable here, naming the step that owns it", () => {
     renderCard(makeNode({ usesParams: [listeningWeightParam] }));
 
     expect(
-      screen.getByText(/also uses listening time vs plays/i)
+      screen.getByLabelText("Listening time vs plays")
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "also on Listening per artist" })
+    ).toBeInTheDocument();
+  });
+
+  it("writes a shared knob to the one value every step reads", () => {
+    const update = renderCard(makeNode({ usesParams: [topArtistsParam] }));
+
+    fireEvent.change(screen.getByLabelText("Top artists"), {
+      target: { value: "9" },
+    });
+
+    expect(update).toHaveBeenCalledWith("topArtistsCount", 9);
+  });
+
+  it("offers the way to the step that owns a shared knob", () => {
+    const openFlow = vi.fn();
+    render(
+      <RecommenderParamsContext.Provider
+        value={{
+          config: DEFAULT_PROMOTED_ALBUM,
+          update: vi.fn(),
+          openFlow,
+          arrivedAt: null,
+        }}
+      >
+        <NodeCard node={makeNode({ usesParams: [topArtistsParam] })} />
+      </RecommenderParamsContext.Provider>
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "also on Top artists" })
+    );
+
+    expect(openFlow).toHaveBeenCalledWith("ranking", "topArtists");
   });
 
   it("flags a node that spends the shared lookup budget", () => {

@@ -9,7 +9,12 @@ import {
   SCOPE_EFFECT,
 } from "@shared/recommenderGraph";
 import { BAR_KINDS } from "./paramKinds";
-import type { NodeKind, NodeScope, ParamDef } from "@shared/recommenderGraph";
+import type {
+  GraphNodeParam,
+  NodeKind,
+  NodeScope,
+  ParamDef,
+} from "@shared/recommenderGraph";
 import { HANDLE_SIDES } from "./flowModel";
 import type { RecommenderNodeData } from "./flowModel";
 import type { NodeProps } from "@xyflow/react";
@@ -134,19 +139,39 @@ function Lines({ label, lines }: { label: string; lines: string[] }) {
   );
 }
 
-function UsedParams({ params }: { params: ParamDef[] }) {
+/**
+ * Knobs owned by another step, editable here too. One knob is one stored value however many
+ * steps read it, so the two places cannot disagree — and a step whose behaviour changes when
+ * the knob moves is a step someone can reasonably expect to change it from. What the naming
+ * has to keep is that it is the same knob and not a second one, which is what the owner's
+ * name under each is for.
+ */
+function UsedParams({
+  params,
+  reachable,
+}: {
+  params: GraphNodeParam[];
+  reachable: ReadonlyMap<string, ParamDef>;
+}) {
+  const { openFlow } = useRecommenderParams();
   if (params.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap gap-1 pt-1">
+    <div className="space-y-2 border-t border-dashed border-gray-300 dark:border-gray-600 pt-2">
+      <span className="block text-[10px] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+        Shared
+      </span>
       {params.map((param) => (
-        <span
-          key={param.key}
-          title={`Set on another node: ${param.description}`}
-          className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-[10px] font-medium text-gray-500 dark:text-gray-400"
-        >
-          also uses {param.label.toLowerCase()}
-        </span>
+        <div key={param.key} className="space-y-0.5">
+          <ParamSentence param={param} reachable={reachable} />
+          <button
+            type="button"
+            onClick={() => openFlow(param.ownerFlow, param.owner)}
+            className="nodrag block text-[10px] font-medium text-gray-400 dark:text-gray-500 hover:text-amber-600"
+          >
+            also on {param.ownerTitle}
+          </button>
+        </div>
       ))}
     </div>
   );
@@ -251,7 +276,7 @@ export function NodeCard({ node }: NodeCardProps) {
           <ParamSentence key={param.key} param={param} reachable={reachable} />
         ))}
 
-        <UsedParams params={node.usesParams} />
+        <UsedParams params={node.usesParams} reachable={reachable} />
       </div>
     </div>
   );

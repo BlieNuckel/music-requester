@@ -1,7 +1,7 @@
 import { graphlib, layout } from "@dagrejs/dagre";
 import { BAR_KINDS } from "./paramKinds";
 import type { FlowNode } from "./flowSelection";
-import type { GraphEdge, GraphNode } from "@shared/recommenderGraph";
+import type { GraphEdge, GraphNode, ParamDef } from "@shared/recommenderGraph";
 
 export type Position = { x: number; y: number };
 
@@ -41,7 +41,8 @@ const LINE_HEIGHT = 16;
 const CARD_CHROME = 78;
 const EXTERNAL_HEIGHT = 104;
 const INPUT_ROW = 38;
-const CHIP_ROW = 24;
+/** The "also on <step>" line under a knob owned by another step. */
+const OWNER_ROW = 16;
 
 /** Room between two edges sharing a rank, so a label has somewhere to sit. */
 const EDGE_SEPARATION = 24;
@@ -50,6 +51,13 @@ const lines = (text: string): number =>
   Math.max(1, Math.ceil(text.length / CHARS_PER_LINE));
 
 const wrapped = (text: string): number => lines(text) * LINE_HEIGHT;
+
+const paramHeight = (param: ParamDef): number =>
+  BAR_KINDS.has(param.kind)
+    ? LINE_HEIGHT + INPUT_ROW + wrapped(param.effect ?? "")
+    : param.effect
+      ? wrapped(param.effect) + INPUT_ROW
+      : INPUT_ROW + LINE_HEIGHT;
 
 /**
  * How tall a node's card will be, guessed from its content.
@@ -65,17 +73,10 @@ export function estimateNodeHeight(node: GraphNode, external: boolean): number {
   let height = CARD_CHROME + wrapped(node.title) + wrapped(node.summary);
   if (node.note) height += wrapped(node.note) + 8;
 
-  for (const param of node.params) {
-    if (BAR_KINDS.has(param.kind)) {
-      height += LINE_HEIGHT + INPUT_ROW + wrapped(param.effect ?? "");
-      continue;
-    }
-    height += param.effect
-      ? wrapped(param.effect) + INPUT_ROW
-      : INPUT_ROW + LINE_HEIGHT;
-  }
+  for (const param of node.params) height += paramHeight(param);
   if (node.usesParams.length > 0) {
-    height += Math.ceil(node.usesParams.length / 2) * CHIP_ROW;
+    height += LINE_HEIGHT + OWNER_ROW * node.usesParams.length;
+    for (const param of node.usesParams) height += paramHeight(param);
   }
   return height;
 }

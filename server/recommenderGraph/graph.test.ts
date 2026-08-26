@@ -395,6 +395,26 @@ describe("recommender graph registry", () => {
     }
   });
 
+  it("says where a shared knob is owned, so a node can offer the way there", () => {
+    const { nodes } = buildRecommenderGraph();
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+
+    for (const node of nodes) {
+      for (const param of node.usesParams) {
+        const owner = byId.get(param.owner);
+        expect([param.key, owner?.title, owner?.flow]).toEqual([
+          param.key,
+          param.ownerTitle,
+          param.ownerFlow,
+        ]);
+        expect([param.key, owner?.params.map((p) => p.key)]).toEqual([
+          param.key,
+          expect.arrayContaining([param.key]),
+        ]);
+      }
+    }
+  });
+
   it("names every placeholder after a param the node can reach", () => {
     const { nodes } = buildRecommenderGraph();
 
