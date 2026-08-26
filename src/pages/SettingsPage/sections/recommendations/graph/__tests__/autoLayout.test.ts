@@ -90,7 +90,7 @@ describe("autoLayout", () => {
         external: false,
       },
       {
-        node: makeNode({ id: "taller", note: "Note. ".repeat(20) }),
+        node: makeNode({ id: "taller", summary: "Summary. ".repeat(20) }),
         external: false,
       },
       { node: makeNode({ id: "small" }), external: true },

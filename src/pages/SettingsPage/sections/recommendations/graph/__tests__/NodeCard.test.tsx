@@ -232,17 +232,19 @@ describe("NodeCard", () => {
     expect(screen.getByText("budget")).toBeInTheDocument();
   });
 
-  it("explains a repeat node rather than letting it read as one pass", () => {
+  it("marks a repeat node rather than letting it read as one pass", () => {
     renderCard(
       makeNode({
         kind: "repeat",
-        note: "Runs up to 5 + 3 attempts.",
+        does: ["Runs once per slot, plus three spare attempts"],
         params: [],
       })
     );
 
     expect(screen.getByText("repeats")).toBeInTheDocument();
-    expect(screen.getByText("Runs up to 5 + 3 attempts.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Runs once per slot, plus three spare attempts")
+    ).toBeInTheDocument();
   });
 
   it("renders a checkbox knob by its label", () => {

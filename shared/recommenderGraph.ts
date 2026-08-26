@@ -203,11 +203,6 @@ export type GraphNode = {
   status: NodeStatus;
   /** Repo-relative file holding this node's body, where one has been written. */
   module?: string;
-  /**
-   * The aside shown under the summary. Required on `repeat`, `fallback` and `quota` nodes,
-   * where the iteration or the ordering *is* the meaning; optional on any other node.
-   */
-  note?: string;
 };
 
 export type GraphEdge = {

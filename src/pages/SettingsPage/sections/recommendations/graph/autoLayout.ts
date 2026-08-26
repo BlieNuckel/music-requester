@@ -71,7 +71,6 @@ export function estimateNodeHeight(node: GraphNode, external: boolean): number {
   if (external) return EXTERNAL_HEIGHT;
 
   let height = CARD_CHROME + wrapped(node.title) + wrapped(node.summary);
-  if (node.note) height += wrapped(node.note) + 8;
 
   for (const param of node.params) height += paramHeight(param);
   if (node.usesParams.length > 0) {

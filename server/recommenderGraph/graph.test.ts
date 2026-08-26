@@ -207,7 +207,11 @@ describe("recommender graph registry", () => {
     }
   });
 
-  it("explains its repeat, quota and fallback nodes", () => {
+  /**
+   * The iteration or the ordering *is* what these nodes mean, and a summary has no room to
+   * say it. It has to be spelled out in what they take and do, which is where a reader looks.
+   */
+  it("spells out a node whose iteration or order is the point", () => {
     const { nodes } = buildRecommenderGraph();
     const structural = nodes.filter((node) =>
       ["repeat", "quota", "fallback"].includes(node.kind)
@@ -215,7 +219,8 @@ describe("recommender graph registry", () => {
 
     expect(structural.length).toBeGreaterThan(0);
     for (const node of structural) {
-      expect(node.note).toBeTruthy();
+      const lines = node.takes.length + node.does.length;
+      expect([node.id, lines >= 3]).toEqual([node.id, true]);
     }
   });
 

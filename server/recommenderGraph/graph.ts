@@ -74,7 +74,6 @@ function toNode(
     spendsBudget: node.spendsBudget ?? false,
     status: node.status ?? "live",
     ...(node.module ? { module: node.module } : {}),
-    ...(node.note ? { note: node.note } : {}),
   };
 }
 

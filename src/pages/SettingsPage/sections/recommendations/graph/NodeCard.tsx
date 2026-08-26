@@ -266,12 +266,6 @@ export function NodeCard({ node }: NodeCardProps) {
 
         <Anatomy node={node} />
 
-        {node.note && (
-          <p className="text-xs italic text-amber-700 dark:text-amber-300">
-            {node.note}
-          </p>
-        )}
-
         {node.params.map((param) => (
           <ParamSentence key={param.key} param={param} reachable={reachable} />
         ))}
