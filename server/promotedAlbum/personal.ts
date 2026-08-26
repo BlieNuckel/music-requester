@@ -1,7 +1,6 @@
 import { fetchReleaseGroupsForArtist } from "../api/musicbrainz/releaseGroups";
 import type { MbPriority } from "../api/musicbrainz/queue";
 import type { MusicBrainzReleaseGroup } from "../api/musicbrainz/types";
-import type { PromotedAlbumConfig } from "../config";
 import type { AlbumLibraryInfo } from "../../shared/albumLibrary";
 import type {
   SimilarGraphSeed,
@@ -11,8 +10,8 @@ import { isRecommendableRelease } from "../services/discover/typeFilter";
 import { isPlaceholderArtist } from "../utils/artistFilter";
 import { weightedRandomPick, shuffle, type Rng } from "../utils/random";
 import { normalizeAlbumKey } from "../utils/albumKey";
-import { jaccard } from "./explore";
-import { preferenceRule } from "./preference";
+import { isDistantGenre, isNearGenre, jaccard } from "./genreBand";
+import { preferredOrRelaxed } from "./preference";
 import type { PreferenceRule } from "./preference";
 import type {
   BuiltAlbum,
@@ -22,11 +21,11 @@ import type {
   TraceSimilarArtist,
 } from "./types";
 
-export type PersonalContext = {
-  similarGraph: SimilarGraphSeed[];
+/** What the album walk needs, once the band has been settled. */
+export type PersonalAlbumContext = {
   /** Normalized `artist::album` keys the user already plays; those are not discoveries. */
   knownAlbums: Set<string>;
-  config: PromotedAlbumConfig;
+  genreOverlapThreshold: number;
   recentlyShown: Set<string>;
   artistInLibrary: (artistMbid: string) => boolean;
   albumLibrary: (rgMbid: string) => AlbumLibraryInfo | null;
@@ -38,7 +37,7 @@ export type PersonalContext = {
 };
 
 /** One neighbour of the user's listening, with what the walk and the trace both need. */
-type PersonalCandidate = {
+export type PersonalCandidate = {
   candidate: SimilarGraphCandidate;
   genres: Set<string>;
   seedArtist: string;
@@ -47,6 +46,14 @@ type PersonalCandidate = {
   weight: number;
   /** The single largest seed contribution, which decides who gets credited as the seed. */
   topSeedWeight: number;
+};
+
+/** The neighbours this pick draws from, and what narrowing them took. */
+export type PersonalBand = {
+  pool: PersonalCandidate[];
+  widened: boolean;
+  relaxed: boolean;
+  rule: PreferenceRule;
 };
 
 /**
@@ -115,8 +122,8 @@ export function withinTastePool(
   candidates: PersonalCandidate[],
   threshold: number
 ): { pool: PersonalCandidate[]; widened: boolean } {
-  const near = candidates.filter(
-    (c) => c.genres.size > 0 && c.overlap > threshold
+  const near = candidates.filter((c) =>
+    isNearGenre(c.genres, c.overlap, threshold)
   );
   return near.length > 0
     ? { pool: near, widened: false }
@@ -138,12 +145,12 @@ export function preferredPool(
   pool: PersonalCandidate[],
   rule: PreferenceRule
 ): { pool: PersonalCandidate[]; relaxed: boolean } {
-  const preferred = pool.filter((c) =>
-    rule.isPreferred(c.candidate.artistMbid)
+  const { items, relaxed } = preferredOrRelaxed(
+    pool,
+    (c) => c.candidate.artistMbid,
+    rule
   );
-  return preferred.length > 0
-    ? { pool: preferred, relaxed: false }
-    : { pool, relaxed: true };
+  return { pool: items, relaxed };
 }
 
 /**
@@ -164,7 +171,7 @@ export function eligibleAlbums(
 
 async function pickAlbumFor(
   chosen: PersonalCandidate,
-  ctx: PersonalContext,
+  ctx: PersonalAlbumContext,
   rng: Rng
 ): Promise<MusicBrainzReleaseGroup | null> {
   const releaseGroups = await fetchReleaseGroupsForArtist(
@@ -201,36 +208,34 @@ function traceCandidates(
     score: c.candidate.score,
     genres: [...c.genres],
     genreOverlap: c.overlap,
-    isDifferentGenre: c.genres.size > 0 && c.overlap <= threshold,
+    isDifferentGenre: isDistantGenre(c.genres, c.overlap, threshold),
     chosen: c.candidate.artistMbid === chosen.candidate.artistMbid,
   }));
 }
 
 function assembleResult(
-  ctx: PersonalContext,
-  pool: PersonalCandidate[],
+  ctx: PersonalAlbumContext,
+  band: PersonalBand,
   chosen: PersonalCandidate,
-  album: MusicBrainzReleaseGroup,
-  bands: { widened: boolean; relaxed: boolean },
-  rule: PreferenceRule
+  album: MusicBrainzReleaseGroup
 ): BuiltAlbum {
   const sharedGenres = [...chosen.genres].filter((g) =>
     chosen.seedGenres.has(g)
   );
-  const selectionReason = rule.isPreferred(chosen.candidate.artistMbid)
-    ? rule.preferredReason
-    : rule.fallbackReason;
+  const selectionReason = band.rule.isPreferred(chosen.candidate.artistMbid)
+    ? band.rule.preferredReason
+    : band.rule.fallbackReason;
 
   const trace: PersonalTrace = {
     kind: "personal",
     seedArtist: chosen.seedArtist,
     seedGenres: [...chosen.seedGenres],
-    candidates: traceCandidates(pool, chosen, ctx.config.genreOverlapThreshold),
+    candidates: traceCandidates(band.pool, chosen, ctx.genreOverlapThreshold),
     chosenArtist: chosen.candidate.name,
     chosenGenres: [...chosen.genres],
     sharedGenres,
-    widened: bands.widened,
-    relaxedPreference: bands.relaxed,
+    widened: band.widened,
+    relaxedPreference: band.relaxed,
     selectionReason,
   };
 
@@ -263,30 +268,19 @@ function assembleResult(
  * genre — the ones a fan of that genre already owns.
  *
  * Costs one paced discography lookup per candidate artist tried, against the build's shared
- * budget. Returns null when the graph is empty or no candidate yields an eligible album, and
- * the caller falls back to the tag path — which is the only thing that works for a user whose
- * graph hasn't been built yet.
+ * budget. Returns null when no drawn candidate yields an eligible album, and the source chain
+ * falls through to the tag path — which is the only thing that works for a user whose graph
+ * has not been built yet.
  */
-export async function buildPersonalResult(
-  ctx: PersonalContext
+export async function pickPersonalAlbum(
+  band: PersonalBand | null,
+  ctx: PersonalAlbumContext
 ): Promise<BuiltAlbum | null> {
+  if (!band || band.pool.length === 0) return null;
   const rng = ctx.rng ?? Math.random;
-  if (ctx.similarGraph.length === 0) return null;
 
-  const candidates = collectCandidates(ctx.similarGraph);
-  if (candidates.length === 0) return null;
-
-  const { pool, widened } = withinTastePool(
-    candidates,
-    ctx.config.genreOverlapThreshold
-  );
-  const rule = preferenceRule(
-    ctx.config.libraryPreference,
-    ctx.artistInLibrary
-  );
-  const { pool: drawable, relaxed } = preferredPool(pool, rule);
   const drawn = weightedRandomPick(
-    drawable,
+    band.pool,
     (c) => c.weight,
     ARTIST_ATTEMPTS,
     rng
@@ -297,16 +291,7 @@ export async function buildPersonalResult(
     if (ctx.budget) ctx.budget.remaining -= 1;
 
     const album = await pickAlbumFor(chosen, ctx, rng);
-    if (album) {
-      return assembleResult(
-        ctx,
-        drawable,
-        chosen,
-        album,
-        { widened, relaxed },
-        rule
-      );
-    }
+    if (album) return assembleResult(ctx, band, chosen, album);
   }
 
   return null;
