@@ -145,17 +145,6 @@ describe("autoLayout", () => {
     expect(positions.get("aside")!.x).toBe(positions.get("c")!.x);
   });
 
-  it("reserves room in the lanes a long edge has to cross", () => {
-    const short = autoLayout(nodes, [edge("a", "b"), edge("b", "c")]);
-    const crossed = autoLayout(nodes, [
-      edge("a", "b"),
-      edge("b", "c"),
-      edge("a", "c"),
-    ]);
-
-    expect(crossed.get("c")!.y).toBeGreaterThan(short.get("c")!.y);
-  });
-
   it("orders a lane so its edges stop crossing each other", () => {
     const four = ["a", "b", "c", "d"].map(own);
     const positions = autoLayout(four, [edge("a", "d"), edge("b", "c")]);
@@ -171,20 +160,24 @@ describe("autoLayout", () => {
       edge("a", "c"),
       edge("a", "d"),
     ]);
+    const fanned = ["b", "c", "d"].map((id) => positions.get(id)!.y);
 
-    expect(positions.get("b")!.y).toBeLessThan(positions.get("a")!.y);
-    expect(positions.get("d")!.y).toBeGreaterThan(positions.get("a")!.y);
+    expect(Math.min(...fanned)).toBeLessThan(positions.get("a")!.y);
+    expect(Math.max(...fanned)).toBeGreaterThan(positions.get("a")!.y);
   });
 
-  it("centres a node on what it feeds", () => {
+  it("centres a node on the middle of what it feeds", () => {
     const hub = ["a", "b", "c", "d"].map(own);
     const positions = autoLayout(hub, [
       edge("a", "b"),
       edge("a", "c"),
       edge("a", "d"),
     ]);
+    const fanned = ["b", "c", "d"]
+      .map((id) => positions.get(id)!.y)
+      .sort((first, second) => first - second);
 
-    expect(positions.get("a")!.y).toBe(positions.get("c")!.y);
+    expect(positions.get("a")!.y).toBe(fanned[1]);
   });
 
   it("ignores edges to nodes outside this flow's selection", () => {

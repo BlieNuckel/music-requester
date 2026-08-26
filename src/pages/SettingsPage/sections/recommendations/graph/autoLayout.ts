@@ -1,3 +1,4 @@
+import { graphlib, layout } from "@dagrejs/dagre";
 import type { FlowNode } from "./flowSelection";
 import type { GraphEdge, GraphNode } from "@shared/recommenderGraph";
 
@@ -10,25 +11,6 @@ export type Spacing = "compact" | "comfortable" | "roomy";
 export type LayoutOptions = { direction: LayoutDirection; spacing: Spacing };
 
 export type NodeBox = Position & { width: number; height: number };
-
-/** One hop of the layout graph: a real edge, or a slice of one crossing a lane. */
-type Segment = { from: string; to: string };
-
-/**
- * A slot in a lane. Real nodes are cards; spacers are the room an edge needs to cross a lane
- * it has no business landing in, and are never rendered.
- *
- * Sizes are named for the flow rather than for the screen — `along` is how much of the
- * pipeline's direction the slot occupies, `across` how much of the other one — so the
- * placement maths is written once and the direction is applied at the end.
- */
-type Cell = {
-  id: string;
-  along: number;
-  across: number;
-  center: number;
-  spacer: boolean;
-};
 
 /** Card widths, matching the two node components. */
 export const NODE_WIDTH = 300;
@@ -48,25 +30,13 @@ const INPUT_ROW = 38;
 const DISCLOSURE = 22;
 const CHIP_ROW = 24;
 
-/** Room reserved in a lane for one edge passing through it, label included. */
-const EDGE_LANE = 44;
-
-/** Barycentre sweeps. Four is where the crossing count stops improving in practice. */
-const ORDER_PASSES = 4;
-
-/** Placement sweeps. Each one lets a lane pull on the lanes either side of it. */
-const PLACE_PASSES = 4;
-
-/** Sweeps of the lane-balancing pass. It settles well before this on a chart of this size. */
-const BALANCE_PASSES = 8;
+/** Room between two edges sharing a rank, so a label has somewhere to sit. */
+const EDGE_SEPARATION = 24;
 
 const lines = (text: string): number =>
   Math.max(1, Math.ceil(text.length / CHARS_PER_LINE));
 
 const wrapped = (text: string): number => lines(text) * LINE_HEIGHT;
-
-const mean = (values: number[]): number =>
-  values.reduce((sum, value) => sum + value, 0) / values.length;
 
 /**
  * How tall a node's card will be, estimated from its content rather than measured.
@@ -97,366 +67,17 @@ const nodeWidth = (entry: FlowNode): number =>
   entry.external ? EXTERNAL_WIDTH : NODE_WIDTH;
 
 /**
- * How far into the flow a node sits: one past its deepest input. The registry is acyclic,
- * but a guard is kept anyway so a future feedback edge degrades to a slightly odd layout
- * rather than a hung render.
- */
-function depthOf(
-  id: string,
-  inputs: Map<string, string[]>,
-  memo: Map<string, number>,
-  visiting: Set<string>
-): number {
-  const known = memo.get(id);
-  if (known !== undefined) return known;
-  if (visiting.has(id)) return 0;
-
-  visiting.add(id);
-  const parents = inputs.get(id) ?? [];
-  const depth = parents.length
-    ? Math.max(...parents.map((p) => depthOf(p, inputs, memo, visiting))) + 1
-    : 0;
-  visiting.delete(id);
-
-  memo.set(id, depth);
-  return depth;
-}
-
-function adjacency(edges: GraphEdge[]): {
-  inputs: Map<string, string[]>;
-  outputs: Map<string, string[]>;
-} {
-  const inputs = new Map<string, string[]>();
-  const outputs = new Map<string, string[]>();
-
-  for (const edge of edges) {
-    inputs.set(edge.to, [...(inputs.get(edge.to) ?? []), edge.from]);
-    outputs.set(edge.from, [...(outputs.get(edge.from) ?? []), edge.to]);
-  }
-  return { inputs, outputs };
-}
-
-/** Where a node may sit without any edge running backwards. */
-function feasibleLanes(
-  id: string,
-  inputs: Map<string, string[]>,
-  outputs: Map<string, string[]>,
-  layers: Map<string, number>
-): { lo: number; hi: number; ins: number; outs: number } {
-  const ins = inputs.get(id) ?? [];
-  const outs = outputs.get(id) ?? [];
-  const lo = ins.length
-    ? Math.max(...ins.map((from) => layers.get(from) ?? 0)) + 1
-    : 0;
-  const hi = outs.length
-    ? Math.min(...outs.map((to) => layers.get(to) ?? 0)) - 1
-    : lo;
-
-  return { lo, hi, ins: ins.length, outs: outs.length };
-}
-
-/**
- * Which lane each node sits in. Every node starts as early as its inputs permit, then slides
- * within the range where no edge would run backwards, towards whichever side it has more
- * edges on — and to the middle of that range when it has as many of each.
+ * Layered layout, delegated to dagre.
  *
- * Earliest-possible alone reads badly. "Listening over time" needs only the raw log, so it
- * landed beside the loader with its output crossing the entire chart to reach the node that
- * reads it, over six cards it has nothing to do with. Latest-possible alone simply moves the
- * problem onto the incoming edge. Sliding by degree shortens whichever side has more to lose,
- * and centring the ties halves the worst edge of a node that merely bridges two distant ends.
- */
-function assignLayers(
-  nodes: FlowNode[],
-  edges: GraphEdge[]
-): Map<string, number> {
-  const { inputs, outputs } = adjacency(edges);
-  const memo = new Map<string, number>();
-  const layers = new Map<string, number>();
-  const ids = nodes.map((entry) => entry.node.id);
-
-  for (const id of ids) layers.set(id, depthOf(id, inputs, memo, new Set()));
-
-  for (let pass = 0; pass < BALANCE_PASSES; pass += 1) {
-    for (const id of ids) {
-      const { lo, hi, ins, outs } = feasibleLanes(id, inputs, outputs, layers);
-      if (lo > hi) continue;
-
-      if (ins > outs) layers.set(id, lo);
-      else if (outs > ins) layers.set(id, hi);
-      else layers.set(id, Math.round((lo + hi) / 2));
-    }
-  }
-
-  const first = Math.min(...layers.values());
-  for (const id of ids) layers.set(id, (layers.get(id) ?? 0) - first);
-  return layers;
-}
-
-/**
- * Lanes of slots, with a spacer inserted wherever an edge crosses a lane it does not stop
- * in. The spacer holds a corridor open, so a long edge runs through empty space instead of
- * over the cards that happen to sit between its ends.
- */
-function buildColumns(
-  nodes: FlowNode[],
-  edges: GraphEdge[],
-  layers: Map<string, number>,
-  direction: LayoutDirection
-): { columns: Cell[][]; segments: Segment[] } {
-  const depth = Math.max(0, ...layers.values());
-  const columns: Cell[][] = Array.from({ length: depth + 1 }, () => []);
-  const segments: Segment[] = [];
-
-  for (const entry of nodes) {
-    const width = nodeWidth(entry);
-    const height = estimateNodeHeight(entry.node, entry.external);
-    columns[layers.get(entry.node.id) ?? 0].push({
-      id: entry.node.id,
-      along: direction === "LR" ? width : height,
-      across: direction === "LR" ? height : width,
-      center: 0,
-      spacer: false,
-    });
-  }
-
-  for (const edge of edges) {
-    const from = layers.get(edge.from);
-    const to = layers.get(edge.to);
-    if (from === undefined || to === undefined) continue;
-
-    let previous = edge.from;
-    for (let lane = from + 1; lane < to; lane += 1) {
-      const id = `${edge.id}@${lane}`;
-      columns[lane].push({
-        id,
-        along: 0,
-        across: EDGE_LANE,
-        center: 0,
-        spacer: true,
-      });
-      segments.push({ from: previous, to: id });
-      previous = id;
-    }
-    segments.push({ from: previous, to: edge.to });
-  }
-  return { columns, segments };
-}
-
-function neighboursOf(segments: Segment[]): {
-  before: Map<string, string[]>;
-  after: Map<string, string[]>;
-} {
-  const before = new Map<string, string[]>();
-  const after = new Map<string, string[]>();
-
-  for (const segment of segments) {
-    before.set(segment.to, [...(before.get(segment.to) ?? []), segment.from]);
-    after.set(segment.from, [...(after.get(segment.from) ?? []), segment.to]);
-  }
-  return { before, after };
-}
-
-/** One node's target slot: the average slot of what it connects to in the neighbouring lane. */
-function barycentre(
-  cell: Cell,
-  neighbours: Map<string, string[]>,
-  slots: Map<string, number>,
-  fallback: number
-): number {
-  const known = (neighbours.get(cell.id) ?? [])
-    .map((id) => slots.get(id))
-    .filter((slot): slot is number => slot !== undefined);
-
-  return known.length ? mean(known) : fallback;
-}
-
-function slotIndex(columns: Cell[][]): Map<string, number> {
-  const slots = new Map<string, number>();
-  for (const column of columns) {
-    column.forEach((cell, index) => slots.set(cell.id, index));
-  }
-  return slots;
-}
-
-/**
- * Order each lane so that connected slots line up across lanes, which is what removes
- * crossings. Sweeps forwards and backwards: a lane can only be ordered against one side at a
- * time, and alternating lets both sides pull on it.
- */
-function orderColumns(columns: Cell[][], segments: Segment[]): void {
-  const { before, after } = neighboursOf(segments);
-
-  for (let pass = 0; pass < ORDER_PASSES; pass += 1) {
-    const forward = pass % 2 === 0;
-    const order = forward
-      ? columns.map((_, index) => index)
-      : columns.map((_, index) => columns.length - 1 - index);
-
-    for (const index of order) {
-      const slots = slotIndex(columns);
-      const neighbours = forward ? before : after;
-      const keyed = columns[index].map((cell, position) => ({
-        cell,
-        key: barycentre(cell, neighbours, slots, position),
-        position,
-      }));
-
-      keyed.sort((a, b) => a.key - b.key || a.position - b.position);
-      columns[index] = keyed.map((entry) => entry.cell);
-    }
-  }
-}
-
-/**
- * The clearance each slot needs from the one before it in its lane.
- */
-function clearances(column: Cell[], gap: number): number[] {
-  return column.map((cell, index) =>
-    index === 0 ? 0 : (column[index - 1].across + cell.across) / 2 + gap
-  );
-}
-
-/**
- * The closest each slot can sit to where it wants to be without overlapping its neighbours
- * or swapping places with them: adjacent slots that would otherwise cross are pooled, and
- * each pool settles on its own average.
+ * This was hand-rolled first, through four rounds of the same lesson: ranks, then ordering so
+ * edges stop crossing, then corridors for an edge crossing a rank it does not stop in, then
+ * placement that could move a card up rather than only down. Every round was a step towards
+ * something dagre already does — ranks by network simplex, ordering by barycentre sweeps,
+ * dummy nodes for long edges, coordinates by Brandes-Köpf — and each one was a fresh chance
+ * for the chart to be subtly wrong in a way nobody notices without staring at it.
  *
- * Taking the greater of "where it wants to be" and "clear of the last one" is what produced
- * a staircase. A slot could be pushed down off its target but never up, so one low card
- * early on dragged everything after it downwards and the chart drifted into a corner instead
- * of spreading either side of its trunk.
- */
-function settle(column: Cell[], desired: number[], gap: number): number[] {
-  const offsets: number[] = [];
-  let running = 0;
-  for (const clearance of clearances(column, gap)) {
-    running += clearance;
-    offsets.push(running);
-  }
-
-  const pools: { total: number; count: number }[] = [];
-  for (const [index, want] of desired.entries()) {
-    pools.push({ total: want - offsets[index], count: 1 });
-    while (pools.length > 1) {
-      const last = pools[pools.length - 1];
-      const previous = pools[pools.length - 2];
-      if (last.total / last.count >= previous.total / previous.count) break;
-      previous.total += last.total;
-      previous.count += last.count;
-      pools.pop();
-    }
-  }
-
-  const settled: number[] = [];
-  for (const pool of pools) {
-    const value = pool.total / pool.count;
-    for (let n = 0; n < pool.count; n += 1) {
-      settled.push(value + offsets[settled.length]);
-    }
-  }
-  return settled;
-}
-
-/** Where each slot in a lane would sit if only what it connects to mattered. */
-function desiredCentres(
-  column: Cell[],
-  neighbours: { before: Map<string, string[]>; after: Map<string, string[]> },
-  centres: Map<string, number>
-): number[] {
-  return column.map((cell, index) => {
-    const linked = [
-      ...(neighbours.before.get(cell.id) ?? []),
-      ...(neighbours.after.get(cell.id) ?? []),
-    ]
-      .map((id) => centres.get(id))
-      .filter((centre): centre is number => centre !== undefined);
-
-    return linked.length ? mean(linked) : (centres.get(cell.id) ?? index);
-  });
-}
-
-/**
- * Place every slot along the cross axis, aligned with whatever it connects to on either
- * side. Lanes are swept in both directions so a card is pulled by what reads it as well as
- * by what feeds it, which is what lets a branch sit above the trunk rather than always
- * below it.
- */
-function placeColumns(
-  columns: Cell[][],
-  segments: Segment[],
-  gap: number
-): void {
-  const neighbours = neighboursOf(segments);
-  const centres = new Map<string, number>();
-
-  for (const column of columns) {
-    let bottom = -gap;
-    for (const cell of column) {
-      cell.center = bottom + gap + cell.across / 2;
-      bottom = cell.center + cell.across / 2;
-      centres.set(cell.id, cell.center);
-    }
-  }
-
-  for (let pass = 0; pass < PLACE_PASSES; pass += 1) {
-    const order =
-      pass % 2 === 0
-        ? columns.map((_, index) => index)
-        : columns.map((_, index) => columns.length - 1 - index);
-
-    for (const index of order) {
-      const column = columns[index];
-      const settled = settle(
-        column,
-        desiredCentres(column, neighbours, centres),
-        gap
-      );
-      column.forEach((cell, slot) => {
-        cell.center = settled[slot];
-        centres.set(cell.id, cell.center);
-      });
-    }
-  }
-}
-
-function toPositions(
-  columns: Cell[][],
-  direction: LayoutDirection,
-  gap: number
-): Map<string, Position> {
-  const positions = new Map<string, Position>();
-  const top = Math.min(
-    0,
-    ...columns.flatMap((column) =>
-      column
-        .filter((cell) => !cell.spacer)
-        .map((cell) => cell.center - cell.across / 2)
-    )
-  );
-  let offset = 0;
-
-  for (const column of columns) {
-    for (const cell of column) {
-      if (cell.spacer) continue;
-      const across = cell.center - cell.across / 2 - top;
-      positions.set(
-        cell.id,
-        direction === "LR" ? { x: offset, y: across } : { x: across, y: offset }
-      );
-    }
-    const extent = Math.max(0, ...column.map((cell) => cell.along));
-    offset += extent + gap * 2;
-  }
-  return positions;
-}
-
-/**
- * Layered layout: one lane per step of the pipeline, ordered so connected cards line up and
- * spaced so a long edge has somewhere to run that is not across an unrelated card.
- *
- * Authored coordinates were tried first and lost: they went stale the moment a node moved,
- * and the computed lanes read better anyway.
+ * What stays ours is the part dagre cannot know: how tall a card will be before it renders.
+ * The library places boxes; only we can say how big the box is going to be.
  */
 export function autoLayout(
   nodes: FlowNode[],
@@ -465,21 +86,41 @@ export function autoLayout(
 ): Map<string, Position> {
   const gap = GAPS[options.spacing];
   const known = new Set(nodes.map((entry) => entry.node.id));
-  const inFlow = edges.filter(
-    (edge) => known.has(edge.from) && known.has(edge.to)
-  );
 
-  const layers = assignLayers(nodes, inFlow);
-  const { columns, segments } = buildColumns(
-    nodes,
-    inFlow,
-    layers,
-    options.direction
-  );
-  orderColumns(columns, segments);
-  placeColumns(columns, segments, gap);
+  const graph = new graphlib.Graph({ multigraph: true });
+  graph.setGraph({
+    rankdir: options.direction,
+    nodesep: gap,
+    ranksep: gap * 2,
+    edgesep: EDGE_SEPARATION,
+  });
+  graph.setDefaultEdgeLabel(() => ({}));
 
-  return toPositions(columns, options.direction, gap);
+  for (const entry of nodes) {
+    graph.setNode(entry.node.id, {
+      width: nodeWidth(entry),
+      height: estimateNodeHeight(entry.node, entry.external),
+    });
+  }
+  for (const edge of edges) {
+    if (!known.has(edge.from) || !known.has(edge.to)) continue;
+    // Named, because two edges can share a pair — a node reading one field of the profile and
+    // falling back to another. An unnamed second edge would replace the first.
+    graph.setEdge(edge.from, edge.to, {}, edge.id);
+  }
+
+  layout(graph);
+
+  const positions = new Map<string, Position>();
+  for (const entry of nodes) {
+    const placed = graph.node(entry.node.id);
+    if (!placed) continue;
+    positions.set(entry.node.id, {
+      x: placed.x - placed.width / 2,
+      y: placed.y - placed.height / 2,
+    });
+  }
+  return positions;
 }
 
 /** The laid-out boxes, for asserting that nothing lands on top of anything else. */
