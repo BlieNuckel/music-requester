@@ -46,6 +46,7 @@ function renderCanvas(
           config: DEFAULT_PROMOTED_ALBUM,
           update: vi.fn(),
           openFlow: vi.fn(),
+          arrivedAt: null,
         }}
       >
         <RecommenderGraphCanvas

@@ -154,6 +154,16 @@ describe("RecommendationsSettingsPage", () => {
     expect(screen.getByText(/what we read from plex/i)).toBeInTheDocument();
   });
 
+  it("marks where a followed reference lands, and clears it on a manual switch", async () => {
+    renderPage();
+    await screen.findByText("Rating boost");
+
+    fireEvent.click(screen.getByRole("button", { name: "List" }));
+    fireEvent.click(screen.getByRole("button", { name: "Taste profile" }));
+
+    expect(document.querySelector("[data-arrived]")).toBeNull();
+  });
+
   it("switches nothing about the layout, which is not a choice any more", async () => {
     renderPage();
     await screen.findByText("Rating boost");

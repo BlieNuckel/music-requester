@@ -13,7 +13,9 @@ function renderCard(
   const update = vi.fn();
   const openFlow = vi.fn();
   render(
-    <RecommenderParamsContext.Provider value={{ config, update, openFlow }}>
+    <RecommenderParamsContext.Provider
+      value={{ config, update, openFlow, arrivedAt: null }}
+    >
       <NodeCard node={node} />
     </RecommenderParamsContext.Provider>
   );
@@ -29,6 +31,7 @@ describe("ExternalCard", () => {
           config: DEFAULT_PROMOTED_ALBUM,
           update: vi.fn(),
           openFlow,
+          arrivedAt: null,
         }}
       >
         <ExternalCard node={makeNode({ title: "Stored profile" })} />
@@ -40,7 +43,7 @@ describe("ExternalCard", () => {
     expect(screen.queryByLabelText("Rating weight")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /open that flow/i }));
-    expect(openFlow).toHaveBeenCalledWith("profile");
+    expect(openFlow).toHaveBeenCalledWith("profile", "ratingMultiplier");
   });
 });
 
@@ -196,5 +199,30 @@ describe("NodeCard", () => {
       screen.getByText("Counts distinct tracks played")
     ).toBeInTheDocument();
     expect(screen.getByText("Each artist's weight")).toBeInTheDocument();
+  });
+
+  it("marks the node a reference was followed into", () => {
+    render(
+      <RecommenderParamsContext.Provider
+        value={{
+          config: DEFAULT_PROMOTED_ALBUM,
+          update: vi.fn(),
+          openFlow: vi.fn(),
+          arrivedAt: "ratingMultiplier",
+        }}
+      >
+        <NodeCard node={makeNode()} />
+      </RecommenderParamsContext.Provider>
+    );
+
+    expect(
+      screen.getByText("Rating boost").closest("[data-arrived]")
+    ).not.toBeNull();
+  });
+
+  it("marks nothing when the flow was opened from the toolbar", () => {
+    renderCard(makeNode());
+
+    expect(document.querySelector("[data-arrived]")).toBeNull();
   });
 });

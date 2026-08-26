@@ -138,7 +138,7 @@ export function ExternalCard({ node }: NodeCardProps) {
       </h3>
       <button
         type="button"
-        onClick={() => openFlow(node.flow)}
+        onClick={() => openFlow(node.flow, node.id)}
         className="text-[11px] font-bold text-gray-500 dark:text-gray-400 hover:text-amber-600"
       >
         Open that flow
@@ -154,11 +154,19 @@ export function ExternalCard({ node }: NodeCardProps) {
  */
 export function NodeCard({ node }: NodeCardProps) {
   const [open, setOpen] = useState(false);
+  const { arrivedAt } = useRecommenderParams();
   const known = reachableParamKeys(node.params, node.usesParams);
   const badge = KIND_BADGE[node.kind];
 
   return (
-    <div className="w-[300px] rounded-xl border-2 border-black bg-white dark:bg-gray-800 shadow-cartoon-md overflow-hidden">
+    <div
+      data-arrived={arrivedAt === node.id ? "true" : undefined}
+      className={`w-[300px] rounded-xl border-2 border-black bg-white dark:bg-gray-800 shadow-cartoon-md overflow-hidden ${
+        arrivedAt === node.id
+          ? "ring-4 ring-amber-400 ring-offset-2 ring-offset-gray-50 dark:ring-offset-gray-900"
+          : ""
+      }`}
+    >
       <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b-2 border-black">
         <span
           className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${SCOPE_CLASS[node.scope]}`}

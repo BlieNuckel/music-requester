@@ -1,4 +1,5 @@
 import ParamControl from "./ParamControl";
+import { useRecommenderParams } from "./paramsContext";
 import { NODE_SCOPE_LABELS, SCOPE_EFFECT } from "@shared/recommenderGraph";
 import type {
   FlowId,
@@ -9,8 +10,17 @@ import type {
 type RecommenderListViewProps = { graph: RecommenderGraph; flow: FlowId };
 
 function NodeSection({ node }: { node: GraphNode }) {
+  const { arrivedAt } = useRecommenderParams();
+
   return (
-    <section className="space-y-3 pt-4 border-t-2 border-dashed border-gray-200 dark:border-gray-700">
+    <section
+      data-arrived={arrivedAt === node.id ? "true" : undefined}
+      className={`space-y-3 pt-4 border-t-2 border-dashed border-gray-200 dark:border-gray-700 ${
+        arrivedAt === node.id
+          ? "-mx-2 px-2 rounded-lg ring-4 ring-amber-400"
+          : ""
+      }`}
+    >
       <div>
         <div className="flex items-baseline gap-2">
           <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">

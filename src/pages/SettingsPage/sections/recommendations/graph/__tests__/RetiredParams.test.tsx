@@ -22,6 +22,7 @@ function renderWith(params: RetiredParam[], update = vi.fn()) {
         config: { ...DEFAULT_PROMOTED_ALBUM },
         update,
         openFlow: vi.fn(),
+        arrivedAt: null,
       }}
     >
       <RetiredParams params={params} />

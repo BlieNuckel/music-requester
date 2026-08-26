@@ -10,7 +10,12 @@ function renderList(graph: RecommenderGraph) {
   const openFlow = vi.fn();
   render(
     <RecommenderParamsContext.Provider
-      value={{ config: DEFAULT_PROMOTED_ALBUM, update, openFlow }}
+      value={{
+        config: DEFAULT_PROMOTED_ALBUM,
+        update,
+        openFlow,
+        arrivedAt: null,
+      }}
     >
       <RecommenderListView graph={graph} flow="profile" />
     </RecommenderParamsContext.Provider>

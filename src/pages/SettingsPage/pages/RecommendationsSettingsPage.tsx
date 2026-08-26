@@ -41,6 +41,7 @@ export default function RecommendationsSettingsPage() {
   const { data: graph, loading, error } = useRecommenderGraph();
   const [view, setView] = useState<RecommenderView>("graph");
   const [flow, setFlow] = useState<FlowId>("spotlight");
+  const [arrivedAt, setArrivedAt] = useState<string | null>(null);
 
   const config = fields.promotedAlbum ?? DEFAULT_PROMOTED_ALBUM;
   const params = useMemo(
@@ -50,9 +51,13 @@ export default function RecommendationsSettingsPage() {
         key: Parameters<typeof applyParamChange>[1],
         value: Parameters<typeof applyParamChange>[2]
       ) => updateField("promotedAlbum", applyParamChange(config, key, value)),
-      openFlow: setFlow,
+      openFlow: (next: FlowId, node: string) => {
+        setFlow(next);
+        setArrivedAt(node);
+      },
+      arrivedAt,
     }),
-    [config, updateField]
+    [config, updateField, arrivedAt]
   );
 
   if (isLoading || loading) return <LoadingState />;
@@ -70,7 +75,10 @@ export default function RecommendationsSettingsPage() {
         view={view}
         onViewChange={setView}
         flow={flow}
-        onFlowChange={setFlow}
+        onFlowChange={(next) => {
+          setFlow(next);
+          setArrivedAt(null);
+        }}
         onReset={() =>
           updateField("promotedAlbum", { ...DEFAULT_PROMOTED_ALBUM })
         }

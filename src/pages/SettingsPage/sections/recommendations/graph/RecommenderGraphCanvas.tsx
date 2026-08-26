@@ -9,6 +9,7 @@ import {
 } from "@xyflow/react";
 import RecommenderNode from "./NodeCard";
 import { buildFlow, layoutPositions } from "./flowModel";
+import { useRecommenderParams } from "./paramsContext";
 import { useTheme } from "@/context/useTheme";
 import { FLOWS } from "@shared/recommenderGraph";
 import type { LayoutOptions, MeasuredSizes } from "./autoLayout";
@@ -98,6 +99,7 @@ function SettleOnMeasured({
 }: RecommenderGraphCanvasProps) {
   const initialized = useNodesInitialized();
   const { getNodes, setNodes, fitView } = useReactFlow();
+  const { arrivedAt } = useRecommenderParams();
   const settled = useRef(false);
 
   useEffect(() => {
@@ -121,8 +123,24 @@ function SettleOnMeasured({
         position: positions.get(node.id) ?? node.position,
       }))
     );
-    void fitView();
-  }, [initialized, graph, flow, layout, getNodes, setNodes, fitView]);
+    // Land on the node a reference was followed into rather than on the whole chart, with
+    // enough room around it to see what it connects to.
+    const landing = arrivedAt && positions.has(arrivedAt);
+    void fitView(
+      landing
+        ? { nodes: [{ id: arrivedAt }], maxZoom: 1, padding: 1.2 }
+        : undefined
+    );
+  }, [
+    initialized,
+    graph,
+    flow,
+    layout,
+    arrivedAt,
+    getNodes,
+    setNodes,
+    fitView,
+  ]);
 
   return null;
 }
