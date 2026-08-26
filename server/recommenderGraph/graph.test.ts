@@ -24,13 +24,10 @@ import {
  */
 const CONFIG_HASH_KEYS = [
   "albumTagsPerArtist",
-  "distributionWeight",
   "exploreCandidateCount",
   "genericTags",
   "listeningWeight",
   "maxTrackMinutesForWeight",
-  "minAvailableTracksForDistribution",
-  "minPlaysForDistribution",
   "momentumRecentBuckets",
   "playTrendWindowDays",
   "ratingWeight",

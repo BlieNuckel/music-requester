@@ -14,9 +14,6 @@ export type ProfileConfigInputs = {
   tagsPerArtist: number;
   playTrendWindowDays: number;
   ratingWeight: number;
-  distributionWeight: number;
-  minPlaysForDistribution: number;
-  minAvailableTracksForDistribution: number;
   listeningWeight: number;
   maxTrackMinutesForWeight: number;
   topArtistsCount: number;
@@ -84,9 +81,6 @@ export function computeConfigHash(inputs: ProfileConfigInputs): string {
     tagsPerArtist: inputs.tagsPerArtist,
     playTrendWindowDays: inputs.playTrendWindowDays,
     ratingWeight: inputs.ratingWeight,
-    distributionWeight: inputs.distributionWeight,
-    minPlaysForDistribution: inputs.minPlaysForDistribution,
-    minAvailableTracksForDistribution: inputs.minAvailableTracksForDistribution,
     listeningWeight: inputs.listeningWeight,
     maxTrackMinutesForWeight: inputs.maxTrackMinutesForWeight,
     topArtistsCount: inputs.topArtistsCount,

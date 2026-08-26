@@ -167,12 +167,7 @@ function buildArtistTags(
     tags: tags
       .filter((t) => !genericTags.has(t.name.toLowerCase()))
       .slice(0, tagsPerArtist),
-    distinctTracksPlayed: artist.distinctTracksPlayed,
-    topTrackShare: artist.topTrackShare,
-    distributionFactor: artist.distributionFactor,
-    ratingBreadth: artist.ratingBreadth,
     ratingMultiplier: artist.ratingMultiplier,
-    availableTracks: artist.availableTracks,
   }));
 }
 
@@ -230,9 +225,6 @@ function artistWeightOptions(config: PromotedAlbumConfig): ArtistWeightOptions {
   return {
     windowMs: config.playTrendWindowDays * DAY_MS,
     ratingWeight: config.ratingWeight,
-    distributionWeight: config.distributionWeight,
-    minPlaysForDistribution: config.minPlaysForDistribution,
-    minAvailableTracksForDistribution: config.minAvailableTracksForDistribution,
     listeningWeight: config.listeningWeight,
     maxTrackMinutesForWeight: config.maxTrackMinutesForWeight,
   };

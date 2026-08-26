@@ -249,38 +249,8 @@ describe("RecommendationTraceModal", () => {
     });
   });
 
-  describe("play distribution", () => {
-    it("shows the spread factor for artists that carry one", () => {
-      renderModal({
-        plexArtists: [
-          {
-            name: "One Hit",
-            viewCount: 50,
-            picked: true,
-            tagContributions: [],
-            distinctTracksPlayed: 1,
-            topTrackShare: 1,
-            distributionFactor: 0.5,
-          },
-        ],
-      });
-
-      const spread = screen.getByTestId("artist-spread");
-      expect(spread).toHaveTextContent("×0.50 spread");
-      expect(spread).toHaveAttribute(
-        "title",
-        "1 track(s) played; top track is 100% of listening"
-      );
-    });
-
-    it("omits the spread factor for legacy artists without track detail", () => {
-      renderModal();
-      expect(screen.queryByTestId("artist-spread")).not.toBeInTheDocument();
-    });
-  });
-
   describe("rating boost", () => {
-    it("shows the rating multiplier and the breadth that refuted the spread", () => {
+    it("shows the rating multiplier", () => {
       renderModal({
         plexArtists: [
           {
@@ -288,10 +258,6 @@ describe("RecommendationTraceModal", () => {
             viewCount: 50,
             picked: true,
             tagContributions: [],
-            distinctTracksPlayed: 2,
-            topTrackShare: 0.9,
-            distributionFactor: 1,
-            ratingBreadth: 1,
             ratingMultiplier: 1.5,
           },
         ],
@@ -300,55 +266,11 @@ describe("RecommendationTraceModal", () => {
       expect(screen.getByTestId("artist-rating")).toHaveTextContent(
         "×1.50 rating"
       );
-      expect(screen.getByTestId("artist-spread")).toHaveAttribute(
-        "title",
-        "2 track(s) played; top track is 90% of listening; 100% of rating evidence sits off that track"
-      );
     });
 
     it("omits the rating multiplier for artists with nothing rated", () => {
       renderModal();
       expect(screen.queryByTestId("artist-rating")).not.toBeInTheDocument();
-    });
-  });
-
-  describe("catalogue exemption", () => {
-    it("shows the library track count for an exempted artist", () => {
-      renderModal({
-        plexArtists: [
-          {
-            name: "Singles Only",
-            viewCount: 50,
-            picked: true,
-            tagContributions: [],
-            availableTracks: 1,
-          },
-        ],
-      });
-
-      expect(screen.getByTestId("artist-catalogue")).toHaveTextContent(
-        "1 in library"
-      );
-    });
-
-    it("omits it for an artist that was discounted anyway", () => {
-      renderModal({
-        plexArtists: [
-          {
-            name: "Deep Catalogue",
-            viewCount: 50,
-            picked: true,
-            tagContributions: [],
-            distinctTracksPlayed: 1,
-            topTrackShare: 1,
-            distributionFactor: 0.5,
-            availableTracks: 12,
-          },
-        ],
-      });
-
-      expect(screen.queryByTestId("artist-catalogue")).not.toBeInTheDocument();
-      expect(screen.getByTestId("artist-spread")).toBeInTheDocument();
     });
   });
 

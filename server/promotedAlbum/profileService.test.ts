@@ -64,9 +64,6 @@ const baseConfig: PromotedAlbumConfig = {
   ratingsBackupEnabled: true,
   playTrendWindowDays: 90,
   ratingWeight: 0.5,
-  distributionWeight: 0,
-  minPlaysForDistribution: 5,
-  minAvailableTracksForDistribution: 0,
   listeningWeight: 1,
   maxTrackMinutesForWeight: 0,
   seriesBucketDays: 7,
@@ -308,38 +305,6 @@ describe("regenerateProfile", () => {
       { tag: "drone", weight: 30, fromArtists: ["Untagged"] },
       { tag: "ambient", weight: 30, fromArtists: ["Untagged"] },
     ]);
-  });
-
-  it("persists the play-distribution and rating stats carried by the weight set", async () => {
-    mockDeriveArtistWeights.mockReturnValue([
-      {
-        name: "Radiohead",
-        viewCount: 60,
-        distinctTracksPlayed: 4,
-        topTrackShare: 0.4,
-        distributionFactor: 0.8,
-        ratingBreadth: 0.6,
-        ratingMultiplier: 1.4,
-      },
-    ]);
-    mockGetArtistTopTags.mockResolvedValue(tags);
-
-    const profile = await regenerateProfile(userId, "tok");
-
-    expect(profile!.artistTags[0]).toMatchObject({
-      name: "Radiohead",
-      distinctTracksPlayed: 4,
-      topTrackShare: 0.4,
-      distributionFactor: 0.8,
-      ratingBreadth: 0.6,
-      ratingMultiplier: 1.4,
-    });
-
-    const stored = parseDerivedProfile(
-      (await getUserProfile(userId))!.profile_json
-    );
-    expect(stored.artistTags[0].distributionFactor).toBe(0.8);
-    expect(stored.artistTags[0].ratingMultiplier).toBe(1.4);
   });
 
   it("persists the albums the user already listens to", async () => {

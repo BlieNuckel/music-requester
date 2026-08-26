@@ -78,51 +78,6 @@ function GenreChips({
   );
 }
 
-function CatalogueNote({ artist }: { artist: TraceArtistEntry }) {
-  if (
-    artist.availableTracks === undefined ||
-    artist.distributionFactor !== undefined
-  ) {
-    return null;
-  }
-
-  return (
-    <span
-      data-testid="artist-catalogue"
-      className="text-[10px] opacity-70"
-      title="Exempt from the one-hit discount: the library holds too few tracks by this artist for concentrated plays to mean anything"
-    >
-      {artist.availableTracks} in library
-    </span>
-  );
-}
-
-function SpreadNote({ artist }: { artist: TraceArtistEntry }) {
-  if (
-    artist.topTrackShare === undefined ||
-    artist.distributionFactor === undefined
-  ) {
-    return null;
-  }
-
-  const breadthNote =
-    artist.ratingBreadth === undefined
-      ? ""
-      : `; ${Math.round(artist.ratingBreadth * 100)}% of rating evidence sits off that track`;
-
-  return (
-    <span
-      data-testid="artist-spread"
-      className="text-[10px] opacity-70"
-      title={`${artist.distinctTracksPlayed ?? 0} track(s) played; top track is ${Math.round(
-        artist.topTrackShare * 100
-      )}% of listening${breadthNote}`}
-    >
-      ×{artist.distributionFactor.toFixed(2)} spread
-    </span>
-  );
-}
-
 function RatingNote({ artist }: { artist: TraceArtistEntry }) {
   if (artist.ratingMultiplier === undefined) return null;
 
@@ -157,8 +112,6 @@ function PlexArtistsStage({
           >
             {a.name}
             <span className="text-[10px] opacity-70">({a.viewCount})</span>
-            <SpreadNote artist={a} />
-            <CatalogueNote artist={a} />
             <RatingNote artist={a} />
           </span>
         ))}

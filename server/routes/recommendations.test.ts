@@ -59,15 +59,15 @@ describe("GET /graph", () => {
     );
   });
 
-  it("carries the knobs no node reads any more, with their reason", async () => {
+  /**
+   * Empty today: the knob that was on its way out has left the settings entirely. The field
+   * stays because the mechanism is what lets a knob outlive the step that read it, for as
+   * long as the running pipeline still consults it.
+   */
+  it("carries no retired knobs while none are on their way out", async () => {
     const res = await request(app).get("/graph");
 
-    expect(res.body.retiredParams).toContainEqual(
-      expect.objectContaining({
-        key: "minAvailableTracksForDistribution",
-        reason: expect.any(String),
-      })
-    );
+    expect(res.body.retiredParams).toEqual([]);
   });
 
   it("says which nodes the recommender does not run yet", async () => {

@@ -181,9 +181,6 @@ const defaultPromotedAlbumConfig: PromotedAlbumConfig = {
   ratingsBackupEnabled: true,
   playTrendWindowDays: 90,
   ratingWeight: 0.5,
-  distributionWeight: 0,
-  minPlaysForDistribution: 5,
-  minAvailableTracksForDistribution: 0,
   listeningWeight: 1,
   maxTrackMinutesForWeight: 0,
   seriesBucketDays: 7,
@@ -1284,30 +1281,6 @@ describe("getPromotedAlbums", () => {
       );
       expect(radiohead!.tagContributions).toHaveLength(2);
       expect(radiohead!.tagContributions[0].tagName).toBe("alternative rock");
-    });
-
-    it("carries the play-distribution stats into the trace", async () => {
-      mockDeriveArtistWeights.mockReturnValue([
-        {
-          name: "Radiohead",
-          viewCount: 100,
-          distinctTracksPlayed: 6,
-          topTrackShare: 0.3,
-          distributionFactor: 0.85,
-        },
-      ]);
-      mockGetArtistTopTags.mockResolvedValue(tags);
-      mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
-      mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
-
-      const result = await getOne(userId);
-
-      expect(wt(result).trace.plexArtists[0]).toMatchObject({
-        name: "Radiohead",
-        distinctTracksPlayed: 6,
-        topTrackShare: 0.3,
-        distributionFactor: 0.85,
-      });
     });
   });
 

@@ -83,9 +83,6 @@ const CONFIG_INPUTS = {
   tagsPerArtist: 5,
   playTrendWindowDays: 90,
   ratingWeight: 0.5,
-  distributionWeight: 0.5,
-  minPlaysForDistribution: 5,
-  minAvailableTracksForDistribution: 3,
   listeningWeight: 1,
   maxTrackMinutesForWeight: 0,
   topArtistsCount: 10,
@@ -169,18 +166,9 @@ describe("computeConfigHash", () => {
     expect(
       computeConfigHash({ ...CONFIG_INPUTS, playTrendWindowDays: 30 })
     ).not.toBe(computeConfigHash(CONFIG_INPUTS));
-    expect(
-      computeConfigHash({ ...CONFIG_INPUTS, distributionWeight: 0 })
-    ).not.toBe(computeConfigHash(CONFIG_INPUTS));
-    expect(
-      computeConfigHash({ ...CONFIG_INPUTS, minPlaysForDistribution: 10 })
-    ).not.toBe(computeConfigHash(CONFIG_INPUTS));
-    expect(
-      computeConfigHash({
-        ...CONFIG_INPUTS,
-        minAvailableTracksForDistribution: 0,
-      })
-    ).not.toBe(computeConfigHash(CONFIG_INPUTS));
+    expect(computeConfigHash({ ...CONFIG_INPUTS, ratingWeight: 0 })).not.toBe(
+      computeConfigHash(CONFIG_INPUTS)
+    );
   });
 
   it("ignores fields that are applied at selection time, not to the profile", () => {

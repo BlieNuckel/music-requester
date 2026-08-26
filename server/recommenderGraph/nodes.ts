@@ -6,7 +6,6 @@ import type {
   NodeStatus,
   RetiredParam,
 } from "../../shared/recommenderGraph";
-import { PARAMS } from "./params";
 import type { ParamKey } from "./params";
 
 export type NodeInput = {
@@ -225,7 +224,7 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     status: "ported",
     module: "server/services/profile/artistWeighting.ts",
     inputs: [data("artistListening"), data("artistRatings")],
-    params: ["distributionWeight", "minPlaysForDistribution", "ratingWeight"],
+    params: ["ratingWeight"],
   },
   {
     id: "artistSeries",
@@ -781,14 +780,8 @@ export const NODE_REGISTRY: NodeRegistration[] = [
 
 /**
  * Knobs the settings still carry, and a stored profile's config hash still covers, that no
- * node in this graph reads any more. The pipeline running today still reads them — the
- * nodes replacing their work are `ported`, not live — so they stay settable and stay
- * described honestly until that changes.
+ * node in this graph reads any more. Empty today, and the mechanism stays: it is what lets a
+ * knob outlive the step that read it for exactly as long as the pipeline still consults it,
+ * rather than being parked on a node that ignores it.
  */
-export const RETIRED_PARAMS: RetiredParam[] = [
-  {
-    ...PARAMS.minAvailableTracksForDistribution,
-    reason:
-      "The replacement one-hit discount measures concentration against spreading the same listening evenly across the tracks actually played, so an artist with one played track scores nothing on its own. The exemption this knob buys falls out of that arithmetic, and the library catalogue no longer has to be captured to grant it. Until that step goes live, this knob still decides which artists are exempt.",
-  },
-];
+export const RETIRED_PARAMS: RetiredParam[] = [];

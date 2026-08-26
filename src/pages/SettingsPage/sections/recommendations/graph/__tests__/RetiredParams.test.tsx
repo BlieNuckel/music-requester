@@ -5,7 +5,7 @@ import { DEFAULT_PROMOTED_ALBUM } from "@/context/promotedAlbumDefaults";
 import type { RetiredParam } from "@shared/recommenderGraph";
 
 const param: RetiredParam = {
-  key: "minAvailableTracksForDistribution",
+  key: "topArtistsCount",
   kind: "int",
   label: "Small catalogue exemption",
   min: 0,
@@ -53,6 +53,6 @@ describe("RetiredParams", () => {
 
     fireEvent.change(input, { target: { value: "7" } });
 
-    expect(update).toHaveBeenCalledWith("minAvailableTracksForDistribution", 7);
+    expect(update).toHaveBeenCalledWith("topArtistsCount", 7);
   });
 });
