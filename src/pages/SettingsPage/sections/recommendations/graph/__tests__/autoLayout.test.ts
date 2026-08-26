@@ -164,6 +164,29 @@ describe("autoLayout", () => {
     expect(positions.get("d")!.y).toBeLessThan(positions.get("c")!.y);
   });
 
+  it("fans a lane either side of what it came from, not only below it", () => {
+    const hub = ["a", "b", "c", "d"].map(own);
+    const positions = autoLayout(hub, [
+      edge("a", "b"),
+      edge("a", "c"),
+      edge("a", "d"),
+    ]);
+
+    expect(positions.get("b")!.y).toBeLessThan(positions.get("a")!.y);
+    expect(positions.get("d")!.y).toBeGreaterThan(positions.get("a")!.y);
+  });
+
+  it("centres a node on what it feeds", () => {
+    const hub = ["a", "b", "c", "d"].map(own);
+    const positions = autoLayout(hub, [
+      edge("a", "b"),
+      edge("a", "c"),
+      edge("a", "d"),
+    ]);
+
+    expect(positions.get("a")!.y).toBe(positions.get("c")!.y);
+  });
+
   it("ignores edges to nodes outside this flow's selection", () => {
     const positions = autoLayout(nodes, [edge("elsewhere", "a")]);
 

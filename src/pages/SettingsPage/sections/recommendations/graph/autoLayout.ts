@@ -54,6 +54,9 @@ const EDGE_LANE = 44;
 /** Barycentre sweeps. Four is where the crossing count stops improving in practice. */
 const ORDER_PASSES = 4;
 
+/** Placement sweeps. Each one lets a lane pull on the lanes either side of it. */
+const PLACE_PASSES = 4;
+
 /** Sweeps of the lane-balancing pass. It settles well before this on a chart of this size. */
 const BALANCE_PASSES = 8;
 
@@ -306,27 +309,113 @@ function orderColumns(columns: Cell[][], segments: Segment[]): void {
 }
 
 /**
- * Place every slot along the cross axis: aligned with what feeds it where there is room, and
- * pushed clear of the slot above it where there is not. Stacking alone packs every lane
- * against the top edge, which reads as a wall of cards rather than as a flow.
+ * The clearance each slot needs from the one before it in its lane.
+ */
+function clearances(column: Cell[], gap: number): number[] {
+  return column.map((cell, index) =>
+    index === 0 ? 0 : (column[index - 1].across + cell.across) / 2 + gap
+  );
+}
+
+/**
+ * The closest each slot can sit to where it wants to be without overlapping its neighbours
+ * or swapping places with them: adjacent slots that would otherwise cross are pooled, and
+ * each pool settles on its own average.
+ *
+ * Taking the greater of "where it wants to be" and "clear of the last one" is what produced
+ * a staircase. A slot could be pushed down off its target but never up, so one low card
+ * early on dragged everything after it downwards and the chart drifted into a corner instead
+ * of spreading either side of its trunk.
+ */
+function settle(column: Cell[], desired: number[], gap: number): number[] {
+  const offsets: number[] = [];
+  let running = 0;
+  for (const clearance of clearances(column, gap)) {
+    running += clearance;
+    offsets.push(running);
+  }
+
+  const pools: { total: number; count: number }[] = [];
+  for (const [index, want] of desired.entries()) {
+    pools.push({ total: want - offsets[index], count: 1 });
+    while (pools.length > 1) {
+      const last = pools[pools.length - 1];
+      const previous = pools[pools.length - 2];
+      if (last.total / last.count >= previous.total / previous.count) break;
+      previous.total += last.total;
+      previous.count += last.count;
+      pools.pop();
+    }
+  }
+
+  const settled: number[] = [];
+  for (const pool of pools) {
+    const value = pool.total / pool.count;
+    for (let n = 0; n < pool.count; n += 1) {
+      settled.push(value + offsets[settled.length]);
+    }
+  }
+  return settled;
+}
+
+/** Where each slot in a lane would sit if only what it connects to mattered. */
+function desiredCentres(
+  column: Cell[],
+  neighbours: { before: Map<string, string[]>; after: Map<string, string[]> },
+  centres: Map<string, number>
+): number[] {
+  return column.map((cell, index) => {
+    const linked = [
+      ...(neighbours.before.get(cell.id) ?? []),
+      ...(neighbours.after.get(cell.id) ?? []),
+    ]
+      .map((id) => centres.get(id))
+      .filter((centre): centre is number => centre !== undefined);
+
+    return linked.length ? mean(linked) : (centres.get(cell.id) ?? index);
+  });
+}
+
+/**
+ * Place every slot along the cross axis, aligned with whatever it connects to on either
+ * side. Lanes are swept in both directions so a card is pulled by what reads it as well as
+ * by what feeds it, which is what lets a branch sit above the trunk rather than always
+ * below it.
  */
 function placeColumns(
   columns: Cell[][],
   segments: Segment[],
   gap: number
 ): void {
-  const { before } = neighboursOf(segments);
+  const neighbours = neighboursOf(segments);
   const centres = new Map<string, number>();
 
   for (const column of columns) {
     let bottom = -gap;
-
     for (const cell of column) {
-      const free = bottom + gap + cell.across / 2;
-      const target = barycentre(cell, before, centres, free);
-      cell.center = Math.max(target, free);
+      cell.center = bottom + gap + cell.across / 2;
       bottom = cell.center + cell.across / 2;
       centres.set(cell.id, cell.center);
+    }
+  }
+
+  for (let pass = 0; pass < PLACE_PASSES; pass += 1) {
+    const order =
+      pass % 2 === 0
+        ? columns.map((_, index) => index)
+        : columns.map((_, index) => columns.length - 1 - index);
+
+    for (const index of order) {
+      const column = columns[index];
+      const settled = settle(
+        column,
+        desiredCentres(column, neighbours, centres),
+        gap
+      );
+      column.forEach((cell, slot) => {
+        cell.center = settled[slot];
+        centres.set(cell.id, cell.center);
+      });
     }
   }
 }
@@ -337,12 +426,20 @@ function toPositions(
   gap: number
 ): Map<string, Position> {
   const positions = new Map<string, Position>();
+  const top = Math.min(
+    0,
+    ...columns.flatMap((column) =>
+      column
+        .filter((cell) => !cell.spacer)
+        .map((cell) => cell.center - cell.across / 2)
+    )
+  );
   let offset = 0;
 
   for (const column of columns) {
     for (const cell of column) {
       if (cell.spacer) continue;
-      const across = cell.center - cell.across / 2;
+      const across = cell.center - cell.across / 2 - top;
       positions.set(
         cell.id,
         direction === "LR" ? { x: offset, y: across } : { x: across, y: offset }
