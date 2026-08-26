@@ -6,7 +6,6 @@ import type {
   NodeStatus,
   RetiredParam,
 } from "../../shared/recommenderGraph";
-import { PARAMS } from "./params";
 import type { ParamKey } from "./params";
 
 export type NodeInput = {
@@ -127,7 +126,6 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     ],
     gives: "The four series, raw",
     flow: "listening",
-    status: "ported",
     module: "server/services/profile/profileSignals.ts",
     inputs: [data("signalLog")],
   },
@@ -145,7 +143,6 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     ],
     gives: "Current state: listening per track, ratings, album genres",
     flow: "listening",
-    status: "ported",
     module: "server/services/profile/profileSignals.ts",
     inputs: [data("loadSignals")],
     usesParams: ["maxTrackMinutesForWeight"],
@@ -164,7 +161,6 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     ],
     gives: "One row per track: plays and listening time in the window",
     flow: "listening",
-    status: "ported",
     module: "server/services/profile/listeningWindow.ts",
     inputs: [
       data("loadSignals", "plays + episodes"),
@@ -186,7 +182,6 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     ],
     gives: "Each artist's weight, and how their listening spread",
     flow: "listening",
-    status: "ported",
     module: "server/services/profile/artistWeighting.ts",
     inputs: [data("listeningWindow")],
     params: ["listeningWeight"],
@@ -205,7 +200,6 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     ],
     gives: "A rating and a breadth per artist",
     flow: "listening",
-    status: "ported",
     module: "server/services/profile/artistWeighting.ts",
     inputs: [data("foldToNow", "latest ratings"), data("listeningWindow")],
   },
@@ -222,10 +216,9 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     ],
     gives: "The weight the recommender ranks by",
     flow: "ranking",
-    status: "ported",
     module: "server/services/profile/artistWeighting.ts",
     inputs: [data("artistListening"), data("artistRatings")],
-    params: ["distributionWeight", "minPlaysForDistribution", "ratingWeight"],
+    params: ["ratingWeight"],
   },
   {
     id: "artistSeries",
@@ -295,7 +288,6 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     does: ["Groups the window's rows by album"],
     gives: "Each album's listening, and how many of its tracks were played",
     flow: "listening",
-    status: "ported",
     module: "server/services/profile/listeningWindow.ts",
     inputs: [data("listeningWindow")],
   },
@@ -395,7 +387,6 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     does: ["Keeps records played enough, across enough of their tracks"],
     gives: "Albums to keep recommendations off",
     flow: "listening",
-    status: "ported",
     module: "server/services/profile/listeningWindow.ts",
     inputs: [data("foldToNow", "all-time plays")],
   },
@@ -781,14 +772,8 @@ export const NODE_REGISTRY: NodeRegistration[] = [
 
 /**
  * Knobs the settings still carry, and a stored profile's config hash still covers, that no
- * node in this graph reads any more. The pipeline running today still reads them — the
- * nodes replacing their work are `ported`, not live — so they stay settable and stay
- * described honestly until that changes.
+ * node in this graph reads any more. Empty today, and the mechanism stays: it is what lets a
+ * knob outlive the step that read it for exactly as long as the pipeline still consults it,
+ * rather than being parked on a node that ignores it.
  */
-export const RETIRED_PARAMS: RetiredParam[] = [
-  {
-    ...PARAMS.minAvailableTracksForDistribution,
-    reason:
-      "The replacement one-hit discount measures concentration against spreading the same listening evenly across the tracks actually played, so an artist with one played track scores nothing on its own. The exemption this knob buys falls out of that arithmetic, and the library catalogue no longer has to be captured to grant it. Until that step goes live, this knob still decides which artists are exempt.",
-  },
-];
+export const RETIRED_PARAMS: RetiredParam[] = [];

@@ -14,15 +14,8 @@ export type TraceArtistEntry = {
   viewCount: number;
   picked: boolean;
   tagContributions: TraceArtistTagContribution[];
-  /** Absent for artists known only from the legacy artist-level plays series. */
-  distinctTracksPlayed?: number;
-  topTrackShare?: number;
-  distributionFactor?: number;
   /** Absent for artists with nothing rated. */
-  ratingBreadth?: number;
   ratingMultiplier?: number;
-  /** Absent until a catalogue capture has run for this user. */
-  availableTracks?: number;
 };
 
 export type TraceWeightedTag = {

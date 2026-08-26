@@ -44,7 +44,6 @@ export type ArtistListening = {
  */
 export type ArtistRating = {
   rating: number;
-  breadth: number;
 };
 
 /** An artist's effective weight, and the terms that produced it. */
@@ -53,23 +52,15 @@ export type ArtistWeight = {
   weight: number;
   plays: number;
   distinctTracksPlayed: number;
-  topTrackShare: number;
-  concentration: number;
-  distributionFactor: number;
-  breadth?: number;
   rating?: number;
   ratingMultiplier?: number;
 };
 
 export type WeightAdjustOptions = {
-  /** `0` disables the one-hit discount outright. */
-  distributionWeight: number;
-  /** Plays below which concentration is noise rather than evidence. */
-  minPlays: number;
   ratingWeight: number;
 };
 
-type RatingTotals = { weighted: number; weight: number; rated: number };
+type RatingTotals = { weighted: number; weight: number };
 
 /** Album key → the listening its tracks hold, so an album rating joins onto plays. */
 function albumPlaysByKey(
@@ -169,92 +160,50 @@ export function deriveArtistRatings(
     if (!artist) continue;
 
     const weight = 1 + (track?.plays ?? album?.plays ?? 0);
-    const entry = totals.get(artist) ?? { weighted: 0, weight: 0, rated: 0 };
+    const entry = totals.get(artist) ?? { weighted: 0, weight: 0 };
     entry.weighted += payload.rating * weight;
     entry.weight += weight;
-    entry.rated += 1;
     totals.set(artist, entry);
   }
 
   const signals = new Map<string, ArtistRating>();
-  for (const [name, { weighted, weight, rated }] of totals) {
-    signals.set(name, { rating: weighted / weight, breadth: 1 - 1 / rated });
+  for (const [name, { weighted, weight }] of totals) {
+    signals.set(name, { rating: weighted / weight });
   }
   return signals;
 }
 
 /**
- * How concentrated an artist's listening is, measured against what spreading it evenly over
- * the tracks actually played would look like: `(share - 1/n) / (1 - 1/n)`.
+ * The artist's effective weight: listening, boosted by rating.
  *
- * The raw share cannot answer this on its own. One track played is a share of `1` by
- * construction, so a raw share puts the *strongest* discount exactly where there is no
- * evidence — which is what the library-catalogue exemption used to patch, at the cost of a
- * capture, a node and a knob. Here `n = 1` has no baseline to beat and scores `0`, a small
- * catalogue scores weakly, and only real concentration across several played tracks scores
- * high. Below-average concentration clamps to `0` rather than becoming a bonus.
- */
-export function concentrationOf(
-  topTrackShare: number,
-  distinctTracksPlayed: number
-): number {
-  if (distinctTracksPlayed <= 1) return 0;
-  const expected = 1 / distinctTracksPlayed;
-  return Math.max(0, (topTrackShare - expected) / (1 - expected));
-}
-
-/**
- * The artist's effective weight: listening, discounted for concentration, boosted by rating.
- * One node because the two terms are coupled by design and reading them as independent is
- * the mistake they were shaped to prevent — the discount is scaled by `(1 - breadth)`
- * precisely so that starring an artist argues against the one-hit read instead of pulling
- * the same direction whichever track was starred.
+ *   `weight × (1 + ratingWeight × rating/10)`
  *
- *   `weight × (1 - distributionWeight × concentration × (1 - breadth)) × (1 + ratingWeight × rating/10)`
- *
- * One song on repeat is a song the user likes; the same time spread over a catalogue is an
- * artist they like, and only the second should pull a whole tag set into the genre vector.
- * Artists below `minPlays` are left undiscounted — at a handful of plays concentration is
- * noise — and `distributionWeight` of `0` switches the discount off from settings.
+ * There was a one-hit discount here too, scaling the weight down by how concentrated an
+ * artist's listening was on a single track. It went because it could not earn what it cost:
+ * three knobs, a library-catalogue capture and a coupling to rating breadth, all to nudge one
+ * artist's share of a vector that is normalized and then matched fuzzily against tag charts.
+ * Whether a one-hit wonder sits at rank twelve or rank eighteen changes no recommendation
+ * anyone notices.
  */
 export function adjustArtistWeights(
   listening: ArtistListening[],
   ratings: Map<string, ArtistRating>,
   options: WeightAdjustOptions
 ): ArtistWeight[] {
-  const { distributionWeight, minPlays, ratingWeight } = options;
+  const { ratingWeight } = options;
 
   return listening.map((artist) => {
     const signal = ratings.get(artist.name);
-    const discountable =
-      distributionWeight > 0 &&
-      artist.plays >= minPlays &&
-      artist.listenedMs > 0;
-
-    const concentration = discountable
-      ? concentrationOf(artist.topTrackShare, artist.distinctTracksPlayed)
-      : 0;
-    const distributionFactor =
-      1 - distributionWeight * concentration * (1 - (signal?.breadth ?? 0));
     const ratingMultiplier = signal
       ? 1 + ratingWeight * (signal.rating / 10)
       : 1;
 
     return {
       name: artist.name,
-      weight: artist.weight * distributionFactor * ratingMultiplier,
+      weight: artist.weight * ratingMultiplier,
       plays: artist.plays,
       distinctTracksPlayed: artist.distinctTracksPlayed,
-      topTrackShare: artist.topTrackShare,
-      concentration,
-      distributionFactor,
-      ...(signal
-        ? {
-            breadth: signal.breadth,
-            rating: signal.rating,
-            ratingMultiplier,
-          }
-        : {}),
+      ...(signal ? { rating: signal.rating, ratingMultiplier } : {}),
     };
   });
 }

@@ -10,14 +10,52 @@ const mockGetArtistTopTags = vi.fn();
 const mockGetConfigValue = vi.fn();
 const mockBuildSimilarGraph = vi.fn();
 
-vi.mock("./artistWeights", () => ({
-  loadSignalBundle: async (...args: unknown[]) => {
-    await mockLoadSignalBundle(...args);
-    return { albumEvents: mockAlbumEvents() };
-  },
-  deriveArtistWeights: (...args: unknown[]) => mockDeriveArtistWeights(...args),
-  deriveAlbumWeights: (...args: unknown[]) => mockDeriveAlbumWeights(...args),
-}));
+/**
+ * The build is a graph run now, so the seam is a node body rather than a module export: the
+ * three overridden here are where the signals enter, where the weight set is settled, and
+ * where the album rollup is. Everything between them runs for real.
+ */
+vi.mock("./profileGraph", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./profileGraph")>();
+  return {
+    ...actual,
+    PROFILE_BODIES: new Map([
+      ...actual.PROFILE_BODIES,
+      [
+        "loadSignals",
+        async (_i: unknown, ctx: { userId: number; plexToken: string }) => {
+          await mockLoadSignalBundle(ctx.userId, ctx.plexToken);
+          const { getSignalEvents } = await import("../db/userProfile");
+          return {
+            trackEvents: await getSignalEvents(ctx.userId, "plex_track_plays"),
+            ratingEvents: await getSignalEvents(ctx.userId, "plex_rating"),
+            albumEvents: mockAlbumEvents(),
+            episodes: new Map(),
+          };
+        },
+      ],
+      ["attachSeries", () => mockDeriveArtistWeights()],
+      [
+        "albumListening",
+        () =>
+          (
+            mockDeriveAlbumWeights() as {
+              albumKey: string;
+              title: string;
+              artistKey: string;
+              artistName: string;
+              playCount: number;
+              listenedMs: number;
+            }[]
+          ).map((album) => ({
+            ...album,
+            plays: album.playCount,
+            distinctTracksPlayed: 1,
+          })),
+      ],
+    ]),
+  };
+});
 
 vi.mock("./explore", () => ({
   buildSimilarGraph: (...args: unknown[]) => mockBuildSimilarGraph(...args),
@@ -64,9 +102,6 @@ const baseConfig: PromotedAlbumConfig = {
   ratingsBackupEnabled: true,
   playTrendWindowDays: 90,
   ratingWeight: 0.5,
-  distributionWeight: 0,
-  minPlaysForDistribution: 5,
-  minAvailableTracksForDistribution: 0,
   listeningWeight: 1,
   maxTrackMinutesForWeight: 0,
   seriesBucketDays: 7,
@@ -310,39 +345,12 @@ describe("regenerateProfile", () => {
     ]);
   });
 
-  it("persists the play-distribution and rating stats carried by the weight set", async () => {
-    mockDeriveArtistWeights.mockReturnValue([
-      {
-        name: "Radiohead",
-        viewCount: 60,
-        distinctTracksPlayed: 4,
-        topTrackShare: 0.4,
-        distributionFactor: 0.8,
-        ratingBreadth: 0.6,
-        ratingMultiplier: 1.4,
-      },
-    ]);
-    mockGetArtistTopTags.mockResolvedValue(tags);
-
-    const profile = await regenerateProfile(userId, "tok");
-
-    expect(profile!.artistTags[0]).toMatchObject({
-      name: "Radiohead",
-      distinctTracksPlayed: 4,
-      topTrackShare: 0.4,
-      distributionFactor: 0.8,
-      ratingBreadth: 0.6,
-      ratingMultiplier: 1.4,
-    });
-
-    const stored = parseDerivedProfile(
-      (await getUserProfile(userId))!.profile_json
-    );
-    expect(stored.artistTags[0].distributionFactor).toBe(0.8);
-    expect(stored.artistTags[0].ratingMultiplier).toBe(1.4);
-  });
-
-  it("persists the albums the user already listens to", async () => {
+  /**
+   * A record counts as known once it has been played enough *across enough of its tracks*.
+   * Plays alone marked a record known off one hit on repeat, which is the case most worth
+   * recommending the rest of the record for.
+   */
+  it("persists the albums the user has actually been through", async () => {
     await appendSignalEvent(userId, "plex_track_plays", {
       tracks: [
         {
@@ -352,7 +360,16 @@ describe("regenerateProfile", () => {
           artistName: "Slowdive",
           albumKey: "alb-1",
           albumTitle: "Souvlaki",
-          playCount: 12,
+          playCount: 8,
+        },
+        {
+          ratingKey: "2",
+          title: "Machine Gun",
+          artistKey: "ak",
+          artistName: "Slowdive",
+          albumKey: "alb-1",
+          albumTitle: "Souvlaki",
+          playCount: 4,
         },
       ],
     });
@@ -364,6 +381,26 @@ describe("regenerateProfile", () => {
       (await getUserProfile(userId))!.profile_json
     );
     expect(stored.knownAlbums).toEqual(["slowdive::souvlaki"]);
+  });
+
+  it("leaves a record known off one track on repeat open to recommendation", async () => {
+    await appendSignalEvent(userId, "plex_track_plays", {
+      tracks: [
+        {
+          ratingKey: "1",
+          title: "Alison",
+          artistKey: "ak",
+          artistName: "Slowdive",
+          albumKey: "alb-1",
+          albumTitle: "Souvlaki",
+          playCount: 40,
+        },
+      ],
+    });
+
+    const profile = await regenerateProfile(userId, "token");
+
+    expect(profile!.knownAlbums).toEqual([]);
   });
 
   it("builds and persists the similar-artist graph from the top artists", async () => {

@@ -11,9 +11,6 @@ import {
   derivePlayWeights,
   toPlayEquivalents,
   deriveWindowedTrackPlays,
-  deriveArtistDistributions,
-  deriveTrackAvailability,
-  applyDistributionFactor,
   reconstructArtistTotals,
   aggregateArtistRatings,
   applyRatingMultiplier,
@@ -22,14 +19,10 @@ import {
   type ArtistRatingSignal,
   type ArtistWeight,
   type ArtistWeightOptions,
-  type DistributionOptions,
   type PlayWeightOptions,
   type SignalBundle,
 } from "./artistWeights";
-import {
-  NOMINAL_TRACK_MS,
-  type ArtistPlayRollup,
-} from "../services/profile/signalIngestion";
+import { NOMINAL_TRACK_MS } from "../services/profile/signalIngestion";
 import { initializeDatabase, closeDatabase, getDataSource } from "../db";
 import { appendSignalEvent, getSignalEvents } from "../db/userProfile";
 import type { UserSignalEvent } from "../db/entity/UserSignalEvent";
@@ -62,9 +55,6 @@ function weightOptions(overrides: Partial<ArtistWeightOptions> = {}) {
   return {
     windowMs: 30 * DAY,
     ratingWeight: 0.5,
-    distributionWeight: 0,
-    minPlaysForDistribution: 5,
-    minAvailableTracksForDistribution: 0,
     listeningWeight: 1,
     maxTrackMinutesForWeight: 0,
     now: NOW,
@@ -115,21 +105,11 @@ function ratingEvent(
 }
 
 /** The two folds `loadArtistWeights` shares, from a raw track series. */
-function foldTracks(events: UserSignalEvent[], windowStart: number | null) {
-  const tracks = deriveWindowedTrackPlays(events, windowStart);
-  return { tracks, distributions: deriveArtistDistributions(tracks) };
-}
-
-function artistDistributions(
-  events: UserSignalEvent[],
-  windowStart: number | null
-) {
-  return foldTracks(events, windowStart).distributions;
-}
-
 function ratingsFor(events: UserSignalEvent[], ratings: UserSignalEvent[]) {
-  const { tracks, distributions } = foldTracks(events, null);
-  return aggregateArtistRatings(ratings, tracks, distributions);
+  return aggregateArtistRatings(
+    ratings,
+    deriveWindowedTrackPlays(events, null)
+  );
 }
 
 describe("reconstructArtistTotals", () => {
@@ -455,431 +435,6 @@ describe("deriveWindowedTrackPlays", () => {
   });
 });
 
-describe("deriveArtistDistributions", () => {
-  it("reports plays, distinct tracks, and the top track per artist", () => {
-    const dists = artistDistributions(
-      [
-        trackEvent(
-          [
-            { ratingKey: "1", artistName: "A", playCount: 30 },
-            { ratingKey: "2", artistName: "A", playCount: 5 },
-            { ratingKey: "3", artistName: "A", playCount: 5 },
-          ],
-          0
-        ),
-      ],
-      null
-    );
-    expect(dists.get("A")).toMatchObject({
-      playCount: 40,
-      distinctTracksPlayed: 3,
-      topTrackPlayCount: 30,
-      topTrackKey: "1",
-    });
-  });
-
-  it("measures the distribution inside the window once the series spans it", () => {
-    const dists = artistDistributions(
-      [
-        trackEvent(
-          [
-            { ratingKey: "1", artistName: "A", playCount: 100 },
-            { ratingKey: "2", artistName: "A", playCount: 100 },
-          ],
-          40
-        ),
-        trackEvent([{ ratingKey: "1", artistName: "A", playCount: 110 }], 0),
-      ],
-      NOW - 30 * DAY
-    );
-    expect(dists.get("A")).toMatchObject({
-      playCount: 10,
-      distinctTracksPlayed: 1,
-      topTrackPlayCount: 10,
-    });
-  });
-
-  it("keeps the busier artist when two share a name", () => {
-    const dists = artistDistributions(
-      [
-        trackEvent(
-          [
-            {
-              ratingKey: "1",
-              artistKey: "k1",
-              artistName: "Nova",
-              playCount: 3,
-            },
-            {
-              ratingKey: "2",
-              artistKey: "k2",
-              artistName: "Nova",
-              playCount: 9,
-            },
-          ],
-          0
-        ),
-      ],
-      null
-    );
-    expect(dists.get("Nova")?.playCount).toBe(9);
-  });
-
-  it("keeps the artist holding more listening when two share a name", () => {
-    const dists = artistDistributions(
-      [
-        trackEvent(
-          [
-            {
-              ratingKey: "1",
-              artistKey: "k1",
-              artistName: "Nova",
-              playCount: 3,
-              durationMs: 5_400_000,
-            },
-            {
-              ratingKey: "2",
-              artistKey: "k2",
-              artistName: "Nova",
-              playCount: 9,
-              durationMs: 180_000,
-            },
-          ],
-          0
-        ),
-      ],
-      null
-    );
-    expect(dists.get("Nova")?.playCount).toBe(3);
-  });
-
-  it("takes the most-listened track for the concentration share", () => {
-    const dists = artistDistributions(
-      [
-        trackEvent(
-          [
-            {
-              ratingKey: "set",
-              artistName: "A",
-              playCount: 1,
-              durationMs: 5_400_000,
-            },
-            {
-              ratingKey: "single",
-              artistName: "A",
-              playCount: 8,
-              durationMs: 180_000,
-            },
-          ],
-          0
-        ),
-      ],
-      null
-    );
-    expect(dists.get("A")).toMatchObject({
-      topTrackKey: "single",
-      topTrackPlayCount: 8,
-      topTrackListenedMs: 5_400_000,
-    });
-  });
-});
-
-describe("applyDistributionFactor", () => {
-  const plays: ArtistWeight[] = [{ name: "A", viewCount: 200 }];
-  const noRatings = new Map<string, ArtistRatingSignal>();
-  const noAvailability = new Map<string, number>();
-
-  function factor(
-    distributions: Map<string, ArtistPlayRollup>,
-    options: Partial<DistributionOptions> = {},
-    ratings = noRatings,
-    availability = noAvailability
-  ) {
-    return applyDistributionFactor(
-      plays,
-      { distributions, ratings, availability },
-      {
-        distributionWeight: 0.5,
-        minPlays: 5,
-        minAvailableTracks: 0,
-        ...options,
-      }
-    );
-  }
-
-  function distributions(
-    playCount: number,
-    topTrackPlayCount: number,
-    distinctTracksPlayed: number
-  ) {
-    return new Map([
-      [
-        "A",
-        {
-          artistKey: "ak-A",
-          name: "A",
-          playCount,
-          listenedMs: playCount * NOMINAL_TRACK_MS,
-          distinctTracksPlayed,
-          topTrackPlayCount,
-          topTrackListenedMs: topTrackPlayCount * NOMINAL_TRACK_MS,
-          topTrackKey: "top",
-        },
-      ],
-    ]);
-  }
-
-  function ratings(breadth: number) {
-    return new Map<string, ArtistRatingSignal>([
-      ["A", { rating: 10, breadth }],
-    ]);
-  }
-
-  /** An artist whose plays and listening sit on different tracks. */
-  function splitDistribution(
-    playCount: number,
-    topTrackPlayCount: number,
-    listenedMs: number,
-    topTrackListenedMs: number
-  ) {
-    return new Map([
-      [
-        "A",
-        {
-          artistKey: "ak-A",
-          name: "A",
-          playCount,
-          listenedMs,
-          distinctTracksPlayed: 2,
-          topTrackPlayCount,
-          topTrackListenedMs,
-          topTrackKey: "top",
-        },
-      ],
-    ]);
-  }
-
-  it("measures concentration on listening rather than on plays", () => {
-    // 20 short plays and one long set: spread by plays, concentrated by time.
-    const result = factor(
-      splitDistribution(21, 20, 5_400_000 + 20 * 180_000, 5_400_000)
-    );
-
-    expect(result[0].topTrackShare).toBeCloseTo(0.6, 5);
-  });
-
-  it("keeps the evidence gate on plays, not on milliseconds", () => {
-    const result = factor(splitDistribution(2, 2, 7_200_000, 7_200_000), {
-      minPlays: 5,
-    });
-
-    expect(result[0].viewCount).toBe(200);
-    expect(result[0].topTrackShare).toBeUndefined();
-  });
-
-  it("penalises an artist whose plays sit on one track", () => {
-    const result = factor(distributions(200, 200, 1));
-    expect(result[0].viewCount).toBe(100);
-    expect(result[0].topTrackShare).toBe(1);
-    expect(result[0].distributionFactor).toBe(0.5);
-  });
-
-  it("barely touches an artist whose plays are spread wide", () => {
-    const result = factor(distributions(200, 8, 40));
-    expect(result[0].viewCount).toBeCloseTo(196, 5);
-    expect(result[0].distinctTracksPlayed).toBe(40);
-  });
-
-  it("keeps the full penalty when the ratings sit on the concentrated track", () => {
-    const result = factor(distributions(200, 200, 1), {}, ratings(0));
-    expect(result[0].distributionFactor).toBe(0.5);
-    expect(result[0].ratingBreadth).toBe(0);
-  });
-
-  it("lifts the penalty when the ratings spread across the catalogue", () => {
-    const result = factor(distributions(200, 200, 1), {}, ratings(1));
-    expect(result[0].distributionFactor).toBe(1);
-    expect(result[0].viewCount).toBe(200);
-    expect(result[0].ratingBreadth).toBe(1);
-  });
-
-  it("scales the penalty by partial rating breadth", () => {
-    const result = factor(distributions(200, 200, 1), {}, ratings(0.5));
-    expect(result[0].distributionFactor).toBeCloseTo(0.75, 10);
-  });
-
-  it("is a no-op at weight 0", () => {
-    const result = factor(distributions(200, 200, 1), {
-      distributionWeight: 0,
-    });
-    expect(result).toEqual(plays);
-  });
-
-  it("leaves artists below the minimum play count alone", () => {
-    const result = factor(distributions(3, 3, 1));
-    expect(result[0]).toEqual({ name: "A", viewCount: 200 });
-  });
-
-  it("leaves artists with no track-level distribution alone", () => {
-    const result = factor(new Map());
-    expect(result[0]).toEqual({ name: "A", viewCount: 200 });
-  });
-
-  it("never divides by zero on a zero-play distribution", () => {
-    const result = factor(distributions(0, 0, 0), { minPlays: 0 });
-    expect(result[0]).toEqual({ name: "A", viewCount: 200 });
-  });
-
-  it("exempts an artist the library holds too few tracks by", () => {
-    const result = factor(
-      distributions(200, 200, 1),
-      { minAvailableTracks: 3 },
-      noRatings,
-      new Map([["A", 2]])
-    );
-    expect(result[0]).toEqual({
-      name: "A",
-      viewCount: 200,
-      availableTracks: 2,
-    });
-  });
-
-  it("still discounts an artist whose unplayed catalogue is large", () => {
-    const result = factor(
-      distributions(200, 200, 1),
-      { minAvailableTracks: 3 },
-      noRatings,
-      new Map([["A", 12]])
-    );
-    expect(result[0].distributionFactor).toBe(0.5);
-    expect(result[0].availableTracks).toBe(12);
-  });
-
-  it("discounts as before when no catalogue capture covers the artist", () => {
-    const result = factor(distributions(200, 200, 1), {
-      minAvailableTracks: 3,
-    });
-    expect(result[0].distributionFactor).toBe(0.5);
-    expect(result[0].availableTracks).toBeUndefined();
-  });
-
-  it("still exempts a two-track long-form artist once concentration is on listening", () => {
-    // Two 90-minute sets: half the listening sits on one of them, but with nothing else in
-    // the library to play, that is not a one-hit habit.
-    const result = factor(
-      splitDistribution(6, 3, 6 * 5_400_000, 3 * 5_400_000),
-      { minAvailableTracks: 3 },
-      noRatings,
-      new Map([["A", 2]])
-    );
-
-    expect(result[0].viewCount).toBe(200);
-    expect(result[0].availableTracks).toBe(2);
-  });
-
-  it("turns the exemption off at a threshold of 0", () => {
-    const result = factor(
-      distributions(200, 200, 1),
-      { minAvailableTracks: 0 },
-      noRatings,
-      new Map([["A", 1]])
-    );
-    expect(result[0].distributionFactor).toBe(0.5);
-  });
-});
-
-function albumEvent(
-  albums: { ratingKey: string; artistName: string; trackCount: number }[],
-  daysAgo = 0
-): UserSignalEvent {
-  return {
-    id: 0,
-    user_id: 1,
-    kind: "plex_album_tracks",
-    payload: JSON.stringify({
-      albums: albums.map((album) => ({
-        ratingKey: album.ratingKey,
-        title: `alb${album.ratingKey}`,
-        artistKey: `ak-${album.artistName}`,
-        artistName: album.artistName,
-        trackCount: album.trackCount,
-      })),
-    }),
-    recorded_at: new Date(NOW - daysAgo * DAY).toISOString(),
-  } as UserSignalEvent;
-}
-
-describe("deriveTrackAvailability", () => {
-  it("sums the catalogue capture across an artist's albums", () => {
-    const available = deriveTrackAvailability(
-      [
-        albumEvent([
-          { ratingKey: "a1", artistName: "A", trackCount: 9 },
-          { ratingKey: "a2", artistName: "A", trackCount: 3 },
-          { ratingKey: "b1", artistName: "B", trackCount: 1 },
-        ]),
-      ],
-      new Map(),
-      []
-    );
-    expect(available.get("A")).toBe(12);
-    expect(available.get("B")).toBe(1);
-  });
-
-  it("floors availability at the tracks already known to have been played", () => {
-    const tracks = deriveWindowedTrackPlays(
-      [
-        trackEvent(
-          [
-            { ratingKey: "1", artistName: "A", playCount: 5 },
-            { ratingKey: "2", artistName: "A", playCount: 1 },
-          ],
-          0
-        ),
-      ],
-      null
-    );
-    const available = deriveTrackAvailability([], tracks, []);
-    expect(available.get("A")).toBe(2);
-  });
-
-  it("counts a rated track absent from the play fold as proof of another track", () => {
-    const tracks = deriveWindowedTrackPlays(
-      [trackEvent([{ ratingKey: "1", artistName: "A", playCount: 5 }], 0)],
-      null
-    );
-    const available = deriveTrackAvailability([], tracks, [
-      ratingEvent("A", 10, { ratingKey: "unplayed" }),
-    ]);
-    expect(available.get("A")).toBe(2);
-  });
-
-  it("takes the capture when it is larger than what the other series prove", () => {
-    const tracks = deriveWindowedTrackPlays(
-      [trackEvent([{ ratingKey: "1", artistName: "A", playCount: 5 }], 0)],
-      null
-    );
-    const available = deriveTrackAvailability(
-      [albumEvent([{ ratingKey: "a1", artistName: "A", trackCount: 14 }])],
-      tracks,
-      []
-    );
-    expect(available.get("A")).toBe(14);
-  });
-
-  it("keeps the last known count for an album that later deltas stop mentioning", () => {
-    const available = deriveTrackAvailability(
-      [
-        albumEvent([{ ratingKey: "a1", artistName: "A", trackCount: 9 }], 10),
-        albumEvent([{ ratingKey: "a2", artistName: "A", trackCount: 2 }], 0),
-      ],
-      new Map(),
-      []
-    );
-    expect(available.get("A")).toBe(11);
-  });
-});
-
 function clearedRatingEvent(
   ratingKey: string,
   artist: string,
@@ -928,26 +483,11 @@ describe("aggregateArtistRatings", () => {
     expect(ratings.get("A")?.rating).toBeCloseTo((10 * 91 + 2 * 11) / 102, 10);
   });
 
-  it("reports no breadth when only the artist's top track is rated", () => {
-    const ratings = ratingsFor(twoTracks, [
-      ratingEvent("A", 10, { ratingKey: "1" }),
-    ]);
-    expect(ratings.get("A")?.breadth).toBe(0);
-  });
-
-  it("reports full breadth when the rated track is not the top one", () => {
-    const ratings = ratingsFor(twoTracks, [
-      ratingEvent("A", 10, { ratingKey: "2" }),
-    ]);
-    expect(ratings.get("A")?.breadth).toBe(1);
-  });
-
   it("spreads an album rating over the plays its tracks hold", () => {
     const ratings = ratingsFor(twoTracks, [
       ratingEvent("A", 10, { ratingKey: "alb-A", kind: "album" }),
     ]);
     expect(ratings.get("A")?.rating).toBe(10);
-    expect(ratings.get("A")?.breadth).toBeCloseTo(10.1 / 101, 10);
   });
 
   it("takes the artist from the joined track, not the payload's name", () => {
@@ -979,7 +519,7 @@ describe("applyRatingMultiplier", () => {
       { name: "B", viewCount: 100 },
     ];
     const ratings = new Map<string, ArtistRatingSignal>([
-      ["A", { rating: 10, breadth: 0 }],
+      ["A", { rating: 10 }],
     ]);
     const result = applyRatingMultiplier(plays, ratings, 0.5);
     expect(result[0]).toEqual({
@@ -1389,48 +929,6 @@ describe("loadArtistWeights (with DB)", () => {
     expect(result).toEqual([{ name: "A", viewCount: 10 }]);
   });
 
-  it("applies the distribution factor to a one-hit artist", async () => {
-    await appendSignalEvent(1, "plex_track_plays", {
-      tracks: [
-        {
-          ratingKey: "1",
-          title: "hit",
-          artistKey: "ak",
-          artistName: "A",
-          albumKey: "alb",
-          albumTitle: "Album",
-          playCount: 100,
-        },
-        {
-          ratingKey: "2",
-          title: "deep cut",
-          artistKey: "ak",
-          artistName: "A",
-          albumKey: "alb",
-          albumTitle: "Album",
-          playCount: 0,
-        },
-      ],
-    });
-
-    const result = await loadArtistWeights(
-      1,
-      "tok",
-      weightOptions({ ratingWeight: 0, distributionWeight: 0.5 })
-    );
-
-    expect(result).toEqual([
-      {
-        name: "A",
-        viewCount: 50,
-        distinctTracksPlayed: 1,
-        topTrackShare: 1,
-        distributionFactor: 0.5,
-        availableTracks: 2,
-      },
-    ]);
-  });
-
   it("reads existing track plays + ratings without a live fetch", async () => {
     await appendSignalEvent(1, "plex_track_plays", {
       tracks: [
@@ -1459,170 +957,5 @@ describe("loadArtistWeights (with DB)", () => {
     expect(result).toEqual([
       { name: "A", viewCount: 150, ratingMultiplier: 1.5 },
     ]);
-  });
-
-  it("lets a rating on the deep cut refute the one-hit discount", async () => {
-    await appendSignalEvent(1, "plex_track_plays", {
-      tracks: [
-        {
-          ratingKey: "hit",
-          title: "Hit",
-          artistKey: "ak",
-          artistName: "A",
-          albumKey: "alb",
-          albumTitle: "Album",
-          playCount: 90,
-        },
-        {
-          ratingKey: "deep",
-          title: "Deep Cut",
-          artistKey: "ak",
-          artistName: "A",
-          albumKey: "alb",
-          albumTitle: "Album",
-          playCount: 10,
-        },
-      ],
-    });
-    await appendSignalEvent(1, "plex_rating", {
-      ratingKey: "deep",
-      kind: "track",
-      title: "Deep Cut",
-      artist: "A",
-      rating: 10,
-    });
-
-    const [artist] = await loadArtistWeights(
-      1,
-      "tok",
-      weightOptions({ ratingWeight: 0, distributionWeight: 0.5 })
-    );
-
-    expect(artist.topTrackShare).toBeCloseTo(0.9, 10);
-    expect(artist.ratingBreadth).toBe(1);
-    expect(artist.distributionFactor).toBe(1);
-  });
-
-  it("exempts a singles-only artist from the one-hit discount", async () => {
-    await appendSignalEvent(1, "plex_track_plays", {
-      tracks: [
-        {
-          ratingKey: "1",
-          title: "The Single",
-          artistKey: "ak",
-          artistName: "A",
-          albumKey: "alb",
-          albumTitle: "Single",
-          playCount: 100,
-        },
-      ],
-    });
-    await appendSignalEvent(1, "plex_album_tracks", {
-      albums: [
-        {
-          ratingKey: "alb",
-          title: "Single",
-          artistKey: "ak",
-          artistName: "A",
-          trackCount: 1,
-        },
-      ],
-    });
-
-    const [artist] = await loadArtistWeights(
-      1,
-      "tok",
-      weightOptions({
-        ratingWeight: 0,
-        distributionWeight: 0.5,
-        minAvailableTracksForDistribution: 3,
-      })
-    );
-
-    expect(artist.availableTracks).toBe(1);
-    expect(artist.distributionFactor).toBeUndefined();
-    expect(artist.viewCount).toBe(100);
-  });
-
-  it("still discounts a one-hit artist whose catalogue is deep", async () => {
-    await appendSignalEvent(1, "plex_track_plays", {
-      tracks: [
-        {
-          ratingKey: "1",
-          title: "The Hit",
-          artistKey: "ak",
-          artistName: "A",
-          albumKey: "alb",
-          albumTitle: "Album",
-          playCount: 100,
-        },
-      ],
-    });
-    await appendSignalEvent(1, "plex_album_tracks", {
-      albums: [
-        {
-          ratingKey: "alb",
-          title: "Album",
-          artistKey: "ak",
-          artistName: "A",
-          trackCount: 12,
-        },
-      ],
-    });
-
-    const [artist] = await loadArtistWeights(
-      1,
-      "tok",
-      weightOptions({
-        ratingWeight: 0,
-        distributionWeight: 0.5,
-        minAvailableTracksForDistribution: 3,
-      })
-    );
-
-    expect(artist.availableTracks).toBe(12);
-    expect(artist.distributionFactor).toBe(0.5);
-    expect(artist.viewCount).toBe(50);
-  });
-
-  it("keeps the one-hit discount when the hit itself is the rated track", async () => {
-    await appendSignalEvent(1, "plex_track_plays", {
-      tracks: [
-        {
-          ratingKey: "hit",
-          title: "Hit",
-          artistKey: "ak",
-          artistName: "A",
-          albumKey: "alb",
-          albumTitle: "Album",
-          playCount: 90,
-        },
-        {
-          ratingKey: "deep",
-          title: "Deep Cut",
-          artistKey: "ak",
-          artistName: "A",
-          albumKey: "alb",
-          albumTitle: "Album",
-          playCount: 10,
-        },
-      ],
-    });
-    await appendSignalEvent(1, "plex_rating", {
-      ratingKey: "hit",
-      kind: "track",
-      title: "Hit",
-      artist: "A",
-      rating: 10,
-    });
-
-    const [artist] = await loadArtistWeights(
-      1,
-      "tok",
-      weightOptions({ ratingWeight: 0, distributionWeight: 0.5 })
-    );
-
-    expect(artist.ratingBreadth).toBe(0);
-    expect(artist.distributionFactor).toBeCloseTo(0.55, 10);
   });
 });

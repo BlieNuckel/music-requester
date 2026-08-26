@@ -13,15 +13,52 @@ const mockFetchReleaseGroupsForArtist = vi.fn();
 const mockGetConfigValue = vi.fn();
 const mockGetSimilarArtists = vi.fn();
 const mockGetArtistMbidByName = vi.fn();
+/** Captures the context the runtime hands a node, which is how config reaches one now. */
+const mockNodeCtx = vi.fn();
 
-vi.mock("./artistWeights", () => ({
-  loadSignalBundle: async (...args: unknown[]) => {
-    await mockLoadSignalBundle(...args);
-    return { albumEvents: [] };
-  },
-  deriveArtistWeights: (...args: unknown[]) => mockDeriveArtistWeights(...args),
-  deriveAlbumWeights: (...args: unknown[]) => mockDeriveAlbumWeights(...args),
-}));
+/**
+ * The build is a graph run now, so the seam is a node body rather than a module export.
+ */
+vi.mock("./profileGraph", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./profileGraph")>();
+  return {
+    ...actual,
+    PROFILE_BODIES: new Map([
+      ...actual.PROFILE_BODIES,
+      [
+        "loadSignals",
+        async (_i: unknown, ctx: { userId: number; plexToken: string }) => {
+          await mockLoadSignalBundle(ctx.userId, ctx.plexToken);
+          const { getSignalEvents } = await import("../db/userProfile");
+          return {
+            trackEvents: await getSignalEvents(ctx.userId, "plex_track_plays"),
+            ratingEvents: await getSignalEvents(ctx.userId, "plex_rating"),
+            albumEvents: [],
+            episodes: new Map(),
+          };
+        },
+      ],
+      [
+        "attachSeries",
+        (_i: unknown, ctx: unknown) => {
+          mockNodeCtx(ctx);
+          return mockDeriveArtistWeights();
+        },
+      ],
+      [
+        "albumListening",
+        () =>
+          (mockDeriveAlbumWeights() as { playCount: number }[]).map(
+            (album) => ({
+              ...album,
+              plays: album.playCount,
+              distinctTracksPlayed: 1,
+            })
+          ),
+      ],
+    ]),
+  };
+});
 
 vi.mock("../api/lastfm/artists", () => ({
   getArtistTopTags: (...args: unknown[]) => mockGetArtistTopTags(...args),
@@ -181,9 +218,6 @@ const defaultPromotedAlbumConfig: PromotedAlbumConfig = {
   ratingsBackupEnabled: true,
   playTrendWindowDays: 90,
   ratingWeight: 0.5,
-  distributionWeight: 0,
-  minPlaysForDistribution: 5,
-  minAvailableTracksForDistribution: 0,
   listeningWeight: 1,
   maxTrackMinutesForWeight: 0,
   seriesBucketDays: 7,
@@ -350,9 +384,13 @@ describe("getPromotedAlbums", () => {
       expect.any(Number),
       "test-plex-token"
     );
-    expect(mockDeriveArtistWeights).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ windowMs: expect.any(Number) })
+    expect(mockNodeCtx).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId,
+        config: expect.objectContaining({
+          playTrendWindowDays: expect.any(Number),
+        }),
+      })
     );
   });
 
@@ -1285,30 +1323,6 @@ describe("getPromotedAlbums", () => {
       expect(radiohead!.tagContributions).toHaveLength(2);
       expect(radiohead!.tagContributions[0].tagName).toBe("alternative rock");
     });
-
-    it("carries the play-distribution stats into the trace", async () => {
-      mockDeriveArtistWeights.mockReturnValue([
-        {
-          name: "Radiohead",
-          viewCount: 100,
-          distinctTracksPlayed: 6,
-          topTrackShare: 0.3,
-          distributionFactor: 0.85,
-        },
-      ]);
-      mockGetArtistTopTags.mockResolvedValue(tags);
-      mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
-      mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
-
-      const result = await getOne(userId);
-
-      expect(wt(result).trace.plexArtists[0]).toMatchObject({
-        name: "Radiohead",
-        distinctTracksPlayed: 6,
-        topTrackShare: 0.3,
-        distributionFactor: 0.85,
-      });
-    });
   });
 
   describe("config-driven behavior", () => {
@@ -1323,9 +1337,10 @@ describe("getPromotedAlbums", () => {
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
       await getOne(userId);
-      expect(mockDeriveArtistWeights).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ windowMs: 30 * 24 * 60 * 60 * 1000 })
+      expect(mockNodeCtx).toHaveBeenCalledWith(
+        expect.objectContaining({
+          config: expect.objectContaining({ playTrendWindowDays: 30 }),
+        })
       );
     });
 
@@ -1340,9 +1355,10 @@ describe("getPromotedAlbums", () => {
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
       await getOne(userId);
-      expect(mockDeriveArtistWeights).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ ratingWeight: 1.0 })
+      expect(mockNodeCtx).toHaveBeenCalledWith(
+        expect.objectContaining({
+          config: expect.objectContaining({ ratingWeight: 1.0 }),
+        })
       );
     });
 

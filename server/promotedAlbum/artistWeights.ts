@@ -3,18 +3,14 @@ import { isPlaceholderArtist } from "../utils/artistFilter";
 import {
   ingestUserTrackPlays,
   latestRatings,
-  reconstructAlbumTrackCounts,
   reconstructTrackPlayCounts,
   reconstructArtistTotals,
-  rollupToArtistCatalogue,
   rollupToAlbums,
-  rollupToArtists,
   toPlayEquivalents,
 } from "../services/profile/signalIngestion";
 import type {
   AlbumPlayRollup,
   ArtistListenTotals,
-  ArtistPlayRollup,
   PlexRatingPayload,
   TrackPlayState,
 } from "../services/profile/signalIngestion";
@@ -82,7 +78,6 @@ export type ArtistWeight = {
  */
 export type ArtistRatingSignal = {
   rating: number;
-  breadth: number;
 };
 
 /** One album's plays over the measured window, for joining an album rating onto tracks. */
@@ -93,24 +88,9 @@ type JoinedRating = {
   artist: string;
   rating: number;
   plays: number;
-  /** The part of `plays` belonging to the artist's most-played track. */
-  topTrackPlays: number;
 };
 
-type RatingTotals = { weighted: number; weight: number; offTopWeight: number };
-
-/** Everything the one-hit discount weighs an artist against, all keyed by artist name. */
-export type DistributionEvidence = {
-  distributions: Map<string, ArtistPlayRollup>;
-  ratings: Map<string, ArtistRatingSignal>;
-  availability: Map<string, number>;
-};
-
-export type DistributionOptions = {
-  distributionWeight: number;
-  minPlays: number;
-  minAvailableTracks: number;
-};
+type RatingTotals = { weighted: number; weight: number };
 
 /**
  * Play weights plus the window they were actually measured over: `windowStart` is null when
@@ -134,9 +114,6 @@ export type SignalBundle = {
 export type ArtistWeightOptions = {
   windowMs: number;
   ratingWeight: number;
-  distributionWeight: number;
-  minPlaysForDistribution: number;
-  minAvailableTracksForDistribution: number;
   listeningWeight: number;
   maxTrackMinutesForWeight: number;
   now?: number;
@@ -296,28 +273,6 @@ export function deriveWindowedTrackPlays(
 }
 
 /**
- * Per-artist play distribution over the measured window, keyed by artist name so it joins
- * onto the weight set. Two artists sharing a name collapse to whichever holds more
- * listening, mirroring how the totals merge.
- */
-export function deriveArtistDistributions(
-  tracks: Map<string, TrackPlayState>,
-  capMs = 0
-): Map<string, ArtistPlayRollup> {
-  const rollups = rollupToArtists(tracks, undefined, capMs);
-
-  const byName = new Map<string, ArtistPlayRollup>();
-  for (const rollup of rollups) {
-    if (!rollup.name) continue;
-    const existing = byName.get(rollup.name);
-    if (!existing || rollup.listenedMs > existing.listenedMs) {
-      byName.set(rollup.name, rollup);
-    }
-  }
-  return byName;
-}
-
-/**
  * Per-album plays and listening over the same window the artist weights were measured over,
  * from the same source those weights came from — episodes where history covers the window,
  * the difference of two cumulative snapshots otherwise. `derivePlayWeights` is re-run rather
@@ -347,104 +302,6 @@ export function deriveAlbumWeights(
     deriveWindowedTrackPlays(trackEvents, windowStart),
     capMs
   );
-}
-
-/**
- * Scale each artist's weight by how broadly their listening spreads across their tracks:
- * `factor = 1 - distributionWeight × topTrackShare`, where `topTrackShare` is the share of
- * the artist's listening time belonging to their single most-listened track. One song on
- * repeat is a song the user likes; the same time spread over a catalogue is an artist they
- * like, and only the second should pull that artist's whole tag set into the genre vector.
- *
- * Concentration is measured on listening rather than on plays because that is what the
- * weight it scales is now made of. With no durations stored the two orderings are identical,
- * so this changes nothing on events written before track lengths were captured. The evidence
- * *gate* below stays on plays deliberately: point `minPlays` at milliseconds and a threshold
- * of `5` silently becomes "5 milliseconds" and stops gating anything.
- *
- * The discount is refuted by the artist's rating breadth: ratings spread across the
- * catalogue are direct evidence against the one-hit read, so they scale the discount down
- * (`× (1 - breadth)`), while a rating on the concentrated track leaves it at full strength.
- * Without that term the two multipliers model the same question and pull the same direction
- * whichever track is starred.
- *
- * Artists whose library catalogue is `minAvailableTracks` or smaller are exempt outright:
- * played-only data cannot tell an artist the library holds one track by from an artist whose
- * other eleven tracks were never played, and only the second deserves a discount. Without a
- * catalogue capture the artist is simply absent from `availability` and the discount applies
- * as before.
- *
- * `distributionWeight` of `0` is a no-op, so the correction is switchable from settings.
- * Artists below `minPlays` *plays* are left alone — at a handful of plays `topTrackShare` is
- * noise, not concentration — as are artists with no track-level data at all.
- */
-export function applyDistributionFactor(
-  plays: ArtistWeight[],
-  evidence: DistributionEvidence,
-  options: DistributionOptions
-): ArtistWeight[] {
-  const { distributionWeight, minPlays, minAvailableTracks } = options;
-  if (distributionWeight === 0) return plays;
-
-  return plays.map((play) => {
-    const available = evidence.availability.get(play.name);
-    const dist = evidence.distributions.get(play.name);
-    if (!dist || dist.playCount < minPlays || dist.listenedMs <= 0) return play;
-    if (available !== undefined && available <= minAvailableTracks) {
-      return { ...play, availableTracks: available };
-    }
-
-    const signal = evidence.ratings.get(play.name);
-    const topTrackShare = dist.topTrackListenedMs / dist.listenedMs;
-    const distributionFactor =
-      1 - distributionWeight * topTrackShare * (1 - (signal?.breadth ?? 0));
-    return {
-      name: play.name,
-      viewCount: play.viewCount * distributionFactor,
-      distinctTracksPlayed: dist.distinctTracksPlayed,
-      topTrackShare,
-      distributionFactor,
-      ...(signal ? { ratingBreadth: signal.breadth } : {}),
-      ...(available !== undefined ? { availableTracks: available } : {}),
-    };
-  });
-}
-
-/**
- * How many tracks the library holds per artist, from the catalogue capture, floored by what
- * the other two series already prove exists: every track ever seen played, plus every rated
- * track absent from the play fold (`getRatedItems` filters on rating, not on plays, so a
- * rated-but-unplayed track is proof of a track the play sweep never fetched).
- *
- * The floor matters because it needs no capture at all — it covers the window before the
- * first album walk runs, and any artist the walk missed. Both sources can only push the
- * count up, and a higher count only ever means *fewer* exemptions, so an over-estimate
- * degrades to the pre-existing behaviour rather than to a wrong one.
- */
-export function deriveTrackAvailability(
-  albumEvents: UserSignalEvent[],
-  tracks: Map<string, TrackPlayState>,
-  ratingEvents: UserSignalEvent[]
-): Map<string, number> {
-  const available = rollupToArtistCatalogue(
-    reconstructAlbumTrackCounts(albumEvents, Infinity)
-  );
-
-  const known = new Map<string, number>();
-  for (const track of tracks.values()) {
-    if (!track.artistName) continue;
-    known.set(track.artistName, (known.get(track.artistName) ?? 0) + 1);
-  }
-  for (const payload of latestRatings(ratingEvents).values()) {
-    if (payload.kind !== "track" || payload.rating <= 0) continue;
-    if (!payload.artist || tracks.has(payload.ratingKey)) continue;
-    known.set(payload.artist, (known.get(payload.artist) ?? 0) + 1);
-  }
-
-  for (const [name, count] of known) {
-    available.set(name, Math.max(available.get(name) ?? 0, count));
-  }
-  return available;
 }
 
 /** Album `ratingKey` → the plays its tracks hold, so an album rating joins onto listening. */
@@ -480,8 +337,7 @@ function indexAlbumPlays(
 function joinRating(
   payload: PlexRatingPayload,
   tracks: Map<string, TrackPlayState>,
-  albums: Map<string, AlbumPlays>,
-  distributions: Map<string, ArtistPlayRollup>
+  albums: Map<string, AlbumPlays>
 ): JoinedRating | null {
   if (payload.rating <= 0) return null;
 
@@ -490,76 +346,45 @@ function joinRating(
     const artist = track?.artistName || payload.artist;
     if (!artist) return null;
 
-    const plays = track?.playCount ?? 0;
-    const isTopTrack =
-      track !== undefined &&
-      distributions.get(artist)?.topTrackKey === track.ratingKey;
-    return {
-      artist,
-      rating: payload.rating,
-      plays,
-      topTrackPlays: isTopTrack ? plays : 0,
-    };
+    return { artist, rating: payload.rating, plays: track?.playCount ?? 0 };
   }
 
   const album = albums.get(payload.ratingKey);
   const artist = album?.artist || payload.artist;
   if (!artist) return null;
-  if (!album) {
-    return { artist, rating: payload.rating, plays: 0, topTrackPlays: 0 };
-  }
-
-  const topTrackKey = distributions.get(artist)?.topTrackKey;
-  const topTrackPlays =
-    topTrackKey && album.trackKeys.has(topTrackKey)
-      ? (tracks.get(topTrackKey)?.playCount ?? 0)
-      : 0;
-  return {
-    artist,
-    rating: payload.rating,
-    plays: album.plays,
-    topTrackPlays,
-  };
+  return { artist, rating: payload.rating, plays: album?.plays ?? 0 };
 }
 
 /**
  * Per-artist rating signal joined onto the play series, from the latest rating known for
  * each rated item. Items whose latest rating is `0` (un-rated) are excluded so a cleared
- * star doesn't drag an artist's mean down. See {@link ArtistRatingSignal} for what the two
- * numbers mean and how the weighting is chosen.
+ * star doesn't drag an artist's mean down.
+ *
+ * The mean is play-weighted: each rated item counts for `1 + plays`, so a star on the track
+ * carrying an artist's listening outweighs one on a deep cut, while an unplayed rated item
+ * still counts once — rating something is a deliberate act even when it is never played.
  */
 export function aggregateArtistRatings(
   ratingEvents: UserSignalEvent[],
-  tracks: Map<string, TrackPlayState>,
-  distributions: Map<string, ArtistPlayRollup>
+  tracks: Map<string, TrackPlayState>
 ): Map<string, ArtistRatingSignal> {
   const albums = indexAlbumPlays(tracks);
   const totals = new Map<string, RatingTotals>();
 
   for (const payload of latestRatings(ratingEvents).values()) {
-    const joined = joinRating(payload, tracks, albums, distributions);
+    const joined = joinRating(payload, tracks, albums);
     if (!joined) continue;
 
     const weight = 1 + joined.plays;
-    const offTopShare =
-      joined.plays > 0 ? 1 - joined.topTrackPlays / joined.plays : 1;
-    const entry = totals.get(joined.artist) ?? {
-      weighted: 0,
-      weight: 0,
-      offTopWeight: 0,
-    };
+    const entry = totals.get(joined.artist) ?? { weighted: 0, weight: 0 };
     entry.weighted += joined.rating * weight;
     entry.weight += weight;
-    entry.offTopWeight += weight * offTopShare;
     totals.set(joined.artist, entry);
   }
 
   const signals = new Map<string, ArtistRatingSignal>();
-  for (const [name, { weighted, weight, offTopWeight }] of totals) {
-    signals.set(name, {
-      rating: weighted / weight,
-      breadth: offTopWeight / weight,
-    });
+  for (const [name, { weighted, weight }] of totals) {
+    signals.set(name, { rating: weighted / weight });
   }
   return signals;
 }
@@ -619,18 +444,11 @@ export function deriveArtistWeights(
   bundle: SignalBundle,
   options: ArtistWeightOptions
 ): ArtistWeight[] {
-  const {
-    windowMs,
-    ratingWeight,
-    distributionWeight,
-    minPlaysForDistribution,
-    minAvailableTracksForDistribution,
-    listeningWeight,
-    maxTrackMinutesForWeight,
-  } = options;
+  const { windowMs, ratingWeight, listeningWeight, maxTrackMinutesForWeight } =
+    options;
   const now = options.now ?? Date.now();
   const capMs = Math.max(0, maxTrackMinutesForWeight) * 60_000;
-  const { trackEvents, ratingEvents, albumEvents, episodes } = bundle;
+  const { trackEvents, ratingEvents, episodes } = bundle;
 
   const plays = derivePlayWeights(trackEvents, episodes, {
     now,
@@ -639,32 +457,9 @@ export function deriveArtistWeights(
     listeningWeight,
   });
   const trackPlays = deriveWindowedTrackPlays(trackEvents, plays.windowStart);
-  const allTimeTracks = reconstructTrackPlayCounts(trackEvents, Infinity);
-  const distributions = deriveArtistDistributions(trackPlays, capMs);
-  const ratings = aggregateArtistRatings(
-    ratingEvents,
-    trackPlays,
-    distributions
-  );
+  const ratings = aggregateArtistRatings(ratingEvents, trackPlays);
 
-  const spread = applyDistributionFactor(
-    plays.weights,
-    {
-      distributions,
-      ratings,
-      availability: deriveTrackAvailability(
-        albumEvents,
-        allTimeTracks,
-        ratingEvents
-      ),
-    },
-    {
-      distributionWeight,
-      minPlays: minPlaysForDistribution,
-      minAvailableTracks: minAvailableTracksForDistribution,
-    }
-  );
-  return applyRatingMultiplier(spread, ratings, ratingWeight).filter(
+  return applyRatingMultiplier(plays.weights, ratings, ratingWeight).filter(
     (weight) => !isPlaceholderArtist(weight.name)
   );
 }

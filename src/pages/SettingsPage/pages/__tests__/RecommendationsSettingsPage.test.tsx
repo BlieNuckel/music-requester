@@ -45,7 +45,7 @@ const graph: RecommenderGraph = {
   edges: [],
   retiredParams: [
     {
-      key: "minAvailableTracksForDistribution",
+      key: "topArtistsCount",
       kind: "int",
       label: "Small catalogue exemption",
       min: 0,

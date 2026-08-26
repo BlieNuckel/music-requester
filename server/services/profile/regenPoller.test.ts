@@ -8,14 +8,44 @@ const mockGetArtistTopTags = vi.fn();
 const mockGetConfigValue = vi.fn();
 const mockBuildSimilarGraph = vi.fn().mockResolvedValue([]);
 
-vi.mock("../../promotedAlbum/artistWeights", () => ({
-  loadSignalBundle: async (...args: unknown[]) => {
-    await mockLoadSignalBundle(...args);
-    return { albumEvents: [] };
-  },
-  deriveArtistWeights: (...args: unknown[]) => mockDeriveArtistWeights(...args),
-  deriveAlbumWeights: (...args: unknown[]) => mockDeriveAlbumWeights(...args),
-}));
+/**
+ * The build is a graph run now, so the seam is a node body rather than a module export.
+ */
+vi.mock("../../promotedAlbum/profileGraph", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../promotedAlbum/profileGraph")>();
+  return {
+    ...actual,
+    PROFILE_BODIES: new Map([
+      ...actual.PROFILE_BODIES,
+      [
+        "loadSignals",
+        async (_i: unknown, ctx: { userId: number; plexToken: string }) => {
+          await mockLoadSignalBundle(ctx.userId, ctx.plexToken);
+          const { getSignalEvents } = await import("../../db/userProfile");
+          return {
+            trackEvents: await getSignalEvents(ctx.userId, "plex_track_plays"),
+            ratingEvents: await getSignalEvents(ctx.userId, "plex_rating"),
+            albumEvents: [],
+            episodes: new Map(),
+          };
+        },
+      ],
+      ["attachSeries", () => mockDeriveArtistWeights()],
+      [
+        "albumListening",
+        () =>
+          (mockDeriveAlbumWeights() as { playCount: number }[]).map(
+            (album) => ({
+              ...album,
+              plays: album.playCount,
+              distinctTracksPlayed: 1,
+            })
+          ),
+      ],
+    ]),
+  };
+});
 
 vi.mock("../../promotedAlbum/explore", () => ({
   buildSimilarGraph: (...args: unknown[]) => mockBuildSimilarGraph(...args),
@@ -57,9 +87,6 @@ const baseConfig: PromotedAlbumConfig = {
   ratingsBackupEnabled: true,
   playTrendWindowDays: 90,
   ratingWeight: 0.5,
-  distributionWeight: 0,
-  minPlaysForDistribution: 5,
-  minAvailableTracksForDistribution: 0,
   listeningWeight: 1,
   maxTrackMinutesForWeight: 0,
   seriesBucketDays: 7,
@@ -141,12 +168,9 @@ describe("runProfileRegenOnce", () => {
       expect.any(Number),
       "stale-active"
     );
-    expect(mockDeriveArtistWeights).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        windowMs: 90 * 24 * 60 * 60 * 1000,
-        ratingWeight: 0.5,
-      })
+    expect(mockLoadSignalBundle).toHaveBeenLastCalledWith(
+      staleActive,
+      "stale-active"
     );
   });
 

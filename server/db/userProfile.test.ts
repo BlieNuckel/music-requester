@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { DEFAULT_PROMOTED_ALBUM } from "../../shared/settingsDefaults";
+import type { ProfileConfigInputs } from "./userProfile";
+import { profileScopeParamKeys } from "../recommenderGraph/graph";
 import { initializeDatabase, getDataSource, closeDatabase } from "./index";
 import type { DerivedProfile } from "./entity/UserProfile";
 import { DERIVED_PROFILE_SCHEMA_VERSION } from "./entity/UserProfile";
@@ -78,22 +81,13 @@ const SAMPLE_PROFILE: DerivedProfile = {
   },
 };
 
-const CONFIG_INPUTS = {
+/**
+ * The whole config: which fields the hash covers is the graph's answer, not this fixture's,
+ * so a knob added to a profile-scope node has to show up here without the test being edited.
+ */
+const CONFIG_INPUTS: ProfileConfigInputs = {
+  ...DEFAULT_PROMOTED_ALBUM,
   genericTags: ["seen live", "favorites"],
-  tagsPerArtist: 5,
-  playTrendWindowDays: 90,
-  ratingWeight: 0.5,
-  distributionWeight: 0.5,
-  minPlaysForDistribution: 5,
-  minAvailableTracksForDistribution: 3,
-  listeningWeight: 1,
-  maxTrackMinutesForWeight: 0,
-  topArtistsCount: 10,
-  exploreCandidateCount: 12,
-  seriesBucketDays: 7,
-  seriesSpanDays: 182,
-  momentumRecentBuckets: 4,
-  albumTagsPerArtist: 4,
 };
 
 async function createUser(username: string): Promise<number> {
@@ -169,18 +163,29 @@ describe("computeConfigHash", () => {
     expect(
       computeConfigHash({ ...CONFIG_INPUTS, playTrendWindowDays: 30 })
     ).not.toBe(computeConfigHash(CONFIG_INPUTS));
-    expect(
-      computeConfigHash({ ...CONFIG_INPUTS, distributionWeight: 0 })
-    ).not.toBe(computeConfigHash(CONFIG_INPUTS));
-    expect(
-      computeConfigHash({ ...CONFIG_INPUTS, minPlaysForDistribution: 10 })
-    ).not.toBe(computeConfigHash(CONFIG_INPUTS));
-    expect(
-      computeConfigHash({
-        ...CONFIG_INPUTS,
-        minAvailableTracksForDistribution: 0,
-      })
-    ).not.toBe(computeConfigHash(CONFIG_INPUTS));
+    expect(computeConfigHash({ ...CONFIG_INPUTS, ratingWeight: 0 })).not.toBe(
+      computeConfigHash(CONFIG_INPUTS)
+    );
+  });
+
+  /**
+   * The point of deriving the key list: a knob owned by a profile-scope node invalidates the
+   * profiles it changes without anyone remembering to add it here.
+   */
+  it("covers every knob the graph says shapes a profile", () => {
+    for (const key of profileScopeParamKeys()) {
+      const current = CONFIG_INPUTS[key];
+      const changed = Array.isArray(current)
+        ? [...current, "something-else"]
+        : typeof current === "number"
+          ? current + 1
+          : !current;
+
+      expect([
+        key,
+        computeConfigHash({ ...CONFIG_INPUTS, [key]: changed }),
+      ]).not.toEqual([key, computeConfigHash(CONFIG_INPUTS)]);
+    }
   });
 
   it("ignores fields that are applied at selection time, not to the profile", () => {

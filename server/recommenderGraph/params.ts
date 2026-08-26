@@ -55,40 +55,6 @@ export const PARAMS: Record<ParamKey, ParamDef> = {
       "Ceiling on how much listening time a single play can be worth. 0 is uncapped and is usually right: a low cap re-creates the under-counting of long tracks it is meant to fix. Raise it off 0 only if skipping through long mixes is inflating an artist.",
   },
 
-  distributionWeight: {
-    key: "distributionWeight",
-    kind: "ratio",
-    label: "One-hit discount",
-    min: 0,
-    max: 1,
-    step: 0.05,
-    effect: "how far an artist you only ever play one track by falls",
-    description:
-      "How much to discount an artist whose listening all sits on one track, so a single song on repeat doesn't count as liking the whole artist. 0% ignores how listening is spread; 50% halves the weight of an artist you only play one track by. Ratings spread across the catalogue push the discount back down.",
-  },
-  minPlaysForDistribution: {
-    key: "minPlaysForDistribution",
-    kind: "int",
-    label: "Minimum plays for the discount",
-    min: 1,
-    max: 100,
-    step: 1,
-    effect: "only below {minPlaysForDistribution} plays is it left alone",
-    description:
-      "Artists below this many plays in the trend window keep their full weight. At a handful of plays, how they are spread is noise rather than a preference.",
-  },
-  minAvailableTracksForDistribution: {
-    key: "minAvailableTracksForDistribution",
-    kind: "int",
-    label: "Small catalogue exemption",
-    min: 0,
-    max: 50,
-    step: 1,
-    effect: "exempt at {minAvailableTracksForDistribution} tracks or fewer",
-    description:
-      "Artists with this many tracks or fewer in your library keep their full weight. Playing one of their two tracks isn't a one-hit habit, there was nothing else to play. 0 turns the exemption off.",
-  },
-
   ratingWeight: {
     key: "ratingWeight",
     kind: "factor",

@@ -218,12 +218,6 @@ function validatePositiveInt(value: unknown, name: string) {
   }
 }
 
-function validateNonNegativeInt(value: unknown, name: string) {
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-    throw new Error(`${name} must be a non-negative integer`);
-  }
-}
-
 function validateRatio(value: unknown, name: string) {
   if (typeof value !== "number" || value < 0 || value > 1) {
     throw new Error(`${name} must be a number between 0 and 1`);
@@ -272,21 +266,6 @@ function validatePromotedAlbumConfig(config: PromotedAlbumConfig) {
     throw new Error("ratingsBackupEnabled must be a boolean");
   }
   validatePositiveInt(config.playTrendWindowDays, "playTrendWindowDays");
-  if (
-    typeof config.distributionWeight !== "number" ||
-    config.distributionWeight < 0 ||
-    config.distributionWeight > 1
-  ) {
-    throw new Error("distributionWeight must be a number between 0 and 1");
-  }
-  validatePositiveInt(
-    config.minPlaysForDistribution,
-    "minPlaysForDistribution"
-  );
-  validateNonNegativeInt(
-    config.minAvailableTracksForDistribution,
-    "minAvailableTracksForDistribution"
-  );
   if (typeof config.ratingWeight !== "number" || config.ratingWeight < 0) {
     throw new Error("ratingWeight must be a non-negative number");
   }

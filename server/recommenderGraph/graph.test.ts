@@ -24,13 +24,10 @@ import {
  */
 const CONFIG_HASH_KEYS = [
   "albumTagsPerArtist",
-  "distributionWeight",
   "exploreCandidateCount",
   "genericTags",
   "listeningWeight",
   "maxTrackMinutesForWeight",
-  "minAvailableTracksForDistribution",
-  "minPlaysForDistribution",
   "momentumRecentBuckets",
   "playTrendWindowDays",
   "ratingWeight",
@@ -281,12 +278,15 @@ describe("recommender graph registry", () => {
     ]);
   });
 
-  it("points every ported node at a file that exists", () => {
+  /**
+   * Nothing is `ported` today — the profile build runs the graph. The check stays because
+   * the state is what makes a half-migrated pipeline drawable, and a node claiming a body in
+   * a file that does not exist is the one way this can lie.
+   */
+  it("points every node at a body file that exists", () => {
     const { nodes } = buildRecommenderGraph();
-    const ported = nodes.filter((node) => node.status === "ported");
 
-    expect(ported.length).toBeGreaterThan(0);
-    for (const node of ported) {
+    for (const node of nodes.filter((entry) => entry.module)) {
       expect([node.id, node.module]).toEqual([node.id, expect.any(String)]);
       expect([
         node.id,

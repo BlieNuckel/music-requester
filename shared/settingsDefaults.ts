@@ -30,9 +30,6 @@ export type PromotedAlbumSettings = {
   ratingsBackupEnabled: boolean;
   playTrendWindowDays: number;
   ratingWeight: number;
-  distributionWeight: number;
-  minPlaysForDistribution: number;
-  minAvailableTracksForDistribution: number;
   /**
    * Where an artist's weight comes from: `0` ranks on play counts, `1` on listening time.
    * Plays count decisions to hear something again, time counts exposure, and the two
@@ -110,9 +107,6 @@ export const DEFAULT_PROMOTED_ALBUM: PromotedAlbumSettings = {
   ratingsBackupEnabled: true,
   playTrendWindowDays: 90,
   ratingWeight: 0.5,
-  distributionWeight: 0.5,
-  minPlaysForDistribution: 5,
-  minAvailableTracksForDistribution: 3,
   listeningWeight: 1,
   maxTrackMinutesForWeight: 0,
   seriesBucketDays: 7,

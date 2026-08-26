@@ -266,12 +266,7 @@ function buildTraceFromProfile(inputs: TraceInputs): WithinTasteTrace {
       viewCount: a.viewCount,
       picked: sampledNames.has(a.name),
       tagContributions: tagContributions(a, albumsByArtistName.get(a.name)),
-      distinctTracksPlayed: a.distinctTracksPlayed,
-      topTrackShare: a.topTrackShare,
-      distributionFactor: a.distributionFactor,
-      ratingBreadth: a.ratingBreadth,
       ratingMultiplier: a.ratingMultiplier,
-      availableTracks: a.availableTracks,
     };
   });
 
