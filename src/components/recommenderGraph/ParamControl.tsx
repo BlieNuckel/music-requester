@@ -1,7 +1,7 @@
 import { effectiveMax } from "./paramCoupling";
 import { useRecommenderParams } from "./paramsContext";
 import { durationUnit, humanizeDuration } from "./duration";
-import TagListEditor from "../TagListEditor";
+import TagListEditor from "@/components/TagListEditor";
 import type { DurationKind } from "./duration";
 import type { LibraryPreference } from "@/context/settingsContextDef";
 import type { ParamDef } from "@shared/recommenderGraph";

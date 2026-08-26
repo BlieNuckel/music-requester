@@ -1,5 +1,5 @@
-import ParamControl from "./ParamControl";
-import { useRecommenderParams } from "./paramsContext";
+import ParamControl from "@/components/recommenderGraph/ParamControl";
+import { useRecommenderParams } from "@/components/recommenderGraph/paramsContext";
 import { NODE_SCOPE_LABELS, SCOPE_EFFECT } from "@shared/recommenderGraph";
 import type {
   FlowId,

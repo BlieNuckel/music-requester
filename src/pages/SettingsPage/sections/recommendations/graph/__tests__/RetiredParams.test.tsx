@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import RetiredParams from "../RetiredParams";
-import { RecommenderParamsContext } from "../paramsContext";
+import { RecommenderParamsContext } from "@/components/recommenderGraph/paramsContext";
 import { DEFAULT_PROMOTED_ALBUM } from "@/context/promotedAlbumDefaults";
 import type { RetiredParam } from "@shared/recommenderGraph";
 

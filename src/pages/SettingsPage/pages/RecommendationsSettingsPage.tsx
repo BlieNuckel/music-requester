@@ -7,10 +7,10 @@ import SaveStatusIndicator from "../shared/SaveStatusIndicator";
 import RecommenderListView from "../sections/recommendations/graph/RecommenderListView";
 import RecommenderToolbar from "../sections/recommendations/graph/RecommenderToolbar";
 import RetiredParams from "../sections/recommendations/graph/RetiredParams";
-import { applyParamChange } from "../sections/recommendations/graph/paramCoupling";
-import { RecommenderParamsContext } from "../sections/recommendations/graph/paramsContext";
+import { applyParamChange } from "@/components/recommenderGraph/paramCoupling";
+import { RecommenderParamsContext } from "@/components/recommenderGraph/paramsContext";
 import { useRecommenderGraph } from "../sections/recommendations/graph/useRecommenderGraph";
-import { DEFAULT_LAYOUT } from "../sections/recommendations/graph/autoLayout";
+import { DEFAULT_LAYOUT } from "@/components/recommenderGraph/autoLayout";
 import type { RecommenderView } from "../sections/recommendations/graph/RecommenderToolbar";
 import type { FlowId } from "@shared/recommenderGraph";
 
@@ -19,7 +19,7 @@ import type { FlowId } from "@shared/recommenderGraph";
  * ever reached by an admin on this page.
  */
 const RecommenderGraphCanvas = lazy(
-  () => import("../sections/recommendations/graph/RecommenderGraphCanvas")
+  () => import("@/components/recommenderGraph/RecommenderGraphCanvas")
 );
 
 function LoadingState() {

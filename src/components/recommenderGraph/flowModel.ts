@@ -6,7 +6,7 @@ import type {
   MeasuredSizes,
   Position as CardPosition,
 } from "./autoLayout";
-import { selectFlow } from "./flowSelection";
+import { selectFlow } from "@shared/recommenderGraph";
 import type { Edge, Node } from "@xyflow/react";
 import type {
   EdgeKind,

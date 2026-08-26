@@ -1,8 +1,11 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import RecommenderListView from "../RecommenderListView";
-import { RecommenderParamsContext } from "../paramsContext";
+import { RecommenderParamsContext } from "@/components/recommenderGraph/paramsContext";
 import { DEFAULT_PROMOTED_ALBUM } from "@/context/promotedAlbumDefaults";
-import { makeGraph, makeNode } from "./fixtures";
+import {
+  makeGraph,
+  makeNode,
+} from "@/components/recommenderGraph/__tests__/fixtures";
 import type { RecommenderGraph } from "@shared/recommenderGraph";
 
 function renderList(graph: RecommenderGraph) {
