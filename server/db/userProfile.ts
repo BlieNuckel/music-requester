@@ -7,22 +7,17 @@ import {
 } from "./entity/UserProfile";
 import { UserSignalEvent } from "./entity/UserSignalEvent";
 import { VOCABULARY_VERSION } from "../genres/classify";
+import { profileScopeParamKeys } from "../recommenderGraph/graph";
+import type { PromotedAlbumSettings } from "../../shared/settingsDefaults";
 
-/** The config fields that shape the derived profile and thus invalidate it on change. */
-export type ProfileConfigInputs = {
-  genericTags: string[];
-  tagsPerArtist: number;
-  playTrendWindowDays: number;
-  ratingWeight: number;
-  listeningWeight: number;
-  maxTrackMinutesForWeight: number;
-  topArtistsCount: number;
-  exploreCandidateCount: number;
-  seriesBucketDays: number;
-  seriesSpanDays: number;
-  momentumRecentBuckets: number;
-  albumTagsPerArtist: number;
-};
+/**
+ * The config fields that shape the derived profile and thus invalidate it on change.
+ *
+ * Which fields those are is not written down here: it is read off the graph, from the knobs
+ * owned by a `profile`-scope node. A hand-kept list had nothing holding it to the code, so a
+ * knob added to the build could quietly stop invalidating the profiles it changed.
+ */
+export type ProfileConfigInputs = PromotedAlbumSettings;
 
 /** A partial patch of the anti-repeat exploration memory; only provided fields are replaced. */
 export type ExplorationHistoryPatch = {
@@ -74,21 +69,26 @@ export function parseDerivedProfile(json: string): DerivedProfile {
   }
 }
 
-/** Stable hash of the config inputs that shape the vector — a mismatch forces a regenerate. */
+/** A list of tags hashes the same however the user typed or ordered it. */
+const stableValue = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? [...value].map((item) => String(item).toLowerCase()).sort()
+    : value;
+
+/**
+ * Stable hash of the config inputs that shape the vector — a mismatch forces a regenerate.
+ *
+ * Keys come from the graph, sorted, so adding a knob to a profile-scope node is all it takes
+ * for that knob to invalidate the profiles it changes.
+ */
 export function computeConfigHash(inputs: ProfileConfigInputs): string {
+  const covered: Record<string, unknown> = {};
+  for (const key of profileScopeParamKeys()) {
+    covered[key] = stableValue((inputs as Record<string, unknown>)[key]);
+  }
+
   const stable = JSON.stringify({
-    genericTags: [...inputs.genericTags].map((t) => t.toLowerCase()).sort(),
-    tagsPerArtist: inputs.tagsPerArtist,
-    playTrendWindowDays: inputs.playTrendWindowDays,
-    ratingWeight: inputs.ratingWeight,
-    listeningWeight: inputs.listeningWeight,
-    maxTrackMinutesForWeight: inputs.maxTrackMinutesForWeight,
-    topArtistsCount: inputs.topArtistsCount,
-    exploreCandidateCount: inputs.exploreCandidateCount,
-    seriesBucketDays: inputs.seriesBucketDays,
-    seriesSpanDays: inputs.seriesSpanDays,
-    momentumRecentBuckets: inputs.momentumRecentBuckets,
-    albumTagsPerArtist: inputs.albumTagsPerArtist,
+    ...covered,
     // Not a config field: regenerating the committed vocabulary changes what the recommender
     // means by a genre, and stored profiles would otherwise keep the old reading forever.
     vocabularyVersion: VOCABULARY_VERSION,
