@@ -1,4 +1,4 @@
-import ParamControl from "./ParamControl";
+import ParamControl from "@/components/recommenderGraph/ParamControl";
 import type { RetiredParam } from "@shared/recommenderGraph";
 
 type RetiredParamsProps = { params: RetiredParam[] };

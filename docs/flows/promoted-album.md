@@ -1,8 +1,8 @@
 # Spotlight carousel (promoted albums)
 
 Five recommendations on the Discover page, built from the persisted profile. Three sources
-produce them, tried in a fixed order per pick, and each carries a trace explaining how it
-was reached.
+produce them, tried in a fixed order per pick, and each carries the record of the run that
+produced it.
 
 The build is executed by the graph runtime rather than by a hand-written sequence: the nodes
 below are the ones declared in `server/recommenderGraph/nodes.ts` and drawn on the
@@ -10,8 +10,8 @@ recommendations settings page, and `buildCarousel` asks the runtime for `antiRep
 steps that pulls in is the registry's answer, not this file's.
 
 Code: `server/recommenderGraph/runtime/executor.ts`, `server/promotedAlbum/pickGraph.ts`,
-`explore.ts`, `personal.ts`, `tagChart.ts`, `genreBand.ts`, `preference.ts`,
-`getPromotedAlbum.ts` (the caching and snapshot shell), `warmer.ts`.
+`pickExplain.ts`, `explore.ts`, `personal.ts`, `tagChart.ts`, `genreBand.ts`,
+`preference.ts`, `getPromotedAlbum.ts` (the caching and snapshot shell), `warmer.ts`.
 
 ## Serving a request
 
@@ -126,6 +126,24 @@ it is the only source that works before a similar graph exists.
 
 The artist sample is drawn per pick, not stored on the profile. Sampling at regeneration
 time froze one draw of three artists into every recommendation for the whole TTL.
+
+## Why this record
+
+Each recommendation carries a `RecommendationTrace`: which nodes ran for that one pick, in
+the order they ran, whether each handed anything on, and what each had to say about its own
+turn. The facts come from `explain(inputs, output, ctx)`, which the runtime calls after the
+body on values already produced — so a trace can never change what is recommended, and an
+explainer that throws costs its facts rather than the album.
+
+The quota's turn is prepended to every pick's record: it runs once for the build, and it is
+what decided whether that slot was allowed a genre jump.
+
+Discover draws it on this same chart, fetched knobless from
+`GET /api/recommendations/graph/spotlight`. Steps the pick never reached are faded, the step
+the record came from is ringed, and the legend says what was left of the lookup allowance.
+Lists of candidates are capped (`cappedItems`), keeping the one that was chosen and counting
+the rest: five picks of a hundred-odd neighbours each is a response measured in hundreds of
+kilobytes.
 
 ## Warming
 

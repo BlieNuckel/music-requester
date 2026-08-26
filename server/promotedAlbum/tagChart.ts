@@ -12,22 +12,11 @@ import { weightedRandomPick, shuffle, type Rng } from "../utils/random";
 import { preferenceRule, orderByPreference } from "./preference";
 import type { PreferenceRule } from "./preference";
 import {
-  normalizedTagWeights,
   buildGenreVector,
   artistGenreUnits,
   type GenreUnit,
 } from "./profileService";
-import type {
-  BuiltAlbum,
-  ResolutionBudget,
-  WithinTasteResult,
-  WithinTasteTrace,
-  TraceArtistEntry,
-  TraceArtistTagContribution,
-  TraceAlbumPoolInfo,
-  TraceSelectionReason,
-  TraceWeightedTag,
-} from "./types";
+import type { BuiltAlbum, ResolutionBudget, WithinTasteResult } from "./types";
 
 export type WeightedTag = { name: string; weight: number };
 
@@ -48,31 +37,28 @@ export type CandidateAlbum = {
   artistName: string;
 };
 
-/** The genre's chart, shuffled, plus what the trace says about where it came from. */
-export type TagAlbumPool = DrawnTag & {
-  albums: CandidateAlbum[];
-  poolInfo: TraceAlbumPoolInfo;
+/** How much of the genre's chart this pick saw, which is what the pool amounts to. */
+export type TagPoolShape = {
+  page1Count: number;
+  deepPage: number;
+  deepPageCount: number;
+  totalAfterDedup: number;
 };
 
-/** What the walk needs to resolve candidates and explain what it chose. */
+/** The genre's chart, shuffled, and how much of it was drawn on. */
+export type TagAlbumPool = DrawnTag & {
+  albums: CandidateAlbum[];
+  poolInfo: TagPoolShape;
+};
+
+/** What the walk needs to resolve candidates and settle on one. */
 export type TagWalkContext = {
-  profile: DerivedProfile;
   libraryPreference: LibraryPreference;
   artistInLibrary: (mbid: string) => boolean;
   albumLibrary: (mbid: string) => AlbumLibraryInfo | null;
   recentlyShown: Set<string>;
   budget: ResolutionBudget;
   priority: MbPriority;
-};
-
-/** What the within-taste trace explains: the sample drawn, the vector it produced, the pick. */
-type TraceInputs = {
-  profile: DerivedProfile;
-  sampledNames: Set<string>;
-  vector: DerivedProfile["genreVector"];
-  chosenTag: WeightedTag;
-  albumPool: TraceAlbumPoolInfo;
-  selectionReason: TraceSelectionReason;
 };
 
 type GetRgInfo = (mbid: string) => Promise<ReleaseGroupInfo | null>;
@@ -88,102 +74,13 @@ type AlbumSelection = {
   album: CandidateAlbum;
   rgMbid: string;
   year: string;
-  reason: TraceSelectionReason;
 };
 
 const log = createLogger("promoted-album");
 
-/** A profile's albums indexed by the artist whose weight they carry a share of. */
-function groupAlbumsByArtist(
-  albumTags: DerivedProfile["albumTags"]
-): Map<string, GenreUnit[]> {
-  const byArtist = new Map<string, GenreUnit[]>();
-  for (const album of albumTags) {
-    const existing = byArtist.get(album.artistName);
-    if (existing) existing.push(album);
-    else byArtist.set(album.artistName, [album]);
-  }
-  return byArtist;
-}
-
 /** Whether a set of units can put anything in the vector at all. */
 const carriesGenres = (units: GenreUnit[]): boolean =>
   units.some((unit) => unit.tags.length > 0);
-
-/**
- * One artist's tag contributions as they actually reached the vector — summed across that
- * artist's albums, because the album is what carries the weight now. `rawCount` is the
- * highest count the tag was seen with, which is all the trace does with it.
- *
- * An artist with no stored albums falls back to its own tags, which is both the pre-album
- * shape and what the vector itself falls back to.
- */
-function tagContributions(
-  artist: DerivedProfile["artistTags"][number],
-  albums: GenreUnit[] | undefined
-): TraceArtistTagContribution[] {
-  const units: GenreUnit[] =
-    albums && carriesGenres(albums)
-      ? albums
-      : [
-          {
-            artistName: artist.name,
-            weight: artist.viewCount,
-            tags: artist.tags,
-          },
-        ];
-
-  const merged = new Map<string, TraceArtistTagContribution>();
-  for (const unit of units) {
-    const weights = normalizedTagWeights(unit.tags, unit.weight);
-    for (const [index, tag] of unit.tags.entries()) {
-      const key = tag.name.toLowerCase();
-      const existing = merged.get(key);
-      if (existing) {
-        existing.weight += weights[index];
-        existing.rawCount = Math.max(existing.rawCount, tag.count);
-      } else {
-        merged.set(key, {
-          tagName: tag.name,
-          rawCount: tag.count,
-          weight: weights[index],
-        });
-      }
-    }
-  }
-  return Array.from(merged.values());
-}
-
-function buildTraceFromProfile(inputs: TraceInputs): WithinTasteTrace {
-  const { profile, sampledNames, vector, chosenTag } = inputs;
-
-  const albumsByArtistName = groupAlbumsByArtist(profile.albumTags);
-
-  const plexArtists: TraceArtistEntry[] = profile.artistTags.map((a) => {
-    return {
-      name: a.name,
-      viewCount: a.viewCount,
-      picked: sampledNames.has(a.name),
-      tagContributions: tagContributions(a, albumsByArtistName.get(a.name)),
-      ratingMultiplier: a.ratingMultiplier,
-    };
-  });
-
-  const weightedTags: TraceWeightedTag[] = vector.map((g) => ({
-    name: g.tag,
-    weight: g.weight,
-    fromArtists: g.fromArtists,
-  }));
-
-  return {
-    kind: "within_taste",
-    plexArtists,
-    weightedTags,
-    chosenTag: { name: chosenTag.name, weight: chosenTag.weight },
-    albumPool: inputs.albumPool,
-    selectionReason: inputs.selectionReason,
-  };
-}
 
 /**
  * The artists one recommendation is drawn from, re-sampled per pick and weighted by play
@@ -346,9 +243,6 @@ async function walkCandidates(
       album,
       rgMbid: rgInfo.id,
       year: rgInfo.firstReleaseDate.slice(0, 4),
-      reason: walk.isPreferred(album.artistMbid)
-        ? walk.preferredReason
-        : walk.fallbackReason,
     };
   }
 
@@ -392,15 +286,6 @@ export async function walkTagPool(
   });
   if (!picked) return null;
 
-  const trace = buildTraceFromProfile({
-    profile: ctx.profile,
-    sampledNames: new Set(pool.sampled.map((a) => a.name)),
-    vector: pool.vector,
-    chosenTag: pool.tag,
-    albumPool: pool.poolInfo,
-    selectionReason: picked.reason,
-  });
-
   const library = ctx.albumLibrary(picked.rgMbid);
 
   const result: WithinTasteResult = {
@@ -416,7 +301,6 @@ export async function walkTagPool(
     tag: pool.tag.name,
     inLibrary: library !== null,
     library,
-    trace,
   };
 
   return { result, rememberKey: picked.rgMbid };

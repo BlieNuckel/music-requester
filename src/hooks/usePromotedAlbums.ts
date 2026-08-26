@@ -2,88 +2,7 @@ import { useEffect } from "react";
 import useAsyncData from "./useAsyncData";
 import type { FetchContext } from "./useAsyncData";
 import type { AlbumLibraryInfo } from "@shared/albumLibrary";
-
-export type TraceArtistTagContribution = {
-  tagName: string;
-  rawCount: number;
-  weight: number;
-};
-
-export type TraceArtistEntry = {
-  name: string;
-  viewCount: number;
-  picked: boolean;
-  tagContributions: TraceArtistTagContribution[];
-  /** Absent for artists with nothing rated. */
-  ratingMultiplier?: number;
-};
-
-export type TraceWeightedTag = {
-  name: string;
-  weight: number;
-  fromArtists: string[];
-};
-
-export type TraceAlbumPoolInfo = {
-  page1Count: number;
-  deepPage: number;
-  deepPageCount: number;
-  totalAfterDedup: number;
-};
-
-export type TraceSelectionReason =
-  | "preferred_non_library"
-  | "preferred_library"
-  | "fallback_in_library"
-  | "fallback_non_library"
-  | "no_preference";
-
-export type WithinTasteTrace = {
-  kind: "within_taste";
-  plexArtists: TraceArtistEntry[];
-  weightedTags: TraceWeightedTag[];
-  chosenTag: { name: string; weight: number };
-  albumPool: TraceAlbumPoolInfo;
-  selectionReason: TraceSelectionReason;
-};
-
-export type TraceSimilarArtist = {
-  name: string;
-  score: number;
-  genres: string[];
-  genreOverlap: number;
-  isDifferentGenre: boolean;
-  chosen: boolean;
-};
-
-export type ExploreTrace = {
-  kind: "explore";
-  seedArtist: string;
-  seedGenres: string[];
-  candidates: TraceSimilarArtist[];
-  chosenArtist: string;
-  chosenGenres: string[];
-  newGenres: string[];
-  selectionReason: TraceSelectionReason;
-};
-
-export type PersonalTrace = {
-  kind: "personal";
-  seedArtist: string;
-  seedGenres: string[];
-  candidates: TraceSimilarArtist[];
-  chosenArtist: string;
-  chosenGenres: string[];
-  sharedGenres: string[];
-  /** True when no neighbour was close enough and the pool fell back to the whole graph. */
-  widened: boolean;
-  /** True when every close neighbour was on the wrong side of the library preference. */
-  relaxedPreference: boolean;
-  selectionReason: TraceSelectionReason;
-};
-
-export type RecommendationTrace =
-  WithinTasteTrace | ExploreTrace | PersonalTrace;
+import type { RecommendationTrace } from "@shared/recommendationTrace";
 
 export type PromotedAlbumInfo = {
   name: string;
@@ -98,20 +17,12 @@ export type PromotedAlbumData = {
   album: PromotedAlbumInfo;
   inLibrary: boolean;
   library: AlbumLibraryInfo | null;
+  /** The run that produced this recommendation, which is what the trace view draws. */
+  trace: RecommendationTrace;
 } & (
-  | { mode: "within_taste"; tag: string; trace: WithinTasteTrace }
-  | {
-      mode: "explore";
-      seedArtist: string;
-      newGenres: string[];
-      trace: ExploreTrace;
-    }
-  | {
-      mode: "personal";
-      seedArtist: string;
-      sharedGenres: string[];
-      trace: PersonalTrace;
-    }
+  | { mode: "within_taste"; tag: string }
+  | { mode: "explore"; seedArtist: string; newGenres: string[] }
+  | { mode: "personal"; seedArtist: string; sharedGenres: string[] }
 );
 
 /**

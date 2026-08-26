@@ -16,14 +16,7 @@ import { isPlaceholderArtist } from "../utils/artistFilter";
 import { isDistantGenre, jaccard } from "./genreBand";
 import { preferredOrRelaxed } from "./preference";
 import type { PreferenceRule } from "./preference";
-import type {
-  BuiltAlbum,
-  ResolutionBudget,
-  ExploreResult,
-  ExploreTrace,
-  TraceSelectionReason,
-  TraceSimilarArtist,
-} from "./types";
+import type { BuiltAlbum, ResolutionBudget, ExploreResult } from "./types";
 import { classifyTag, foldTag } from "../genres/classify";
 
 type GraphSeedArtist = { name: string; viewCount: number };
@@ -40,7 +33,7 @@ export type ExploreAlbumContext = {
   priority?: MbPriority;
 };
 
-type EvaluatedCandidate = {
+export type EvaluatedCandidate = {
   candidate: SimilarGraphCandidate;
   genres: Set<string>;
   overlap: number;
@@ -235,33 +228,6 @@ async function pickAlbumFromArtist(
   return pool[0] ?? null;
 }
 
-function buildExploreTrace(
-  band: ExploreBand,
-  chosen: EvaluatedCandidate,
-  newGenres: string[],
-  selectionReason: TraceSelectionReason
-): ExploreTrace {
-  const candidates: TraceSimilarArtist[] = band.evaluated.map((e) => ({
-    name: e.candidate.name,
-    score: e.candidate.score,
-    genres: [...e.genres],
-    genreOverlap: e.overlap,
-    isDifferentGenre: e.isDifferentGenre,
-    chosen: e.candidate.artistMbid === chosen.candidate.artistMbid,
-  }));
-
-  return {
-    kind: "explore",
-    seedArtist: band.seedArtist,
-    seedGenres: [...band.seedGenres],
-    candidates,
-    chosenArtist: chosen.candidate.name,
-    chosenGenres: [...chosen.genres],
-    newGenres,
-    selectionReason,
-  };
-}
-
 function assembleResult(
   ctx: ExploreAlbumContext,
   band: ExploreBand,
@@ -269,12 +235,6 @@ function assembleResult(
   album: MusicBrainzReleaseGroup
 ): BuiltAlbum {
   const newGenres = [...chosen.genres].filter((g) => !band.seedGenres.has(g));
-  const selectionReason: TraceSelectionReason = ctx.artistInLibrary(
-    chosen.candidate.artistMbid
-  )
-    ? "fallback_in_library"
-    : "preferred_non_library";
-
   const library = ctx.albumLibrary(album.id);
 
   const result: ExploreResult = {
@@ -291,7 +251,6 @@ function assembleResult(
     newGenres,
     inLibrary: library !== null,
     library,
-    trace: buildExploreTrace(band, chosen, newGenres, selectionReason),
   };
 
   return { result, rememberKey: album.id };

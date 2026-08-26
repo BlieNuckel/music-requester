@@ -10,8 +10,13 @@ import {
   fallbackOrder,
   type NodeBody,
   type NodeInputs,
-  type Resolve,
+  type NodeRuntime,
 } from "../recommenderGraph/runtime/executor";
+import type {
+  NodeRun,
+  RecommendationTrace,
+} from "../../shared/recommendationTrace";
+import { RESOLUTION_BUDGET, RESOLUTION_BUDGET_LABEL } from "./budget";
 import type { Rng } from "../utils/random";
 import {
   drawExploreSeed,
@@ -38,7 +43,13 @@ import {
   type SampledVector,
   type TagAlbumPool,
 } from "./tagChart";
-import type { BuiltAlbum, LibraryLookups, ResolutionBudget } from "./types";
+import type {
+  BuiltAlbum,
+  LibraryLookups,
+  PickedAlbum,
+  ResolutionBudget,
+  TracedAlbum,
+} from "./types";
 
 /**
  * Everything one carousel build shares across its picks. The mutable fields are the reason
@@ -70,10 +81,17 @@ const RECENT_SHOWN_LIMIT = 25;
 
 const log = createLogger("promoted-album");
 
-const profileOf = (inputs: NodeInputs): DerivedProfile =>
+/** Which node's output becomes a recommendation of each mode, so a trace can say which. */
+export const SOURCE_NODES: Record<PickedAlbum["mode"], string> = {
+  explore: "exploreAlbum",
+  personal: "personalAlbum",
+  within_taste: "candidateWalk",
+};
+
+export const profileOf = (inputs: NodeInputs): DerivedProfile =>
   inputs.profileFreshness as DerivedProfile;
 
-const ruleOf = (ctx: PickCtx): PreferenceRule =>
+export const ruleOf = (ctx: PickCtx): PreferenceRule =>
   preferenceRule(ctx.config.libraryPreference, ctx.library.artistInLibrary);
 
 /** What the two graph sources need to turn a chosen artist into an album. */
@@ -105,13 +123,38 @@ export function exploreSlots(rate: number, count: number, rng: Rng): number {
  * discard the picks already built alongside it and fail the whole request. A dead attempt
  * costs one of {@link PICK_ATTEMPT_SLACK} spare ones instead.
  */
-async function tryAttempt(resolve: Resolve): Promise<BuiltAlbum | null> {
+async function tryAttempt(
+  runtime: NodeRuntime
+): Promise<{ built: BuiltAlbum | null; trace: NodeRun[] }> {
   try {
-    return (await resolve("sourceChain")) as BuiltAlbum | null;
+    const { value, trace } = await runtime.traced("sourceChain");
+    return { built: value as BuiltAlbum | null, trace };
   } catch (error) {
     log.warn("Pick failed; continuing with the rest of the carousel", error);
-    return null;
+    return { built: null, trace: [] };
   }
+}
+
+/**
+ * The record of the turns this one recommendation took. The quota's turn is prepended
+ * because it is what decided whether this slot was allowed a genre jump, and it runs once
+ * for the build rather than once per attempt.
+ */
+function traced(
+  built: BuiltAlbum,
+  ctx: PickCtx,
+  nodes: NodeRun[]
+): TracedAlbum {
+  const trace: RecommendationTrace = {
+    source: SOURCE_NODES[built.result.mode],
+    nodes,
+    budget: {
+      label: RESOLUTION_BUDGET_LABEL,
+      remaining: ctx.budget.remaining,
+      of: RESOLUTION_BUDGET,
+    },
+  };
+  return { ...built, result: { ...built.result, trace } };
 }
 
 /**
@@ -236,7 +279,6 @@ export const PICK_BODIES: ReadonlyMap<string, NodeBody<PickCtx>> = new Map<
     "candidateWalk",
     (inputs, ctx) =>
       walkTagPool(inputs.albumPool as TagAlbumPool | null, {
-        profile: profileOf(inputs),
         libraryPreference: ctx.config.libraryPreference,
         artistInLibrary: ctx.library.artistInLibrary,
         albumLibrary: ctx.library.albumLibrary,
@@ -248,9 +290,9 @@ export const PICK_BODIES: ReadonlyMap<string, NodeBody<PickCtx>> = new Map<
 
   [
     "sourceChain",
-    async (_inputs, _ctx, resolve) => {
+    async (_inputs, _ctx, runtime) => {
       for (const source of fallbackOrder("sourceChain")) {
-        const built = (await resolve(source)) as BuiltAlbum | null;
+        const built = (await runtime.resolve(source)) as BuiltAlbum | null;
         if (built) return built;
       }
       return null;
@@ -266,9 +308,10 @@ export const PICK_BODIES: ReadonlyMap<string, NodeBody<PickCtx>> = new Map<
    */
   [
     "pickLoop",
-    async (_inputs, ctx, resolve) => {
-      let exploresLeft = (await resolve("exploreQuota")) as number;
-      const picks: BuiltAlbum[] = [];
+    async (_inputs, ctx, runtime) => {
+      const quota = await runtime.traced("exploreQuota");
+      let exploresLeft = quota.value as number;
+      const picks: TracedAlbum[] = [];
       const pickedAlbums = new Set<string>();
       const attemptLimit = ctx.count + PICK_ATTEMPT_SLACK;
 
@@ -280,14 +323,14 @@ export const PICK_BODIES: ReadonlyMap<string, NodeBody<PickCtx>> = new Map<
         ctx.exploring = exploresLeft > 0;
         if (ctx.exploring) exploresLeft -= 1;
 
-        const built = await tryAttempt(resolve);
+        const { built, trace } = await tryAttempt(runtime);
         if (!built) continue;
 
         ctx.excluded.add(built.rememberKey);
         if (pickedAlbums.has(built.result.album.mbid)) continue;
 
         pickedAlbums.add(built.result.album.mbid);
-        picks.push(built);
+        picks.push(traced(built, ctx, [...quota.trace, ...trace]));
       }
 
       return picks;
@@ -297,7 +340,7 @@ export const PICK_BODIES: ReadonlyMap<string, NodeBody<PickCtx>> = new Map<
   [
     "antiRepeat",
     async (inputs, ctx) => {
-      const picks = inputs.pickLoop as BuiltAlbum[];
+      const picks = inputs.pickLoop as TracedAlbum[];
       if (picks.length === 0) return picks;
 
       const shown = picks.map((pick) => pick.rememberKey);

@@ -1,12 +1,23 @@
 import type { LibraryPreference } from "../config";
-import type { TraceSelectionReason } from "./types";
 
-/** Which candidate artists a `libraryPreference` favours, and how each outcome is traced. */
+/**
+ * Which candidate artists a `libraryPreference` favours, and what landing on either side of
+ * it means in words. The notes are written for a reader asking why they were shown a record,
+ * so they say what is true of the pick rather than naming the branch that produced it.
+ */
 export type PreferenceRule = {
   isPreferred: (artistMbid: string) => boolean;
-  preferredReason: TraceSelectionReason;
-  fallbackReason: TraceSelectionReason;
+  preferredNote: string;
+  fallbackNote: string;
 };
+
+/** What landing where this pick landed says about the library, in one phrase. */
+export function preferenceNote(
+  rule: PreferenceRule,
+  artistMbid: string
+): string {
+  return rule.isPreferred(artistMbid) ? rule.preferredNote : rule.fallbackNote;
+}
 
 export function preferenceRule(
   libraryPreference: LibraryPreference,
@@ -16,20 +27,20 @@ export function preferenceRule(
     case "prefer_new":
       return {
         isPreferred: (mbid) => !artistInLibrary(mbid),
-        preferredReason: "preferred_non_library",
-        fallbackReason: "fallback_in_library",
+        preferredNote: "a new discovery, as you asked for",
+        fallbackNote: "already in your library, because nothing new qualified",
       };
     case "prefer_library":
       return {
         isPreferred: (mbid) => artistInLibrary(mbid),
-        preferredReason: "preferred_library",
-        fallbackReason: "fallback_non_library",
+        preferredNote: "already in your library, as you asked for",
+        fallbackNote: "new to your library, because nothing you own qualified",
       };
     case "no_preference":
       return {
         isPreferred: () => true,
-        preferredReason: "no_preference",
-        fallbackReason: "no_preference",
+        preferredNote: "no library preference set",
+        fallbackNote: "no library preference set",
       };
   }
 }

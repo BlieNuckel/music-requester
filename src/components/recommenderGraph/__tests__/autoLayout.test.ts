@@ -1,7 +1,7 @@
 import { autoLayout, estimateNodeHeight, layoutBoxes } from "../autoLayout";
 import { makeNode, ratingWeightParam } from "./fixtures";
 import type { NodeBox } from "../autoLayout";
-import type { FlowNode } from "../flowSelection";
+import type { FlowNode } from "@shared/recommenderGraph";
 import type { GraphEdge } from "@shared/recommenderGraph";
 
 const edge = (from: string, to: string): GraphEdge => ({

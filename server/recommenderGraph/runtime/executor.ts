@@ -1,28 +1,39 @@
+import { createLogger } from "../../logger";
 import { NODE_REGISTRY } from "../nodes";
 import type { NodeInput, NodeRegistration } from "../nodes";
+import type { NodeRun, TraceFact } from "../../../shared/recommendationTrace";
 
 /** What a node body receives: its inputs by the id of the node that produced them. */
 export type NodeInputs = Readonly<Record<string, unknown>>;
+
+/** One resolve, plus the turns it took — for a node that has to attribute them per attempt. */
+export type TracedRun = { value: unknown; trace: NodeRun[] };
 
 /**
  * Runs one node on demand. Handed to every body, and the only way a node that decides for
  * itself *when* — or whether, or how many times — to run something can say so in code.
  */
-export type Resolve = (nodeId: string) => Promise<unknown>;
+export type NodeRuntime = {
+  resolve: (nodeId: string) => Promise<unknown>;
+  traced: (nodeId: string) => Promise<TracedRun>;
+};
 
 export type NodeBody<Ctx> = (
   inputs: NodeInputs,
   ctx: Ctx,
-  resolve: Resolve
+  runtime: NodeRuntime
 ) => unknown | Promise<unknown>;
 
-/** One node's turn, for the trace a later phase renders. */
-export type NodeRun = {
-  nodeId: string;
-  ms: number;
-  /** A short shape-of-the-output line; never the output itself. */
-  summary: string;
-};
+/**
+ * What a node says about its own turn, in the words a reader wants rather than the shapes the
+ * body passes around. Runs after the body, on what the body already produced, so a trace can
+ * never change what is recommended — and a throwing explainer costs its facts, not the pick.
+ */
+export type NodeExplain<Ctx> = (
+  inputs: NodeInputs,
+  output: unknown,
+  ctx: Ctx
+) => TraceFact[];
 
 export type GraphRun = {
   outputs: ReadonlyMap<string, unknown>;
@@ -31,10 +42,13 @@ export type GraphRun = {
 
 type RunState<Ctx> = {
   bodies: ReadonlyMap<string, NodeBody<Ctx>>;
+  explain: ReadonlyMap<string, NodeExplain<Ctx>>;
   ctx: Ctx;
   done: Map<string, unknown>;
   trace: NodeRun[];
 };
+
+const log = createLogger("recommender-graph");
 
 const REGISTRY = new Map<string, NodeRegistration>(
   NODE_REGISTRY.map((node) => [node.id, node])
@@ -67,6 +81,34 @@ function summarize(value: unknown): string {
   return String(value);
 }
 
+/** Whether a node handed anything on, which is a different story from never having run. */
+function produced(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
+
+/**
+ * The facts a node has to offer, or none. A trace is an explanation of a recommendation that
+ * has already been made, so an explainer that throws loses its own line of the story rather
+ * than the album it was describing.
+ */
+function explainNode<Ctx>(
+  nodeId: string,
+  state: RunState<Ctx>,
+  inputs: NodeInputs,
+  output: unknown
+): TraceFact[] {
+  const explain = state.explain.get(nodeId);
+  if (!explain) return [];
+  try {
+    return explain(inputs, output, state.ctx);
+  } catch (error) {
+    log.warn(`Could not explain "${nodeId}"; keeping the pick`, error);
+    return [];
+  }
+}
+
 /**
  * A node runs once per execution and its result is reused, so a step feeding three others
  * folds the log once rather than three times — the duplication a hand-wired sequence has to
@@ -97,6 +139,22 @@ function eagerInputs(node: NodeRegistration): NodeInput[] {
   return node.inputs.filter((input) => input.kind === "data");
 }
 
+/**
+ * What a body is handed to run something itself. `traced` exists for the repeat node: the run
+ * log is one list for the whole build, and a per-recommendation trace is the slice one attempt
+ * added to it.
+ */
+function runtimeFor<Ctx>(state: RunState<Ctx>): NodeRuntime {
+  return {
+    resolve: (nodeId) => runNode(nodeId, state, new Set()),
+    traced: async (nodeId) => {
+      const from = state.trace.length;
+      const value = await runNode(nodeId, state, new Set());
+      return { value, trace: state.trace.slice(from) };
+    },
+  };
+}
+
 async function runNode<Ctx>(
   nodeId: string,
   state: RunState<Ctx>,
@@ -120,13 +178,13 @@ async function runNode<Ctx>(
   running.delete(nodeId);
 
   const startedAt = Date.now();
-  const output = await body(inputs, state.ctx, (id) =>
-    runNode(id, state, new Set())
-  );
+  const output = await body(inputs, state.ctx, runtimeFor(state));
   state.trace.push({
     nodeId,
     ms: Date.now() - startedAt,
     summary: summarize(output),
+    produced: produced(output),
+    facts: explainNode(nodeId, state, inputs, output),
   });
 
   if (cacheable(node)) state.done.set(nodeId, output);
@@ -152,10 +210,12 @@ export async function runGraph<Ctx>(
   targets: string[],
   bodies: ReadonlyMap<string, NodeBody<Ctx>>,
   ctx: Ctx,
-  given: ReadonlyMap<string, unknown> = new Map()
+  given: ReadonlyMap<string, unknown> = new Map(),
+  explain: ReadonlyMap<string, NodeExplain<Ctx>> = new Map()
 ): Promise<GraphRun> {
   const state: RunState<Ctx> = {
     bodies,
+    explain,
     ctx,
     done: new Map<string, unknown>(given),
     trace: [],

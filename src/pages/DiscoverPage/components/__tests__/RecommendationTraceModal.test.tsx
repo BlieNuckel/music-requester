@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import RecommendationTraceModal from "../RecommendationTraceModal";
-import type {
-  WithinTasteTrace,
-  ExploreTrace,
-  PersonalTrace,
-} from "@/hooks/usePromotedAlbums";
+import {
+  makeGraph,
+  makeNode,
+} from "@/components/recommenderGraph/__tests__/fixtures";
+import { ThemeContext } from "@/context/themeContextDef";
+import type { RecommendationTrace } from "@shared/recommendationTrace";
 
 vi.mock("@/components/Modal", () => ({
   default: ({
@@ -16,296 +17,183 @@ vi.mock("@/components/Modal", () => ({
   }) => (isOpen ? <div data-testid="modal">{children}</div> : null),
 }));
 
-const trace: WithinTasteTrace = {
-  kind: "within_taste",
-  plexArtists: [
+const graph = makeGraph(
+  [
+    makeNode({
+      id: "personalAlbum",
+      flow: "spotlight",
+      title: "Album from a neighbour",
+      params: [],
+    }),
+    makeNode({
+      id: "exploreAlbum",
+      flow: "spotlight",
+      title: "Album from a distant artist",
+      params: [],
+    }),
+    makeNode({
+      id: "candidateWalk",
+      flow: "spotlight",
+      title: "Walk the pool",
+      params: [],
+    }),
+  ],
+  [
     {
-      name: "Radiohead",
-      viewCount: 100,
-      picked: true,
-      tagContributions: [
-        { tagName: "alternative", rawCount: 100, weight: 10000 },
-        { tagName: "rock", rawCount: 80, weight: 8000 },
+      id: "exploreAlbum->personalAlbum",
+      from: "exploreAlbum",
+      to: "personalAlbum",
+      kind: "fallback",
+      order: 0,
+    },
+    {
+      id: "personalAlbum->candidateWalk",
+      from: "personalAlbum",
+      to: "candidateWalk",
+      kind: "fallback",
+      order: 1,
+    },
+  ]
+);
+
+const trace: RecommendationTrace = {
+  source: "personalAlbum",
+  nodes: [
+    {
+      nodeId: "exploreAlbum",
+      ms: 4,
+      summary: "nothing",
+      produced: false,
+      facts: [],
+    },
+    {
+      nodeId: "personalAlbum",
+      ms: 12,
+      summary: "{result, rememberKey}",
+      produced: true,
+      facts: [
+        { label: "Next to", value: "Slowdive" },
+        {
+          label: "Neighbours drawn from",
+          more: 3,
+          items: [
+            { name: "Near Band", detail: "next to Slowdive", chosen: true },
+            { name: "Other Band" },
+          ],
+        },
       ],
     },
-    {
-      name: "Bjork",
-      viewCount: 50,
-      picked: true,
-      tagContributions: [{ tagName: "electronic", rawCount: 90, weight: 4500 }],
-    },
-    {
-      name: "Portishead",
-      viewCount: 30,
-      picked: false,
-      tagContributions: [],
-    },
   ],
-  weightedTags: [
-    { name: "alternative", weight: 10000, fromArtists: ["Radiohead"] },
-    { name: "rock", weight: 8000, fromArtists: ["Radiohead"] },
-    { name: "electronic", weight: 4500, fromArtists: ["Bjork"] },
-  ],
-  chosenTag: { name: "alternative", weight: 10000 },
-  albumPool: {
-    page1Count: 50,
-    deepPage: 4,
-    deepPageCount: 48,
-    totalAfterDedup: 95,
+  budget: {
+    label: "MusicBrainz lookups per build",
+    remaining: 27,
+    of: 30,
   },
-  selectionReason: "preferred_non_library",
 };
 
-const exploreTrace: ExploreTrace = {
-  kind: "explore",
-  seedArtist: "Radiohead",
-  seedGenres: ["alternative", "rock"],
-  candidates: [
-    {
-      name: "Jazz Cat",
-      score: 5000,
-      genres: ["jazz", "bebop"],
-      genreOverlap: 0,
-      isDifferentGenre: true,
-      chosen: true,
-    },
-    {
-      name: "Rock Clone",
-      score: 9000,
-      genres: ["alternative", "rock"],
-      genreOverlap: 1,
-      isDifferentGenre: false,
-      chosen: false,
-    },
-  ],
-  chosenArtist: "Jazz Cat",
-  chosenGenres: ["jazz", "bebop"],
-  newGenres: ["jazz", "bebop"],
-  selectionReason: "preferred_non_library",
-};
-
-const personalTrace: PersonalTrace = {
-  kind: "personal",
-  seedArtist: "Slowdive",
-  seedGenres: ["shoegaze", "dream pop"],
-  candidates: [
-    {
-      name: "Near Band",
-      score: 0.9,
-      genres: ["shoegaze", "noise pop"],
-      genreOverlap: 0.5,
-      isDifferentGenre: false,
-      chosen: true,
-    },
-  ],
-  chosenArtist: "Near Band",
-  chosenGenres: ["shoegaze", "noise pop"],
-  sharedGenres: ["shoegaze"],
-  widened: false,
-  relaxedPreference: false,
-  selectionReason: "preferred_non_library",
-};
-
-function renderPersonalModal(overrides?: Partial<PersonalTrace>) {
+function renderModal(isOpen = true) {
   return render(
-    <RecommendationTraceModal
-      isOpen={true}
-      onClose={vi.fn()}
-      trace={{ ...personalTrace, ...overrides }}
-      albumName="Nowhere"
-      artistName="Near Band"
-    />
-  );
-}
-
-function renderModal(overrides?: Partial<WithinTasteTrace>) {
-  return render(
-    <RecommendationTraceModal
-      isOpen={true}
-      onClose={vi.fn()}
-      trace={{ ...trace, ...overrides }}
-      albumName="OK Computer"
-      artistName="Radiohead"
-    />
-  );
-}
-
-function renderExploreModal(overrides?: Partial<ExploreTrace>) {
-  return render(
-    <RecommendationTraceModal
-      isOpen={true}
-      onClose={vi.fn()}
-      trace={{ ...exploreTrace, ...overrides }}
-      albumName="Blue Album"
-      artistName="Jazz Cat"
-    />
-  );
-}
-
-describe("RecommendationTraceModal", () => {
-  it("renders all stage cards", () => {
-    renderModal();
-    const stageCards = screen.getAllByTestId("stage-card");
-    expect(stageCards).toHaveLength(5);
-  });
-
-  it("highlights picked artists vs non-picked", () => {
-    renderModal();
-    const pickedArtists = screen.getAllByTestId("picked-artist");
-    const regularArtists = screen.getAllByTestId("artist");
-    expect(pickedArtists).toHaveLength(2);
-    expect(regularArtists).toHaveLength(1);
-    expect(pickedArtists[0]).toHaveTextContent("Radiohead");
-    expect(pickedArtists[1]).toHaveTextContent("Bjork");
-    expect(regularArtists[0]).toHaveTextContent("Portishead");
-  });
-
-  it("highlights chosen tag in pool", () => {
-    renderModal();
-    const chosenTag = screen.getByTestId("chosen-tag");
-    expect(chosenTag).toHaveTextContent("alternative");
-    const poolTags = screen.getAllByTestId("pool-tag");
-    expect(poolTags).toHaveLength(2);
-  });
-
-  it("shows correct album pool counts", () => {
-    renderModal();
-    expect(screen.getByTestId("page1-count")).toHaveTextContent("50 albums");
-    expect(screen.getByTestId("deep-page-count")).toHaveTextContent(
-      "48 albums"
-    );
-    expect(screen.getByTestId("total-after-dedup")).toHaveTextContent(
-      "95 unique albums"
-    );
-  });
-
-  it("shows correct selection reason for non-library", () => {
-    renderModal();
-    const reason = screen.getByTestId("selection-reason");
-    expect(reason).toHaveTextContent("New discovery");
-  });
-
-  it("shows correct selection reason for fallback", () => {
-    renderModal({ selectionReason: "fallback_in_library" });
-    const reason = screen.getByTestId("selection-reason");
-    expect(reason).toHaveTextContent("Already in library");
-  });
-
-  it("shows album name and artist in result stage", () => {
-    renderModal();
-    expect(screen.getByText("OK Computer")).toBeInTheDocument();
-    const resultStage = screen
-      .getByTestId("selection-reason")
-      .closest("[data-testid='stage-card']")!;
-    expect(resultStage).toHaveTextContent("Radiohead");
-  });
-
-  it("does not render when closed", () => {
-    render(
+    <ThemeContext.Provider
+      value={{
+        theme: "light",
+        actualTheme: "light",
+        setTheme: vi.fn(),
+        isLoading: false,
+      }}
+    >
       <RecommendationTraceModal
-        isOpen={false}
+        isOpen={isOpen}
         onClose={vi.fn()}
         trace={trace}
-        albumName="OK Computer"
-        artistName="Radiohead"
+        albumName="Souvlaki"
+        artistName="Near Band"
       />
-    );
+    </ThemeContext.Provider>
+  );
+}
+
+beforeEach(() => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve(graph) })
+    )
+  );
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("RecommendationTraceModal", () => {
+  it("names the record it is explaining", async () => {
+    renderModal();
+
+    expect(await screen.findByText("Why Souvlaki")).toBeInTheDocument();
+  });
+
+  it("does not render when closed, and fetches no chart nobody asked for", () => {
+    renderModal(false);
+
     expect(screen.queryByTestId("modal")).not.toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
-  describe("explore trace", () => {
-    it("renders the explore flow stage cards", () => {
-      renderExploreModal();
-      const stageCards = screen.getAllByTestId("stage-card");
-      expect(stageCards).toHaveLength(4);
-    });
+  it("asks for the spotlight flow's shape", async () => {
+    renderModal();
 
-    it("does not render within-taste stages", () => {
-      renderExploreModal();
-      expect(screen.queryByTestId("chosen-tag")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("page1-count")).not.toBeInTheDocument();
-    });
-
-    it("marks the chosen candidate", () => {
-      renderExploreModal();
-      const chosen = screen.getByTestId("chosen-candidate");
-      expect(chosen).toHaveTextContent("Jazz Cat");
-      expect(screen.getAllByTestId("candidate")).toHaveLength(1);
-    });
-
-    it("labels candidates as different vs same genre", () => {
-      renderExploreModal();
-      expect(screen.getByText("different genre")).toBeInTheDocument();
-      expect(screen.getByText("same genre")).toBeInTheDocument();
-    });
-
-    it("shows the seed artist and result", () => {
-      renderExploreModal();
-      expect(screen.getAllByText("Radiohead").length).toBeGreaterThan(0);
-      expect(screen.getByText("Blue Album")).toBeInTheDocument();
-      expect(screen.getByTestId("selection-reason")).toHaveTextContent(
-        "New discovery"
-      );
-    });
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/recommendations/graph/spotlight",
+        expect.anything()
+      )
+    );
   });
 
-  describe("rating boost", () => {
-    it("shows the rating multiplier", () => {
-      renderModal({
-        plexArtists: [
-          {
-            name: "Deep Cut Fan",
-            viewCount: 50,
-            picked: true,
-            tagContributions: [],
-            ratingMultiplier: 1.5,
-          },
-        ],
-      });
+  it("draws the pipeline the recommendation came through", async () => {
+    renderModal();
 
-      expect(screen.getByTestId("artist-rating")).toHaveTextContent(
-        "×1.50 rating"
-      );
-    });
-
-    it("omits the rating multiplier for artists with nothing rated", () => {
-      renderModal();
-      expect(screen.queryByTestId("artist-rating")).not.toBeInTheDocument();
-    });
+    expect(await screen.findByTestId("recommender-canvas")).toBeInTheDocument();
+    expect(screen.getByText("Album from a neighbour")).toBeInTheDocument();
   });
 
-  describe("personal flow", () => {
-    it("renders the seed, the neighbours, and the shared ground", () => {
-      renderPersonalModal();
+  it("shows what each step that ran had to say", async () => {
+    renderModal();
 
-      expect(screen.getAllByTestId("stage-card")).toHaveLength(4);
-      expect(screen.getByText("Slowdive")).toBeInTheDocument();
-      expect(screen.getByTestId("chosen-candidate")).toHaveTextContent(
-        "Near Band"
-      );
-      expect(screen.getByTestId("selection-reason")).toHaveTextContent(
-        "New discovery"
-      );
-    });
+    expect(await screen.findByText("Next to")).toBeInTheDocument();
+    expect(screen.getByText("Slowdive")).toBeInTheDocument();
+    expect(screen.getByTestId("trace-chosen")).toHaveTextContent("Near Band");
+    expect(screen.getByText("and 3 more")).toBeInTheDocument();
+  });
 
-    it("says so when the pool had to widen", () => {
-      renderPersonalModal({ widened: true });
-      expect(screen.getByTestId("personal-widened")).toBeInTheDocument();
-    });
+  /**
+   * "It was a personal pick, so the tag chart never ran" is the part a list of stages could
+   * only imply. Here it is the difference between a card that is faded and one that is not.
+   */
+  it("fades the steps this recommendation never reached", async () => {
+    renderModal();
 
-    it("stays quiet about widening on a normal pick", () => {
-      renderPersonalModal();
-      expect(screen.queryByTestId("personal-widened")).not.toBeInTheDocument();
-    });
+    await screen.findByTestId("recommender-canvas");
+    const card = (id: string) =>
+      document.querySelector(`[data-testid="rf__node-${id}"] [data-kind]`);
 
-    it("says so when every neighbour was on the wrong side of the library preference", () => {
-      renderPersonalModal({ relaxedPreference: true });
-      expect(screen.getByTestId("personal-relaxed")).toBeInTheDocument();
-    });
+    expect(card("candidateWalk")).toHaveAttribute("data-skipped", "true");
+    expect(card("exploreAlbum")).not.toHaveAttribute("data-skipped");
+    expect(card("personalAlbum")).toHaveAttribute("data-source", "true");
+  });
 
-    it("stays quiet about the preference on a normal pick", () => {
-      renderPersonalModal();
-      expect(screen.queryByTestId("personal-relaxed")).not.toBeInTheDocument();
-    });
+  it("says a step ran and came up with nothing", async () => {
+    renderModal();
+
+    await screen.findByTestId("recommender-canvas");
+    expect(screen.getByText("came up with nothing")).toBeInTheDocument();
+  });
+
+  it("says what the pick left of the shared lookup allowance", async () => {
+    renderModal();
+
+    expect(
+      await screen.findByText(/27 of 30 musicbrainz lookups per build left/i)
+    ).toBeInTheDocument();
   });
 });

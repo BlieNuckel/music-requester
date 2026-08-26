@@ -3,6 +3,7 @@ import { NODE_REGISTRY, RETIRED_PARAMS } from "./nodes";
 import { PARAMS } from "./params";
 import type { ParamKey } from "./params";
 import type { NodeRegistration } from "./nodes";
+import { selectFlow } from "../../shared/recommenderGraph";
 import type {
   FlowId,
   GraphEdge,
@@ -134,4 +135,27 @@ export function profileScopeParamKeys(): ParamKey[] {
   return NODE_REGISTRY.filter((node) => node.scope === "profile")
     .flatMap((node) => node.params ?? [])
     .sort();
+}
+
+/**
+ * One flow's shape, with the knobs left out.
+ *
+ * Anyone who was shown a recommendation can ask why, and the answer is drawn on this chart —
+ * but the settings canvas stays admin-only, so what a reader gets is the pipeline's shape and
+ * not its dials. The nodes still say what they take, do and give, which is what a trace hangs
+ * its facts on.
+ */
+export function buildFlowShape(flow: FlowId): RecommenderGraph {
+  const selection = selectFlow(buildRecommenderGraph(), flow);
+
+  return {
+    nodes: selection.nodes.map((entry) => ({
+      ...entry.node,
+      params: [],
+      usesParams: [],
+    })),
+    edges: selection.edges,
+    retiredParams: [],
+    budgets: BUDGETS,
+  };
 }

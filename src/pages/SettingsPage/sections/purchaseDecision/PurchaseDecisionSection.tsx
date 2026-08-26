@@ -1,6 +1,6 @@
 import type { PurchaseDecisionSettings } from "@/context/settingsContextDef";
 import { DEFAULT_PURCHASE_DECISION } from "@/context/purchaseDecisionDefaults";
-import TagListEditor from "../recommendations/TagListEditor";
+import TagListEditor from "@/components/TagListEditor";
 
 interface PurchaseDecisionSectionProps {
   config: PurchaseDecisionSettings;

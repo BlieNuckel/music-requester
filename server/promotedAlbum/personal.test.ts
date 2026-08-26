@@ -19,7 +19,9 @@ import {
 } from "./personal";
 import { preferenceRule } from "./preference";
 import { PICK_BODIES, type PickCtx } from "./pickGraph";
+import { PICK_EXPLAINERS } from "./pickExplain";
 import { runGraph } from "../recommenderGraph/runtime/executor";
+import type { TraceFact } from "../../shared/recommendationTrace";
 import { RESOLUTION_BUDGET } from "./budget";
 import type { DerivedProfile } from "../db/entity/UserProfile";
 import type { Rng } from "../utils/random";
@@ -94,9 +96,15 @@ type PersonalCase = {
  * for a neighbour's album pulls in, so collapsing the graph, the genre line, the library line
  * and the album walk are exercised with the wiring the carousel actually uses.
  */
-async function runPersonal(
+type PersonalRun = {
+  built: BuiltAlbum | null;
+  /** What a node had to say about its own turn, which is the trace now. */
+  facts: (nodeId: string) => TraceFact[];
+};
+
+async function runPersonalGraph(
   input: PersonalCase = {}
-): Promise<BuiltAlbum | null> {
+): Promise<PersonalRun> {
   const ctx: PickCtx = {
     userId: 1,
     config,
@@ -120,14 +128,26 @@ async function runPersonal(
     knownAlbums: [...(input.knownAlbums ?? [])],
   } as DerivedProfile;
 
-  const { outputs } = await runGraph(
+  const { outputs, trace } = await runGraph(
     ["personalAlbum"],
     PICK_BODIES,
     ctx,
-    new Map([["profileFreshness", profile]])
+    new Map([["profileFreshness", profile]]),
+    PICK_EXPLAINERS
   );
-  return outputs.get("personalAlbum") as BuiltAlbum | null;
+
+  return {
+    built: outputs.get("personalAlbum") as BuiltAlbum | null,
+    facts: (nodeId) => trace.find((run) => run.nodeId === nodeId)?.facts ?? [],
+  };
 }
+
+const runPersonal = (input: PersonalCase = {}): Promise<BuiltAlbum | null> =>
+  runPersonalGraph(input).then((run) => run.built);
+
+/** One node's fact by its label, which is how a reader finds it on the card. */
+const fact = (facts: TraceFact[], label: string): TraceFact | undefined =>
+  facts.find((entry) => entry.label === label);
 
 function personal(result: { result: unknown } | null): PersonalResult {
   if (!result) throw new Error("expected a personal result");
@@ -313,32 +333,29 @@ describe("the personal source", () => {
     expect(mockFetchReleaseGroupsForArtist).toHaveBeenCalledTimes(1);
   });
 
-  it("traces the seed, the neighbours considered, and the one chosen", async () => {
-    const built = await runPersonal({
+  it("explains the seed, the neighbours considered, and the one chosen", async () => {
+    const { facts } = await runPersonalGraph({
       similarGraph: [
         seed("Slowdive", 100, ["shoegaze", "dream pop"], [nearNeighbour]),
       ],
     });
 
-    const { trace } = personal(built);
-    expect(trace.kind).toBe("personal");
-    expect(trace.seedArtist).toBe("Slowdive");
-    expect(trace.chosenArtist).toBe("Near Band");
-    expect(trace.widened).toBe(false);
-    expect(trace.candidates).toEqual([
-      expect.objectContaining({
-        name: "Near Band",
-        chosen: true,
-        isDifferentGenre: false,
-      }),
+    const album = facts("personalAlbum");
+    expect(fact(album, "Next to")?.value).toBe("Slowdive");
+    expect(fact(album, "Genres you share")?.value).toBe("shoegaze, dream pop");
+    expect(fact(album, "Neighbours drawn from")?.items).toEqual([
+      expect.objectContaining({ name: "Near Band", chosen: true }),
     ]);
   });
 
-  it("records that the pool widened when no neighbour was close enough", async () => {
-    const built = await runPersonal({
+  it("says so when the pool widened because no neighbour was close enough", async () => {
+    const { facts } = await runPersonalGraph({
       similarGraph: [seed("Slowdive", 100, ["shoegaze"], [farNeighbour])],
     });
-    expect(personal(built).trace.widened).toBe(true);
+
+    expect(
+      fact(facts("personalBand"), "Close enough to your taste")?.value
+    ).toMatch(/none were/i);
   });
 
   it("skips an album the user already listens to", async () => {
@@ -413,8 +430,6 @@ describe("the personal source", () => {
 
     const result = personal(built);
     expect(result.album.artistName).toBe("Near Band");
-    expect(result.trace.selectionReason).toBe("preferred_non_library");
-    expect(result.trace.relaxedPreference).toBe(false);
     expect(mockFetchReleaseGroupsForArtist).toHaveBeenCalledTimes(1);
   });
 
@@ -431,10 +446,28 @@ describe("the personal source", () => {
       artistInLibrary: (mbid) => mbid === "mbid-owned",
     });
 
-    const result = personal(built);
-    expect(result.album.artistName).toBe("Owned");
-    expect(result.trace.relaxedPreference).toBe(true);
-    expect(result.trace.selectionReason).toBe("fallback_in_library");
+    expect(personal(built).album.artistName).toBe("Owned");
+  });
+
+  it("explains a pick that had to take a neighbour the user owns", async () => {
+    const { facts } = await runPersonalGraph({
+      similarGraph: [
+        seed(
+          "Slowdive",
+          100,
+          ["shoegaze", "dream pop"],
+          [{ ...nearNeighbour, name: "Owned", artistMbid: "mbid-owned" }]
+        ),
+      ],
+      artistInLibrary: (mbid) => mbid === "mbid-owned",
+    });
+
+    expect(fact(facts("personalPreference"), "Library side")?.value).toMatch(
+      /wrong side/i
+    );
+    expect(fact(facts("personalAlbum"), "Library")?.value).toMatch(
+      /already in your library/i
+    );
   });
 
   it("spends one unit of the shared budget per neighbour tried", async () => {

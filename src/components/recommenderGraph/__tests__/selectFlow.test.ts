@@ -1,4 +1,4 @@
-import { selectFlow } from "../flowSelection";
+import { selectFlow } from "@shared/recommenderGraph";
 import { makeGraph, makeNode } from "./fixtures";
 import type { GraphEdge, RecommenderGraph } from "@shared/recommenderGraph";
 

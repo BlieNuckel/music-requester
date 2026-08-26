@@ -652,7 +652,7 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     scope: "pick",
     kind: "step",
     summary: "Takes the first record in the pool worth showing.",
-    takes: ["The pool of records", "Tags per artist, to explain the pick"],
+    takes: ["The pool of records"],
     does: [
       "Visits candidates in library-preference order",
       "Takes the first that resolves and was not shown recently",
@@ -660,7 +660,7 @@ export const NODE_REGISTRY: NodeRegistration[] = [
     ],
     gives: "An album from the genre chart",
     flow: "spotlight",
-    inputs: [data("albumPool"), data("profileFreshness", "artist tags")],
+    inputs: [data("albumPool")],
     usesParams: ["libraryPreference"],
     spendsBudget: true,
   },

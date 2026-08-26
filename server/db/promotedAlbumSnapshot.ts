@@ -11,9 +11,21 @@ export type StoredCarousel = {
 };
 
 /**
- * Parse a stored document. A row whose JSON is unreadable, is not an array, or is empty
- * is reported as absent: the snapshot only exists to be better than nothing, so anything
- * it cannot vouch for is nothing.
+ * Whether a stored entry still speaks the shape this build serves.
+ *
+ * A carousel written before the trace became a record of the run carries the old
+ * hand-written account instead, which the trace view cannot draw. A stale snapshot is a
+ * rebuild; a snapshot that would render a broken page is not worth the saved lookups.
+ */
+function carriesRunRecord(entry: unknown): boolean {
+  const trace = (entry as { trace?: { nodes?: unknown } } | null)?.trace;
+  return Array.isArray(trace?.nodes);
+}
+
+/**
+ * Parse a stored document. A row whose JSON is unreadable, is not an array, is empty, or
+ * predates the shape this build serves is reported as absent: the snapshot only exists to
+ * be better than nothing, so anything it cannot vouch for is nothing.
  */
 function parseStored(row: PromotedAlbumSnapshot): StoredCarousel | null {
   let albums: unknown;
@@ -23,6 +35,7 @@ function parseStored(row: PromotedAlbumSnapshot): StoredCarousel | null {
     return null;
   }
   if (!Array.isArray(albums) || albums.length === 0) return null;
+  if (!albums.every(carriesRunRecord)) return null;
 
   const builtAt = Date.parse(row.built_at);
   if (Number.isNaN(builtAt)) return null;

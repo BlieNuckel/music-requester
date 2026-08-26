@@ -88,3 +88,53 @@ describe("GET /graph", () => {
     }
   });
 });
+
+describe("GET /graph/spotlight", () => {
+  it("draws the flow a recommendation's trace hangs on, with its boundary", async () => {
+    const res = await request(app).get("/graph/spotlight");
+    const ids = res.body.nodes.map((n: { id: string }) => n.id);
+
+    expect(res.status).toBe(200);
+    expect(ids).toContain("sourceChain");
+    expect(ids).toContain("pickLoop");
+    // The profile the picks read is another flow's, and shows as a boundary reference.
+    expect(ids).toContain("profileFreshness");
+    expect(ids).not.toContain("listeningWindow");
+  });
+
+  /**
+   * Anyone shown a recommendation can ask why. The settings canvas is a different question,
+   * and stays behind ADMIN, so this answer carries the shape without the dials.
+   */
+  it("carries no knobs, so asking why is not asking for the settings", async () => {
+    const res = await request(app).get("/graph/spotlight");
+
+    for (const node of res.body.nodes) {
+      expect([node.id, node.params, node.usesParams]).toEqual([
+        node.id,
+        [],
+        [],
+      ]);
+    }
+    expect(res.body.retiredParams).toEqual([]);
+  });
+
+  it("still says what each step takes, does and gives", async () => {
+    const res = await request(app).get("/graph/spotlight");
+    const walk = res.body.nodes.find(
+      (n: { id: string }) => n.id === "candidateWalk"
+    );
+
+    expect(walk.takes.length).toBeGreaterThan(0);
+    expect(walk.does.length).toBeGreaterThan(0);
+    expect(walk.gives.length).toBeGreaterThan(0);
+  });
+
+  it("names the allowance a trace reports what is left of", async () => {
+    const res = await request(app).get("/graph/spotlight");
+
+    expect(res.body.budgets).toContainEqual(
+      expect.objectContaining({ id: "resolutionBudget" })
+    );
+  });
+});

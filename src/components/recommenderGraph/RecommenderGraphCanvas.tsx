@@ -24,12 +24,17 @@ import type {
   NodeKind,
   RecommenderGraph,
 } from "@shared/recommenderGraph";
+import type { RecommendationTrace } from "@shared/recommendationTrace";
 import "@xyflow/react/dist/style.css";
 
 type RecommenderGraphCanvasProps = {
   graph: RecommenderGraph;
   flow: FlowId;
   layout: LayoutOptions;
+  /** One recommendation's run, when the chart is explaining one rather than describing all. */
+  trace?: RecommendationTrace;
+  /** Height of the canvas, for a chart that has to sit inside something else. */
+  className?: string;
 };
 
 type LegendEntry = { label: string; className: string; note: string };
@@ -75,7 +80,11 @@ function kindsInFlow(graph: RecommenderGraph, flow: FlowId): NodeKind[] {
   return [...seen];
 }
 
-function Legend({ graph, flow }: Omit<RecommenderGraphCanvasProps, "layout">) {
+function Legend({
+  graph,
+  flow,
+  trace,
+}: Omit<RecommenderGraphCanvasProps, "layout" | "className">) {
   const spendsBudget = graph.nodes.some(
     (node) => node.flow === flow && node.spendsBudget
   );
@@ -83,6 +92,23 @@ function Legend({ graph, flow }: Omit<RecommenderGraphCanvasProps, "layout">) {
 
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-gray-500 dark:text-gray-400">
+      {trace && (
+        <>
+          <span className="flex items-center gap-2">
+            <span className="w-4 h-4 rounded border-2 border-black bg-white dark:bg-gray-800 opacity-40 grayscale" />
+            <span>faded: never ran for this recommendation</span>
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="w-4 h-4 rounded border-2 border-black ring-2 ring-amber-400" />
+            <span>ringed: the step this record came from</span>
+          </span>
+          <span>
+            <span className="font-bold">budget</span> {trace.budget.remaining}{" "}
+            of {trace.budget.of} {trace.budget.label.toLowerCase()} left when
+            this pick was done
+          </span>
+        </>
+      )}
       {LEGEND.map((entry) => (
         <span key={entry.label} className="flex items-center gap-2">
           <span className={`w-6 border-t-2 ${entry.className}`} />
@@ -100,7 +126,8 @@ function Legend({ graph, flow }: Omit<RecommenderGraphCanvasProps, "layout">) {
           <span>{NODE_KIND_MEANING[kind]}</span>
         </span>
       ))}
-      {spendsBudget &&
+      {!trace &&
+        spendsBudget &&
         graph.budgets.map((budget) => (
           <span key={budget.id} title={budget.description}>
             <span className="font-bold">budget</span> {budget.amount}{" "}
@@ -200,10 +227,12 @@ export default function RecommenderGraphCanvas({
   graph,
   flow,
   layout,
+  trace,
+  className,
 }: RecommenderGraphCanvasProps) {
   const built = useMemo(
-    () => buildFlow(graph, flow, layout),
-    [graph, flow, layout]
+    () => buildFlow(graph, flow, layout, trace),
+    [graph, flow, layout, trace]
   );
   const definition = FLOWS.find((entry) => entry.id === flow);
   const { actualTheme } = useTheme();
@@ -218,10 +247,12 @@ export default function RecommenderGraphCanvas({
       )}
       <div
         data-testid="recommender-canvas"
-        className="h-[70vh] min-h-[420px] rounded-xl border-2 border-black overflow-hidden bg-gray-50 dark:bg-gray-900"
+        className={`rounded-xl border-2 border-black overflow-hidden bg-gray-50 dark:bg-gray-900 ${
+          className ?? "h-[70vh] min-h-[420px]"
+        }`}
       >
         <ReactFlow
-          key={`${flow}:${layout.direction}:${layout.spacing}`}
+          key={`${flow}:${layout.direction}:${layout.spacing}:${trace?.source ?? ""}`}
           defaultNodes={built.nodes}
           defaultEdges={built.edges}
           nodeTypes={nodeTypes}
@@ -242,7 +273,7 @@ export default function RecommenderGraphCanvas({
           />
         </ReactFlow>
       </div>
-      <Legend graph={graph} flow={flow} />
+      <Legend graph={graph} flow={flow} trace={trace} />
     </div>
   );
 }

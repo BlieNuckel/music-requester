@@ -106,7 +106,8 @@ import { invalidateArtistList } from "../services/lidarr/artists";
 import { invalidateMonitoredAlbums } from "../services/lidarr/albums";
 import { findUserById } from "../auth/users";
 import { initializeDatabase, closeDatabase, getDataSource } from "../db";
-import type { WithinTasteResult, ExploreResult, PersonalResult } from "./types";
+import type { PromotedAlbumEntry } from "./types";
+import type { TraceFact } from "../../shared/recommendationTrace";
 
 /**
  * Await the profile build that the request path now only schedules, so a case can assert on
@@ -154,22 +155,39 @@ async function getOne(userId: number, forceRefresh = false) {
   return first ?? null;
 }
 
+type Entry<M> = Extract<PromotedAlbumEntry, { mode: M }>;
+
+/** What one node said about its own turn, on the run that produced this recommendation. */
+function facts(entry: PromotedAlbumEntry, nodeId: string): TraceFact[] {
+  return entry.trace.nodes.find((run) => run.nodeId === nodeId)?.facts ?? [];
+}
+
+function fact(
+  entry: PromotedAlbumEntry,
+  nodeId: string,
+  label: string
+): TraceFact {
+  const found = facts(entry, nodeId).find((one) => one.label === label);
+  if (!found) throw new Error(`No "${label}" fact on ${nodeId}`);
+  return found;
+}
+
 /** Narrows a result to within-taste; the suite forces this via explorationRate: 0. */
-function wt(result: Awaited<ReturnType<typeof getOne>>): WithinTasteResult {
+function wt(result: Awaited<ReturnType<typeof getOne>>): Entry<"within_taste"> {
   if (!result || result.mode !== "within_taste") {
     throw new Error("expected a within_taste result");
   }
   return result;
 }
 
-function pe(result: Awaited<ReturnType<typeof getOne>>): PersonalResult {
+function pe(result: Awaited<ReturnType<typeof getOne>>): Entry<"personal"> {
   if (!result || result.mode !== "personal") {
     throw new Error("expected a personal result");
   }
   return result;
 }
 
-function ex(result: Awaited<ReturnType<typeof getOne>>): ExploreResult {
+function ex(result: Awaited<ReturnType<typeof getOne>>): Entry<"explore"> {
   if (!result || result.mode !== "explore") {
     throw new Error("expected an explore result");
   }
@@ -926,7 +944,9 @@ describe("getPromotedAlbums", () => {
 
       expect(first!.album.mbid).toBe("rg-shared");
       expect(second!.album.mbid).toBe("rg-shared");
-      expect(second!.trace.selectionReason).toBe(first!.trace.selectionReason);
+      expect(fact(second!, "candidateWalk", "Library")).toEqual(
+        fact(first!, "candidateWalk", "Library")
+      );
     });
 
     it("skips release types that are not albums", async () => {
@@ -1112,9 +1132,8 @@ describe("getPromotedAlbums", () => {
       const results = await getAlbums(userId, false, 5, { rng: lcg(42) });
 
       const sampledPerPick = results.map((r) =>
-        wt(r)
-          .trace.plexArtists.filter((a) => a.picked)
-          .map((a) => a.name)
+        (fact(r, "artistSample", "Artists this pick speaks for").items ?? [])
+          .map((item) => item.name)
           .sort()
           .join(",")
       );
@@ -1123,32 +1142,26 @@ describe("getPromotedAlbums", () => {
   });
 
   describe("trace", () => {
-    it("has correct number of plexArtists entries", async () => {
+    it("names the artists this pick spoke for", async () => {
       mockDeriveArtistWeights.mockReturnValue(plexArtists);
       mockGetArtistTopTags.mockResolvedValue(tags);
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
       const result = await getOne(userId);
-      expect(wt(result).trace.plexArtists).toHaveLength(2);
-      expect(wt(result).trace.plexArtists.map((a) => a.name)).toEqual([
-        "Radiohead",
+      const drawn = fact(
+        result!,
+        "artistSample",
+        "Artists this pick speaks for"
+      );
+
+      expect(drawn.items?.map((item) => item.name).sort()).toEqual([
         "Bjork",
+        "Radiohead",
       ]);
     });
 
-    it("marks the picked artists", async () => {
-      mockDeriveArtistWeights.mockReturnValue(plexArtists);
-      mockGetArtistTopTags.mockResolvedValue(tags);
-      mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
-      mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
-
-      const result = await getOne(userId);
-      const picked = wt(result).trace.plexArtists.filter((a) => a.picked);
-      expect(picked).toHaveLength(2);
-    });
-
-    it("marks only the artists this pick sampled, and lists the rest", async () => {
+    it("shows only the artists this pick sampled, not the whole profile", async () => {
       mockDeriveArtistWeights.mockReturnValue(
         Array.from({ length: 6 }, (_, i) => ({
           name: `Artist ${i}`,
@@ -1164,15 +1177,37 @@ describe("getPromotedAlbums", () => {
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
       const result = await getOne(userId);
-      const trace = wt(result).trace;
-
-      expect(trace.plexArtists).toHaveLength(6);
-      expect(trace.plexArtists.filter((a) => a.picked)).toHaveLength(3);
-      // The vector shown is the one this pick drew from, not the whole profile's.
-      expect(trace.weightedTags).toHaveLength(3);
-      expect(trace.weightedTags.map((t) => t.name)).toContain(
-        trace.chosenTag.name
+      const drawn = fact(
+        result!,
+        "artistSample",
+        "Artists this pick speaks for"
       );
+      const vector = fact(result!, "pickVector", "Genres they add up to");
+      const genre = fact(result!, "tagDraw", "Genre drawn");
+
+      expect(drawn.items).toHaveLength(3);
+      // The vector shown is the one this pick drew from, not the whole profile's.
+      expect(vector.items).toHaveLength(3);
+      expect(
+        vector.items!.some((item) => genre.value!.startsWith(item.name))
+      ).toBe(true);
+    });
+
+    it("says which artists a genre in the vector came from", async () => {
+      mockDeriveArtistWeights.mockReturnValue(plexArtists);
+      mockGetArtistTopTags.mockResolvedValue(tags);
+      mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
+      mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
+
+      const result = await getOne(userId);
+      const vector = fact(result!, "pickVector", "Genres they add up to");
+      const alt = vector.items!.find(
+        (item) => item.name === "alternative rock"
+      );
+
+      expect(alt).toBeDefined();
+      expect(alt!.detail).toContain("Radiohead");
+      expect(alt!.detail).toContain("Bjork");
     });
 
     it("falls back to the stored vector for a profile with no artist tags", async () => {
@@ -1236,42 +1271,50 @@ describe("getPromotedAlbums", () => {
       expect(wt(albums[0]).tag).toBe("alternative rock");
     });
 
-    it("chosenTag name matches result tag", async () => {
+    it("draws the genre it says it drew", async () => {
       mockDeriveArtistWeights.mockReturnValue(plexArtists);
       mockGetArtistTopTags.mockResolvedValue(tags);
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
       const result = await getOne(userId);
-      expect(wt(result).trace.chosenTag.name).toBe(wt(result).tag);
+      expect(fact(result!, "tagDraw", "Genre drawn").value).toMatch(
+        new RegExp(`^${wt(result).tag}, `)
+      );
     });
 
-    it("albumPool counts are accurate", async () => {
+    it("counts the pool it walked", async () => {
       mockDeriveArtistWeights.mockReturnValue(plexArtists);
       mockGetArtistTopTags.mockResolvedValue(tags);
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
       const result = await getOne(userId);
-      const { albumPool } = wt(result).trace;
-      expect(albumPool.page1Count).toBe(2);
-      expect(albumPool.deepPageCount).toBe(2);
-      expect(albumPool.totalAfterDedup).toBe(2);
-      expect(albumPool.deepPage).toBeGreaterThanOrEqual(2);
-      expect(albumPool.deepPage).toBeLessThanOrEqual(10);
+      const deep = fact(result!, "albumPool", "Deeper page").value!;
+      const page = Number(deep.match(/page (\d+)/)![1]);
+
+      expect(fact(result!, "albumPool", "Page one").value).toBe("2 records");
+      expect(fact(result!, "albumPool", "Once deduplicated").value).toBe(
+        "2 to walk"
+      );
+      expect(deep).toContain("2 records");
+      expect(page).toBeGreaterThanOrEqual(2);
+      expect(page).toBeLessThanOrEqual(10);
     });
 
-    it("selectionReason is preferred_non_library when artist not in library", async () => {
+    it("says the pick is a new discovery when the artist is not in the library", async () => {
       mockDeriveArtistWeights.mockReturnValue(plexArtists);
       mockGetArtistTopTags.mockResolvedValue(tags);
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
       const result = await getOne(userId);
-      expect(result!.trace.selectionReason).toBe("preferred_non_library");
+      expect(fact(result!, "candidateWalk", "Library").value).toMatch(
+        /new discovery/i
+      );
     });
 
-    it("selectionReason is fallback_in_library when all artists are in library", async () => {
+    it("says the pick was already owned when every artist is in the library", async () => {
       mockDeriveArtistWeights.mockReturnValue(plexArtists);
       mockGetArtistTopTags.mockResolvedValue(tags);
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
@@ -1292,38 +1335,59 @@ describe("getPromotedAlbums", () => {
       });
 
       const result = await getOne(userId);
-      expect(result!.trace.selectionReason).toBe("fallback_in_library");
+      expect(fact(result!, "candidateWalk", "Library").value).toMatch(
+        /already in your library/i
+      );
     });
 
-    it("merges same tags from multiple artists with combined weight", async () => {
+    it("records the turns in the order they were taken, and what is left of the budget", async () => {
       mockDeriveArtistWeights.mockReturnValue(plexArtists);
       mockGetArtistTopTags.mockResolvedValue(tags);
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
       const result = await getOne(userId);
-      const altTag = wt(result).trace.weightedTags.find(
-        (t) => t.name === "alternative rock"
-      );
-      expect(altTag).toBeDefined();
-      expect(altTag!.fromArtists).toContain("Radiohead");
-      expect(altTag!.fromArtists).toContain("Bjork");
-      const share = 100 / (100 + 80);
-      expect(altTag!.weight).toBeCloseTo(share * 100 + share * 50);
+      const ran = result!.trace.nodes.map((run) => run.nodeId);
+
+      expect(result!.trace.source).toBe("candidateWalk");
+      expect(ran).toEqual([
+        "exploreQuota",
+        "exploreSeed",
+        "exploreBand",
+        "exploreAlbum",
+        "personalCandidates",
+        "personalBand",
+        "personalPreference",
+        "personalAlbum",
+        "artistSample",
+        "pickVector",
+        "tagDraw",
+        "albumPool",
+        "candidateWalk",
+        "sourceChain",
+      ]);
+      expect(result!.trace.budget.of).toBe(30);
+      expect(result!.trace.budget.remaining).toBeLessThan(30);
     });
 
-    it("picked artists have tagContributions populated", async () => {
+    /**
+     * A source that never answered is a different story from one that was never asked, and
+     * only the first shows up here at all.
+     */
+    it("marks the sources that ran and came up empty", async () => {
       mockDeriveArtistWeights.mockReturnValue(plexArtists);
       mockGetArtistTopTags.mockResolvedValue(tags);
       mockGetTopAlbumsByTag.mockResolvedValue(albumsPage);
       mockLidarrGet.mockResolvedValue({ ok: true, data: [] });
 
       const result = await getOne(userId);
-      const radiohead = wt(result).trace.plexArtists.find(
-        (a) => a.name === "Radiohead"
+      const byId = new Map(
+        result!.trace.nodes.map((run) => [run.nodeId, run.produced])
       );
-      expect(radiohead!.tagContributions).toHaveLength(2);
-      expect(radiohead!.tagContributions[0].tagName).toBe("alternative rock");
+
+      expect(byId.get("exploreAlbum")).toBe(false);
+      expect(byId.get("personalAlbum")).toBe(false);
+      expect(byId.get("candidateWalk")).toBe(true);
     });
   });
 
@@ -1435,10 +1499,12 @@ describe("getPromotedAlbums", () => {
 
       const result = await getOne(userId);
 
-      const [artist] = wt(result).trace.plexArtists;
-      expect(artist.name).toBe("Radiohead");
-      expect(artist.tagContributions).toEqual([
-        { tagName: "folk", rawCount: 100, weight: 100 },
+      const vector = fact(result!, "pickVector", "Genres they add up to");
+      expect(vector.items).toEqual([
+        expect.objectContaining({
+          name: "folk",
+          detail: expect.stringContaining("Radiohead"),
+        }),
       ]);
     });
 
@@ -1481,7 +1547,9 @@ describe("getPromotedAlbums", () => {
 
       const result = await getOne(userId);
       expect(result).not.toBeNull();
-      expect(result!.trace.selectionReason).toBe("preferred_library");
+      expect(fact(result!, "candidateWalk", "Library").value).toMatch(
+        /already in your library, as you asked for/i
+      );
       expect(result!.album.artistMbid).toBe("lib-art-1");
     });
 
@@ -1497,7 +1565,9 @@ describe("getPromotedAlbums", () => {
 
       const result = await getOne(userId);
       expect(result).not.toBeNull();
-      expect(result!.trace.selectionReason).toBe("no_preference");
+      expect(fact(result!, "candidateWalk", "Library").value).toMatch(
+        /no library preference/i
+      );
     });
 
     it("uses deepPageMin and deepPageMax from config", async () => {
@@ -1555,15 +1625,15 @@ describe("getPromotedAlbums", () => {
       setupExplore();
 
       const result = await getOne(userId);
-      const { candidates, chosenArtist } = ex(result).trace;
-      expect(chosenArtist).toBe("Jazz Cat");
+      const weighed = fact(result!, "exploreAlbum", "Neighbours weighed up");
+      const jazz = weighed.items!.find((c) => c.name === "Jazz Cat");
+      const rock = weighed.items!.find((c) => c.name === "Rock Clone");
 
-      const jazz = candidates.find((c) => c.name === "Jazz Cat");
-      const rock = candidates.find((c) => c.name === "Rock Clone");
-      expect(jazz!.isDifferentGenre).toBe(true);
+      expect(ex(result).album.artistName).toBe("Jazz Cat");
       expect(jazz!.chosen).toBe(true);
-      expect(rock!.isDifferentGenre).toBe(false);
-      expect(rock!.chosen).toBe(false);
+      expect(jazz!.detail).toMatch(/far enough for a jump/);
+      expect(rock!.chosen).toBeUndefined();
+      expect(rock!.detail).toMatch(/too close to be a jump/);
     });
 
     it("falls back to within-taste when the seed has no MBID", async () => {

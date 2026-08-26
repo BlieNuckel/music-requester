@@ -6,7 +6,7 @@ import type {
   MeasuredSizes,
   Position as CardPosition,
 } from "./autoLayout";
-import { selectFlow } from "./flowSelection";
+import { selectFlow } from "@shared/recommenderGraph";
 import type { Edge, Node } from "@xyflow/react";
 import type {
   EdgeKind,
@@ -15,12 +15,23 @@ import type {
   GraphNode,
   RecommenderGraph,
 } from "@shared/recommenderGraph";
+import type { NodeRun, RecommendationTrace } from "@shared/recommendationTrace";
 
 export type RecommenderNodeData = {
   node: GraphNode;
   external: boolean;
   /** Which way this flow runs, so a card attaches its edges on the facing sides. */
   direction: LayoutDirection;
+  /** What this node did, when the chart is explaining one recommendation. */
+  run?: NodeRun;
+  /**
+   * True when a run is being shown and this node had no part in it. A source that was never
+   * asked is a different story from one that answered and came up empty, and only drawing
+   * the difference makes "it was an explore pick, so the rest never ran" readable.
+   */
+  skipped?: boolean;
+  /** The node whose output became the recommendation. */
+  source?: boolean;
 };
 export type RecommenderFlowNode = Node<RecommenderNodeData>;
 
@@ -104,10 +115,29 @@ export function layoutPositions(
   return autoLayout(selection.nodes, selection.edges, layout, measured);
 }
 
+/**
+ * What one run says about a node, when a run is being shown at all. A node the run never
+ * reached is marked rather than dropped: the chart is the shape of the pipeline first, and
+ * the path through it second.
+ */
+function runFor(
+  nodeId: string,
+  trace: RecommendationTrace | undefined
+): Pick<RecommenderNodeData, "run" | "skipped" | "source"> {
+  if (!trace) return {};
+  const run = trace.nodes.find((entry) => entry.nodeId === nodeId);
+  return {
+    ...(run ? { run } : {}),
+    skipped: !run,
+    source: trace.source === nodeId,
+  };
+}
+
 export function buildFlow(
   graph: RecommenderGraph,
   flow: FlowId,
-  layout?: LayoutOptions
+  layout?: LayoutOptions,
+  trace?: RecommendationTrace
 ): { nodes: RecommenderFlowNode[]; edges: Edge[] } {
   const selection = selectFlow(graph, flow);
   const positions = autoLayout(selection.nodes, selection.edges, layout);
@@ -121,7 +151,7 @@ export function buildFlow(
       position: positions.get(entry.node.id) ?? { x: 0, y: 0 },
       sourcePosition: sides.source,
       targetPosition: sides.target,
-      data: { ...entry, direction },
+      data: { ...entry, direction, ...runFor(entry.node.id, trace) },
     })),
     edges: toFlowEdges(selection.edges),
   };

@@ -1,6 +1,6 @@
 import { graphlib, layout } from "@dagrejs/dagre";
 import { BAR_KINDS } from "./paramKinds";
-import type { FlowNode } from "./flowSelection";
+import type { FlowNode } from "@shared/recommenderGraph";
 import type { GraphEdge, GraphNode, ParamDef } from "@shared/recommenderGraph";
 
 export type Position = { x: number; y: number };

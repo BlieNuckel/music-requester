@@ -80,6 +80,8 @@ describe("runGraph", () => {
       nodeId: "signalLog",
       ms: expect.any(Number),
       summary: "3 items",
+      produced: true,
+      facts: [],
     });
   });
 
@@ -163,9 +165,9 @@ describe("runGraph", () => {
         personalPreference: () => [],
         personalAlbum: personal,
         candidateWalk: () => "tag album",
-        sourceChain: (inputs, _ctx, resolve) => {
+        sourceChain: (inputs, _ctx, runtime) => {
           expect(inputs).toEqual({});
-          return resolve("personalAlbum");
+          return runtime.resolve("personalAlbum");
         },
       }),
       { label: "t" },
@@ -201,12 +203,12 @@ describe("runGraph", () => {
       bodies({
         exploreQuota: () => 0,
         sourceChain: attempt,
-        pickLoop: async (inputs, _ctx, resolve) => {
+        pickLoop: async (inputs, _ctx, runtime) => {
           expect(inputs).toEqual({});
           return [
-            await resolve("sourceChain"),
-            await resolve("sourceChain"),
-            await resolve("sourceChain"),
+            await runtime.resolve("sourceChain"),
+            await runtime.resolve("sourceChain"),
+            await runtime.resolve("sourceChain"),
           ];
         },
       }),
@@ -236,5 +238,93 @@ describe("runGraph", () => {
 
     expect(registered("tagDraw").scope).toBe("pick");
     expect(outputs.get("tagDraw")).toBe("shoegaze");
+  });
+  it("asks a node to explain the turn it just took", async () => {
+    const { trace } = await runGraph(
+      ["signalLog"],
+      bodies({
+        plexCapture: () => "sweep",
+        plexSessions: () => "sessions",
+        signalLog: () => [1, 2, 3],
+      }),
+      { label: "t" },
+      new Map(),
+      new Map([
+        [
+          "signalLog",
+          (_inputs, output) => [
+            { label: "Rows", value: `${(output as number[]).length}` },
+          ],
+        ],
+      ])
+    );
+
+    expect(trace[trace.length - 1].facts).toEqual([
+      { label: "Rows", value: "3" },
+    ]);
+  });
+
+  /**
+   * A trace explains a recommendation that has already been made. An explainer that throws
+   * has to cost its own line of the story and nothing else.
+   */
+  it("keeps the output when the explanation of it throws", async () => {
+    const { outputs, trace } = await runGraph(
+      ["signalLog"],
+      bodies({
+        plexCapture: () => "sweep",
+        plexSessions: () => "sessions",
+        signalLog: () => "raw",
+      }),
+      { label: "t" },
+      new Map(),
+      new Map([
+        [
+          "signalLog",
+          () => {
+            throw new Error("no idea");
+          },
+        ],
+      ])
+    );
+
+    expect(outputs.get("signalLog")).toBe("raw");
+    expect(trace[trace.length - 1].facts).toEqual([]);
+  });
+
+  it("says whether a node handed anything on", async () => {
+    const { trace } = await runGraph(
+      ["plexCapture", "plexSessions", "signalLog"],
+      bodies({
+        plexCapture: () => null,
+        plexSessions: () => [],
+        signalLog: () => "raw",
+      }),
+      { label: "t" }
+    );
+
+    expect(trace.map((run) => [run.nodeId, run.produced])).toEqual([
+      ["plexCapture", false],
+      ["plexSessions", false],
+      ["signalLog", true],
+    ]);
+  });
+
+  it("hands a repeat node the turns each of its own runs took", async () => {
+    let attempt = 0;
+    const { outputs } = await runGraph(
+      ["pickLoop"],
+      bodies({
+        exploreQuota: () => 0,
+        sourceChain: () => (attempt += 1),
+        pickLoop: async (_inputs, _ctx, runtime) => [
+          (await runtime.traced("sourceChain")).trace.map((r) => r.nodeId),
+          (await runtime.traced("sourceChain")).trace.map((r) => r.nodeId),
+        ],
+      }),
+      { label: "t" }
+    );
+
+    expect(outputs.get("pickLoop")).toEqual([["sourceChain"], ["sourceChain"]]);
   });
 });
