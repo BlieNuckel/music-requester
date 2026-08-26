@@ -143,7 +143,7 @@ export function ExternalCard({ node }: NodeCardProps) {
       <button
         type="button"
         onClick={() => openFlow(node.flow, node.id)}
-        className="text-[11px] font-bold text-gray-500 dark:text-gray-400 hover:text-amber-600"
+        className="nodrag text-[11px] font-bold text-gray-500 dark:text-gray-400 hover:text-amber-600"
       >
         Open that flow
       </button>
@@ -229,7 +229,7 @@ export function NodeCard({ node }: NodeCardProps) {
             <button
               type="button"
               onClick={() => setOpen((prev) => !prev)}
-              className="text-[11px] font-bold text-gray-500 dark:text-gray-400 hover:text-amber-600"
+              className="nodrag text-[11px] font-bold text-gray-500 dark:text-gray-400 hover:text-amber-600"
             >
               {open ? "Hide details" : "What do these do?"}
             </button>

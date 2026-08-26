@@ -13,11 +13,16 @@ type ParamControlProps = {
   disabled?: boolean;
 };
 
-const NUMBER_CLASS =
-  "px-2 py-1 bg-white dark:bg-gray-800 border-2 border-black rounded-lg text-gray-900 dark:text-gray-100 focus:outline-none focus:border-amber-400 text-[16px] font-bold disabled:opacity-50";
+/**
+ * React Flow drags a node from any pointer-down inside it that is not under a `.nodrag`
+ * element, and it preventDefaults the event to do so — which is every gesture a control
+ * needs. Without this a slider cannot be dragged and a click on its track sets nothing.
+ */
+const NODRAG = "nodrag";
 
-const SLIDER_CLASS =
-  "h-2 cursor-pointer appearance-none rounded-full border-2 border-black bg-gray-200 dark:bg-gray-700 accent-amber-400 disabled:opacity-50 disabled:cursor-not-allowed";
+const NUMBER_CLASS = `${NODRAG} px-2 py-1 bg-white dark:bg-gray-800 border-2 border-black rounded-lg text-gray-900 dark:text-gray-100 focus:outline-none focus:border-amber-400 text-[16px] font-bold disabled:opacity-50`;
+
+const SLIDER_CLASS = `${NODRAG} h-2 cursor-pointer appearance-none rounded-full border-2 border-black bg-gray-200 dark:bg-gray-700 accent-amber-400 disabled:opacity-50 disabled:cursor-not-allowed`;
 
 const ASIDE_CLASS = "text-xs text-gray-500 dark:text-gray-400";
 
@@ -37,7 +42,9 @@ function BooleanControl({ param, disabled }: ParamControlProps) {
   const checked = Boolean(config[param.key]);
 
   return (
-    <label className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+    <label
+      className={`${NODRAG} flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-gray-100`}
+    >
       <input
         type="checkbox"
         checked={checked}
@@ -55,7 +62,9 @@ function EnumControl({ param, disabled }: ParamControlProps) {
   const current = config[param.key] as LibraryPreference;
 
   return (
-    <div className="flex rounded-lg border-2 border-black overflow-hidden shadow-cartoon-sm">
+    <div
+      className={`${NODRAG} flex rounded-lg border-2 border-black overflow-hidden shadow-cartoon-sm`}
+    >
       {(param.options ?? []).map((option) => (
         <button
           key={option.value}
@@ -87,10 +96,12 @@ function TagsControl({ param, disabled }: ParamControlProps) {
     );
   }
   return (
-    <TagListEditor
-      tags={tags}
-      onTagsChange={(next) => update(param.key, next)}
-    />
+    <span className={`${NODRAG} block`}>
+      <TagListEditor
+        tags={tags}
+        onTagsChange={(next) => update(param.key, next)}
+      />
+    </span>
   );
 }
 

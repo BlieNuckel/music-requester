@@ -25,6 +25,31 @@ const ratingWeight: ParamDef = {
   description: "How much your stars boost an artist.",
 };
 
+const genericTags: ParamDef = {
+  key: "genericTags",
+  kind: "tags",
+  label: "Generic tags",
+  description: "Tags too broad to describe anyone's taste.",
+};
+
+const libraryPreference: ParamDef = {
+  key: "libraryPreference",
+  kind: "enum",
+  label: "Library preference",
+  options: [
+    { value: "prefer_new", label: "Prefer new" },
+    { value: "prefer_library", label: "Prefer library" },
+  ],
+  description: "Which side of the library line to try first.",
+};
+
+const backgroundRegen: ParamDef = {
+  key: "backgroundRegenEnabled",
+  kind: "boolean",
+  label: "Keep taste profiles warm",
+  description: "Rebuild stale profiles off the request path.",
+};
+
 const listeningWeight: ParamDef = {
   key: "listeningWeight",
   kind: "split",
@@ -189,4 +214,28 @@ describe("duration knobs", () => {
 
     expect(update).toHaveBeenCalledWith("profileTtlMinutes", 2880);
   });
+});
+
+/**
+ * React Flow drags a node from any pointer-down that is not under a `.nodrag` element, and
+ * preventDefaults it — which silently costs a slider every gesture it has.
+ */
+describe("knobs on the draggable canvas", () => {
+  it.each([
+    ["ratio", explorationRate, "slider"],
+    ["split", listeningWeight, "slider"],
+    ["factor", ratingWeight, "spinbutton"],
+    ["minutes", profileTtl, "spinbutton"],
+    ["days", trendWindow, "spinbutton"],
+    ["enum", libraryPreference, "button"],
+    ["boolean", backgroundRegen, "checkbox"],
+    ["tags", genericTags, "textbox"],
+  ])(
+    "keeps the canvas from stealing a %s knob's gesture",
+    (_kind, param, role) => {
+      renderControl(param, {}, "inline");
+
+      expect(screen.getAllByRole(role)[0].closest(".nodrag")).not.toBeNull();
+    }
+  );
 });
