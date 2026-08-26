@@ -103,12 +103,4 @@ describe("buildFlow", () => {
   it("leaves out the flows it was not asked for", () => {
     expect(buildFlow(graph, "artists").nodes).toEqual([]);
   });
-
-  it("routes edges orthogonally, so a long one follows lanes rather than cutting across", () => {
-    const [edge] = toFlowEdges([
-      { id: "a->b", from: "a", to: "b", kind: "data" },
-    ]);
-
-    expect(edge.type).toBe("smoothstep");
-  });
 });

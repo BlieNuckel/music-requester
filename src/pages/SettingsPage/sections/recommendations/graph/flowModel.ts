@@ -53,10 +53,14 @@ function edgeLabel(edge: GraphEdge): string | undefined {
 }
 
 /**
- * Orthogonal rather than curved. A bezier between two distant lanes sweeps across whatever
- * sits between them and gives the eye no way to tell which card it belongs to; a right-angled
- * route leaves the source, runs along the corridor the layout reserved for it, and turns in
- * at the target.
+ * Curved, not orthogonal. Right angles were tried and read worse here: every card has one
+ * centred source handle, so edges leaving the same node start at the same point and their
+ * straight segments coincide exactly into one thick line, where curves at least fan apart.
+ * The library's right-angled route also turns at the midpoint between the two cards, which
+ * for a two-lane span is inside the lane between them — where a card is.
+ *
+ * Orthogonal only pays off once each edge carries its own waypoints through the corridors
+ * the layout reserves for it, which is a custom edge rather than a `type` string.
  */
 export function toFlowEdges(edges: GraphEdge[]): Edge[] {
   return edges.map((edge) => {
@@ -65,8 +69,6 @@ export function toFlowEdges(edges: GraphEdge[]): Edge[] {
       id: edge.id,
       source: edge.from,
       target: edge.to,
-      type: "smoothstep",
-      pathOptions: { borderRadius: 14 },
       label: edgeLabel(edge),
       labelShowBg: true,
       markerEnd: { type: MarkerType.ArrowClosed, color: style.stroke },
