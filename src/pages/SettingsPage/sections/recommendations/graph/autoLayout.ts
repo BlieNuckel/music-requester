@@ -41,7 +41,6 @@ const LINE_HEIGHT = 16;
 const CARD_CHROME = 78;
 const EXTERNAL_HEIGHT = 104;
 const INPUT_ROW = 38;
-const DISCLOSURE = 22;
 const CHIP_ROW = 24;
 
 /** Room between two edges sharing a rank, so a label has somewhere to sit. */
@@ -75,7 +74,6 @@ export function estimateNodeHeight(node: GraphNode, external: boolean): number {
       ? wrapped(param.effect) + INPUT_ROW
       : INPUT_ROW + LINE_HEIGHT;
   }
-  if (node.params.length > 0) height += DISCLOSURE;
   if (node.usesParams.length > 0) {
     height += Math.ceil(node.usesParams.length / 2) * CHIP_ROW;
   }

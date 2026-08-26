@@ -8,6 +8,7 @@ import {
   ratingWeightParam,
   topArtistsParam,
 } from "./fixtures";
+import { SCOPE_EFFECT } from "@shared/recommenderGraph";
 import type { GraphNode } from "@shared/recommenderGraph";
 import type { PromotedAlbumSettings } from "@/context/settingsContextDef";
 
@@ -151,17 +152,35 @@ describe("NodeCard", () => {
     expect(screen.queryByText(/\{/)).not.toBeInTheDocument();
   });
 
-  it("keeps the long explanation folded away until asked", () => {
+  it("hangs a knob's explanation off the knob, without growing the card", () => {
     renderCard(makeNode());
 
-    expect(screen.queryByText(/star ratings boost/i)).not.toBeInTheDocument();
+    const help = screen.getByRole("note");
 
-    fireEvent.click(screen.getByRole("button", { name: /what do these do/i }));
-
-    expect(screen.getByText(/star ratings boost/i)).toBeInTheDocument();
+    expect(help).toHaveAttribute("title", ratingWeightParam.description);
+    expect(help).toHaveAccessibleName(
+      `Rating weight: ${ratingWeightParam.description}`
+    );
     expect(
-      screen.getByText(/Rebuilds every stored taste profile/i)
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: /what do these do/i })
+    ).toBeNull();
+  });
+
+  it("says what editing this node costs on the badge that names its scope", () => {
+    renderCard(makeNode());
+
+    expect(screen.getByText("Taste profile")).toHaveAttribute(
+      "title",
+      SCOPE_EFFECT.profile
+    );
+  });
+
+  it("explains every knob it owns, not just the first", () => {
+    renderCard(
+      makeNode({ params: [ratingWeightParam, { ...topArtistsParam }] })
+    );
+
+    expect(screen.getAllByRole("note")).toHaveLength(2);
   });
 
   it("names the knobs it reads but does not own", () => {
@@ -205,7 +224,9 @@ describe("NodeCard", () => {
       })
     );
 
-    const checkbox = screen.getByLabelText(/back up plex ratings/i);
+    const checkbox = screen.getByRole("checkbox", {
+      name: /back up plex ratings/i,
+    });
     expect(checkbox).toBeChecked();
 
     fireEvent.click(checkbox);

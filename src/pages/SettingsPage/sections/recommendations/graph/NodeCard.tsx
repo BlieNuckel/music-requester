@@ -1,6 +1,6 @@
-import { useState } from "react";
 import { Handle } from "@xyflow/react";
 import ParamControl from "./ParamControl";
+import HelpTip from "./HelpTip";
 import { parseEffect, reachableParams } from "./effect";
 import { useRecommenderParams } from "./paramsContext";
 import {
@@ -43,8 +43,9 @@ const KIND_BADGE: Partial<Record<NodeKind, string>> = {
 function ParamBar({ param }: { param: ParamDef }) {
   return (
     <div className="space-y-0.5">
-      <span className="block text-xs font-medium text-gray-600 dark:text-gray-400">
+      <span className="flex items-center gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
         {param.label}
+        <HelpTip label={param.label} text={param.description} />
       </span>
       <ParamControl param={param} variant="inline" />
       {param.effect && (
@@ -68,8 +69,9 @@ function ParamSentence({
   if (!param.effect) {
     return (
       <div className="space-y-1">
-        <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+        <span className="flex items-center gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
           {param.label}
+          <HelpTip label={param.label} text={param.description} />
         </span>
         <ParamControl param={param} variant="inline" />
       </div>
@@ -89,6 +91,7 @@ function ParamSentence({
           />
         )
       )}
+      <HelpTip label={param.label} text={param.description} />
     </div>
   );
 }
@@ -177,12 +180,12 @@ export function ExternalCard({ node }: NodeCardProps) {
 }
 
 /**
- * One node, and the knobs that belong to it rendered inside the sentence that says what it
- * does. The paragraph-length explanation stays folded away: the point of the graph is that
- * position and connection carry most of what a flat list had to spell out.
+ * One node, and the knobs that belong to it rendered inside the line that says what each one
+ * changes. The paragraph explaining a knob hangs off the knob itself, where someone reaches
+ * for it: a card that grows when asked a question has to be laid out twice and pushes its
+ * neighbours around to answer one.
  */
 export function NodeCard({ node }: NodeCardProps) {
-  const [open, setOpen] = useState(false);
   const { arrivedAt } = useRecommenderParams();
   const reachable = reachableParams(node.params, node.usesParams);
   const badge = KIND_BADGE[node.kind];
@@ -198,6 +201,7 @@ export function NodeCard({ node }: NodeCardProps) {
     >
       <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b-2 border-black">
         <span
+          title={SCOPE_EFFECT[node.scope]}
           className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${SCOPE_CLASS[node.scope]}`}
         >
           {NODE_SCOPE_LABELS[node.scope]}
@@ -248,34 +252,6 @@ export function NodeCard({ node }: NodeCardProps) {
         ))}
 
         <UsedParams params={node.usesParams} />
-
-        {node.params.length > 0 && (
-          <div>
-            <button
-              type="button"
-              onClick={() => setOpen((prev) => !prev)}
-              className="nodrag text-[11px] font-bold text-gray-500 dark:text-gray-400 hover:text-amber-600"
-            >
-              {open ? "Hide details" : "What do these do?"}
-            </button>
-            {open && (
-              <div className="mt-1 space-y-2">
-                {node.params.map((param) => (
-                  <p
-                    key={param.key}
-                    className="text-[11px] leading-snug text-gray-500 dark:text-gray-400"
-                  >
-                    <span className="font-bold">{param.label}. </span>
-                    {param.description}
-                  </p>
-                ))}
-                <p className="text-[11px] font-medium text-gray-400 dark:text-gray-500">
-                  {SCOPE_EFFECT[node.scope]}
-                </p>
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
