@@ -23,17 +23,9 @@ function entry(mbid: string): PromotedAlbumEntry {
     inLibrary: false,
     library: null,
     trace: {
-      kind: "within_taste",
-      plexArtists: [],
-      weightedTags: [],
-      chosenTag: { name: "shoegaze", weight: 1 },
-      albumPool: {
-        page1Count: 1,
-        deepPage: 2,
-        deepPageCount: 1,
-        totalAfterDedup: 2,
-      },
-      selectionReason: "preferred_non_library",
+      source: "candidateWalk",
+      nodes: [],
+      budget: { label: "MusicBrainz lookups per build", remaining: 29, of: 30 },
     },
   };
 }

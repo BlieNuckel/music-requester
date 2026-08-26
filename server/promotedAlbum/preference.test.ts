@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { preferenceRule, orderByPreference } from "./preference";
+import {
+  preferenceRule,
+  preferenceNote,
+  orderByPreference,
+} from "./preference";
 
 const inLibrary = (mbid: string) => mbid === "owned";
 
@@ -8,23 +12,23 @@ describe("preferenceRule", () => {
     const rule = preferenceRule("prefer_new", inLibrary);
     expect(rule.isPreferred("new")).toBe(true);
     expect(rule.isPreferred("owned")).toBe(false);
-    expect(rule.preferredReason).toBe("preferred_non_library");
-    expect(rule.fallbackReason).toBe("fallback_in_library");
+    expect(preferenceNote(rule, "new")).toMatch(/new discovery/i);
+    expect(preferenceNote(rule, "owned")).toMatch(/already in your library/i);
   });
 
   it("prefers artists in the library under prefer_library", () => {
     const rule = preferenceRule("prefer_library", inLibrary);
     expect(rule.isPreferred("owned")).toBe(true);
     expect(rule.isPreferred("new")).toBe(false);
-    expect(rule.preferredReason).toBe("preferred_library");
-    expect(rule.fallbackReason).toBe("fallback_non_library");
+    expect(preferenceNote(rule, "owned")).toMatch(/already in your library/i);
+    expect(preferenceNote(rule, "new")).toMatch(/new to your library/i);
   });
 
   it("treats everything as preferred under no_preference", () => {
     const rule = preferenceRule("no_preference", inLibrary);
     expect(rule.isPreferred("owned")).toBe(true);
     expect(rule.isPreferred("new")).toBe(true);
-    expect(rule.preferredReason).toBe("no_preference");
+    expect(preferenceNote(rule, "owned")).toMatch(/no library preference/i);
   });
 });
 

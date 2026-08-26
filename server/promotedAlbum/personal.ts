@@ -10,16 +10,10 @@ import { isRecommendableRelease } from "../services/discover/typeFilter";
 import { isPlaceholderArtist } from "../utils/artistFilter";
 import { weightedRandomPick, shuffle, type Rng } from "../utils/random";
 import { normalizeAlbumKey } from "../utils/albumKey";
-import { isDistantGenre, isNearGenre, jaccard } from "./genreBand";
+import { isNearGenre, jaccard } from "./genreBand";
 import { preferredOrRelaxed } from "./preference";
 import type { PreferenceRule } from "./preference";
-import type {
-  BuiltAlbum,
-  PersonalResult,
-  PersonalTrace,
-  ResolutionBudget,
-  TraceSimilarArtist,
-} from "./types";
+import type { BuiltAlbum, PersonalResult, ResolutionBudget } from "./types";
 
 /** What the album walk needs, once the band has been settled. */
 export type PersonalAlbumContext = {
@@ -63,9 +57,6 @@ export type PersonalBand = {
  * than a worse one.
  */
 const ARTIST_ATTEMPTS = 3;
-
-/** Cap on neighbours listed in the trace — the pool can be a hundred-odd artists. */
-const TRACE_CANDIDATE_LIMIT = 12;
 
 /**
  * Every neighbour in the user's graph, weighted by how much they play the seed it came from
@@ -190,55 +181,14 @@ async function pickAlbumFor(
   return fresh[0] ?? shuffled[0] ?? null;
 }
 
-/**
- * The neighbours the trace shows: the heaviest of the pool, always including the one the
- * album came from. Listing the whole pool would put a hundred artists on every card.
- */
-function traceCandidates(
-  pool: PersonalCandidate[],
-  chosen: PersonalCandidate,
-  threshold: number
-): TraceSimilarArtist[] {
-  const ranked = [...pool].sort((a, b) => b.weight - a.weight);
-  const shown = ranked.slice(0, TRACE_CANDIDATE_LIMIT);
-  if (!shown.includes(chosen)) shown.push(chosen);
-
-  return shown.map((c) => ({
-    name: c.candidate.name,
-    score: c.candidate.score,
-    genres: [...c.genres],
-    genreOverlap: c.overlap,
-    isDifferentGenre: isDistantGenre(c.genres, c.overlap, threshold),
-    chosen: c.candidate.artistMbid === chosen.candidate.artistMbid,
-  }));
-}
-
 function assembleResult(
   ctx: PersonalAlbumContext,
-  band: PersonalBand,
   chosen: PersonalCandidate,
   album: MusicBrainzReleaseGroup
 ): BuiltAlbum {
   const sharedGenres = [...chosen.genres].filter((g) =>
     chosen.seedGenres.has(g)
   );
-  const selectionReason = band.rule.isPreferred(chosen.candidate.artistMbid)
-    ? band.rule.preferredReason
-    : band.rule.fallbackReason;
-
-  const trace: PersonalTrace = {
-    kind: "personal",
-    seedArtist: chosen.seedArtist,
-    seedGenres: [...chosen.seedGenres],
-    candidates: traceCandidates(band.pool, chosen, ctx.genreOverlapThreshold),
-    chosenArtist: chosen.candidate.name,
-    chosenGenres: [...chosen.genres],
-    sharedGenres,
-    widened: band.widened,
-    relaxedPreference: band.relaxed,
-    selectionReason,
-  };
-
   const library = ctx.albumLibrary(album.id);
 
   const result: PersonalResult = {
@@ -255,7 +205,6 @@ function assembleResult(
     sharedGenres,
     inLibrary: library !== null,
     library,
-    trace,
   };
 
   return { result, rememberKey: album.id };
@@ -291,7 +240,7 @@ export async function pickPersonalAlbum(
     if (ctx.budget) ctx.budget.remaining -= 1;
 
     const album = await pickAlbumFor(chosen, ctx, rng);
-    if (album) return assembleResult(ctx, band, chosen, album);
+    if (album) return assembleResult(ctx, chosen, album);
   }
 
   return null;

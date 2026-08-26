@@ -16,8 +16,9 @@ import { createLogger } from "../logger";
 import { runGraph } from "../recommenderGraph/runtime/executor";
 import { RESOLUTION_BUDGET } from "./budget";
 import { PICK_BODIES, type PickCtx } from "./pickGraph";
+import { PICK_EXPLAINERS } from "./pickExplain";
 import { loadProfileForRequest } from "./profileService";
-import type { BuiltAlbum, LibraryLookups, PromotedAlbumEntry } from "./types";
+import type { LibraryLookups, PromotedAlbumEntry, TracedAlbum } from "./types";
 
 export type { PromotedAlbumResult, PromotedAlbumEntry } from "./types";
 
@@ -237,10 +238,11 @@ async function buildCarousel(req: BuildRequest): Promise<PromotedAlbumsResult> {
     ["antiRepeat"],
     PICK_BODIES,
     ctx,
-    new Map([["profileFreshness", profile]])
+    new Map([["profileFreshness", profile]]),
+    PICK_EXPLAINERS
   );
 
-  const picks = (outputs.get("antiRepeat") ?? []) as BuiltAlbum[];
+  const picks = (outputs.get("antiRepeat") ?? []) as TracedAlbum[];
   return { status: "ready", albums: picks.map((pick) => pick.result) };
 }
 
