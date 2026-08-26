@@ -105,8 +105,14 @@ export type EdgeKind = "data" | "fallback" | "control";
  */
 export type NodeStatus = "live" | "ported";
 
+/**
+ * What shape a knob takes, which is also what control renders it. `ratio` is a share of one
+ * and reads as a percentage; `factor` is a multiplier, which is fractional but not a share
+ * of anything, so showing it as a percentage would misstate it. `int` therefore means a
+ * whole number and nothing else.
+ */
 export type ParamKind =
-  "ratio" | "int" | "days" | "minutes" | "enum" | "tags" | "boolean";
+  "ratio" | "factor" | "int" | "days" | "minutes" | "enum" | "tags" | "boolean";
 
 export type ParamOption = { value: string; label: string };
 

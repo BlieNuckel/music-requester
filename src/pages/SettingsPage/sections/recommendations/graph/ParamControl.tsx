@@ -1,6 +1,8 @@
 import { effectiveMax } from "./paramCoupling";
 import { useRecommenderParams } from "./paramsContext";
+import { durationUnit, humanizeDuration } from "./duration";
 import TagListEditor from "../TagListEditor";
+import type { DurationKind } from "./duration";
 import type { LibraryPreference } from "@/context/settingsContextDef";
 import type { ParamDef } from "@shared/recommenderGraph";
 
@@ -13,6 +15,11 @@ type ParamControlProps = {
 
 const NUMBER_CLASS =
   "px-2 py-1 bg-white dark:bg-gray-800 border-2 border-black rounded-lg text-gray-900 dark:text-gray-100 focus:outline-none focus:border-amber-400 text-[16px] font-bold disabled:opacity-50";
+
+const SLIDER_CLASS =
+  "h-2 cursor-pointer appearance-none rounded-full border-2 border-black bg-gray-200 dark:bg-gray-700 accent-amber-400 disabled:opacity-50 disabled:cursor-not-allowed";
+
+const ASIDE_CLASS = "text-xs text-gray-500 dark:text-gray-400";
 
 const clamp = (value: number, min?: number, max?: number): number => {
   const lower = min === undefined ? value : Math.max(min, value);
@@ -106,6 +113,66 @@ function NumberControl({ param, variant, disabled }: ParamControlProps) {
 }
 
 /**
+ * A share of one, set and read as a percentage. The stored value stays the fraction the
+ * pipeline actually multiplies by: asking an admin to type 0.4 for "40% of the slots" is
+ * making them do the conversion the control exists to do.
+ */
+function RatioControl({ param, variant, disabled }: ParamControlProps) {
+  const { config, update } = useRecommenderParams();
+  const value = Number(config[param.key] ?? 0);
+  const min = param.min ?? 0;
+  const max = effectiveMax(param, config) ?? 1;
+
+  return (
+    <span
+      className={
+        variant === "inline"
+          ? "inline-flex items-center gap-2"
+          : "flex w-full items-center gap-2 sm:max-w-xs"
+      }
+    >
+      <input
+        type="range"
+        aria-label={param.label}
+        value={value}
+        min={min}
+        max={max}
+        step={param.step ?? 0.05}
+        disabled={disabled}
+        onChange={(e) =>
+          update(param.key, clamp(Number(e.target.value), min, max))
+        }
+        className={`${SLIDER_CLASS} ${variant === "inline" ? "w-20" : "flex-1"}`}
+      />
+      <span className="w-9 shrink-0 text-right text-xs font-bold tabular-nums text-gray-700 dark:text-gray-300">
+        {Math.round(value * 100)}%
+      </span>
+    </span>
+  );
+}
+
+/**
+ * A count of minutes or days, with the unit named and, past the point where the raw number
+ * stops being readable, the same span said in units someone can picture.
+ */
+function DurationControl(props: ParamControlProps & { kind: DurationKind }) {
+  const { config } = useRecommenderParams();
+  const { kind } = props;
+  const value = Number(config[props.param.key] ?? 0);
+  const humanized = humanizeDuration(value, kind);
+
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      <NumberControl {...props} />
+      {props.variant === "block" && (
+        <span className={ASIDE_CLASS}>{durationUnit(value, kind)}</span>
+      )}
+      {humanized && <span className={ASIDE_CLASS}>({humanized})</span>}
+    </span>
+  );
+}
+
+/**
  * One knob, rendered by kind. The same control serves the canvas and the list, so a knob
  * cannot behave differently depending on which view someone happened to open.
  */
@@ -117,6 +184,11 @@ export default function ParamControl(props: ParamControlProps) {
       return <EnumControl {...props} />;
     case "tags":
       return <TagsControl {...props} />;
+    case "ratio":
+      return <RatioControl {...props} />;
+    case "days":
+    case "minutes":
+      return <DurationControl {...props} kind={props.param.kind} />;
     default:
       return <NumberControl {...props} />;
   }

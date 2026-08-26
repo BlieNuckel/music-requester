@@ -54,7 +54,7 @@ describe("GET /graph", () => {
       expect.objectContaining({
         key: "ratingWeight",
         label: "Rating weight",
-        kind: "int",
+        kind: "factor",
       })
     );
   });

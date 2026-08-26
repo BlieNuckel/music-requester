@@ -316,6 +316,23 @@ describe("recommender graph registry", () => {
     );
   });
 
+  it("gives a whole-number knob a whole-number step", () => {
+    for (const param of Object.values(PARAMS)) {
+      if (param.kind !== "int") continue;
+      expect([param.key, Number.isInteger(param.step ?? 1)]).toEqual([
+        param.key,
+        true,
+      ]);
+    }
+  });
+
+  it("keeps a knob rendered as a percentage inside a share of one", () => {
+    for (const param of Object.values(PARAMS)) {
+      if (param.kind !== "ratio") continue;
+      expect([param.key, param.min ?? 0, param.max]).toEqual([param.key, 0, 1]);
+    }
+  });
+
   it("names every formula placeholder after a param the node can reach", () => {
     const { nodes } = buildRecommenderGraph();
 

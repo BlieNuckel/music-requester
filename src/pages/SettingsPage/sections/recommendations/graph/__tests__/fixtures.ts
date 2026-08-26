@@ -8,7 +8,7 @@ import type {
 
 export const ratingWeightParam: ParamDef = {
   key: "ratingWeight",
-  kind: "int",
+  kind: "factor",
   label: "Rating weight",
   min: 0,
   max: 3,

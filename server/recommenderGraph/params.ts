@@ -91,7 +91,7 @@ export const PARAMS: Record<ParamKey, ParamDef> = {
 
   ratingWeight: {
     key: "ratingWeight",
-    kind: "int",
+    kind: "factor",
     label: "Rating weight",
     min: 0,
     max: 3,
