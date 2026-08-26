@@ -19,7 +19,7 @@ export type TraceArtistEntry = {
   viewCount: number;
   picked: boolean;
   tagContributions: TraceArtistTagContribution[];
-  /** Absent for artists known only from the legacy artist-level plays series. */
+  /** Absent for artists the windowed track fold holds no rows for. */
   distinctTracksPlayed?: number;
   topTrackShare?: number;
   distributionFactor?: number;

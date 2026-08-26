@@ -1,0 +1,388 @@
+import { render, screen, fireEvent } from "@testing-library/react";
+import { ExternalCard, NodeCard } from "../NodeCard";
+import { RecommenderParamsContext } from "../paramsContext";
+import { DEFAULT_PROMOTED_ALBUM } from "@/context/promotedAlbumDefaults";
+import {
+  listeningWeightParam,
+  makeNode,
+  ratingWeightParam,
+  topArtistsParam,
+} from "./fixtures";
+import { NODE_KIND_MEANING, SCOPE_EFFECT } from "@shared/recommenderGraph";
+import type { GraphNode } from "@shared/recommenderGraph";
+import type { PromotedAlbumSettings } from "@/context/settingsContextDef";
+
+function renderCard(
+  node: GraphNode,
+  config: PromotedAlbumSettings = DEFAULT_PROMOTED_ALBUM
+) {
+  const update = vi.fn();
+  const openFlow = vi.fn();
+  render(
+    <RecommenderParamsContext.Provider
+      value={{ config, update, openFlow, arrivedAt: null }}
+    >
+      <NodeCard node={node} />
+    </RecommenderParamsContext.Provider>
+  );
+  return update;
+}
+
+describe("ExternalCard", () => {
+  it("names the flow that owns the node rather than repeating its knobs", () => {
+    const openFlow = vi.fn();
+    render(
+      <RecommenderParamsContext.Provider
+        value={{
+          config: DEFAULT_PROMOTED_ALBUM,
+          update: vi.fn(),
+          openFlow,
+          arrivedAt: null,
+        }}
+      >
+        <ExternalCard node={makeNode({ title: "Stored profile" })} />
+      </RecommenderParamsContext.Provider>
+    );
+
+    expect(screen.getByText("Stored profile")).toBeInTheDocument();
+    expect(screen.getByText("Taste profile")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Rating weight")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /open that flow/i }));
+    expect(openFlow).toHaveBeenCalledWith("profile", "ratingMultiplier");
+  });
+});
+
+describe("NodeCard", () => {
+  it("renders the node's title, kind and summary", () => {
+    renderCard(makeNode());
+
+    expect(screen.getByText("Rating boost")).toBeInTheDocument();
+    expect(screen.getByText("step")).toBeInTheDocument();
+    expect(screen.getByText(/how highly you rate them/i)).toBeInTheDocument();
+  });
+
+  it("puts a live input inside the line that says what the knob does", () => {
+    renderCard(makeNode());
+
+    expect(screen.getByText("weight x (1 +")).toBeInTheDocument();
+    expect(screen.getByLabelText("Rating weight")).toHaveValue(
+      DEFAULT_PROMOTED_ALBUM.ratingWeight
+    );
+    expect(screen.getByText("x stars/10)")).toBeInTheDocument();
+  });
+
+  it("edits the knob a placeholder names, not the one whose sentence it sits in", () => {
+    const update = renderCard(
+      makeNode({
+        params: [
+          {
+            ...ratingWeightParam,
+            effect: "boosted for the top {topArtistsCount} artists",
+          },
+        ],
+        usesParams: [topArtistsParam],
+      })
+    );
+
+    fireEvent.change(screen.getAllByLabelText("Top artists")[0], {
+      target: { value: "12" },
+    });
+
+    expect(update).toHaveBeenCalledWith("topArtistsCount", 12);
+    expect(screen.queryByLabelText("Rating weight")).not.toBeInTheDocument();
+  });
+
+  it("reports an edit through the params context", () => {
+    const update = renderCard(makeNode());
+
+    fireEvent.change(screen.getByLabelText("Rating weight"), {
+      target: { value: "1.2" },
+    });
+
+    expect(update).toHaveBeenCalledWith("ratingWeight", 1.2);
+  });
+
+  it("clamps an edit to the param's range", () => {
+    const update = renderCard(makeNode());
+
+    fireEvent.change(screen.getByLabelText("Rating weight"), {
+      target: { value: "99" },
+    });
+
+    expect(update).toHaveBeenCalledWith("ratingWeight", 3);
+  });
+
+  it("gives a bar a row of its own, named above and explained below", () => {
+    renderCard(
+      makeNode({
+        params: [
+          {
+            ...listeningWeightParam,
+            effect:
+              "whether one long set or twenty short plays counts for more",
+          },
+        ],
+      })
+    );
+
+    expect(screen.getByText("Listening time vs plays")).toBeInTheDocument();
+    expect(screen.getByRole("slider")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "whether one long set or twenty short plays counts for more"
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("keeps a bar's value on the bar rather than in its line", () => {
+    renderCard(
+      makeNode({
+        params: [
+          {
+            ...listeningWeightParam,
+            effect:
+              "whether one long set or twenty short plays counts for more",
+          },
+        ],
+      })
+    );
+
+    expect(screen.getAllByRole("slider")).toHaveLength(1);
+    expect(screen.queryByText(/\{/)).not.toBeInTheDocument();
+  });
+
+  it("hangs a knob's explanation off the knob, without growing the card", () => {
+    renderCard(makeNode());
+
+    const help = screen.getByRole("note");
+
+    expect(help).toHaveAttribute("title", ratingWeightParam.description);
+    expect(help).toHaveAccessibleName(
+      `Rating weight: ${ratingWeightParam.description}`
+    );
+    expect(
+      screen.queryByRole("button", { name: /what do these do/i })
+    ).toBeNull();
+  });
+
+  it("says what moving a knob on this card costs", () => {
+    renderCard(makeNode());
+
+    expect(screen.getByText(SCOPE_EFFECT.profile)).toBeInTheDocument();
+  });
+
+  it("stays quiet about cost on a card with nothing to move", () => {
+    renderCard(makeNode({ params: [], usesParams: [] }));
+
+    expect(screen.queryByText(SCOPE_EFFECT.profile)).toBeNull();
+  });
+
+  /**
+   * The knob for how many artists the profile covers rebuilds every stored profile whichever
+   * card it is moved on, and the card that reads it is a pick.
+   */
+  it("quotes a shared knob's own cost, not the cost of the card hosting it", () => {
+    renderCard(
+      makeNode({ scope: "pick", params: [], usesParams: [topArtistsParam] })
+    );
+
+    expect(screen.getByText(SCOPE_EFFECT.profile)).toBeInTheDocument();
+    expect(screen.queryByText(SCOPE_EFFECT.pick)).toBeNull();
+  });
+
+  it("explains every knob it owns, not just the first", () => {
+    renderCard(
+      makeNode({ params: [ratingWeightParam, { ...topArtistsParam }] })
+    );
+
+    expect(screen.getAllByRole("note")).toHaveLength(2);
+  });
+
+  it("makes a knob it reads editable here, naming the step that owns it", () => {
+    renderCard(makeNode({ usesParams: [listeningWeightParam] }));
+
+    expect(
+      screen.getByLabelText("Listening time vs plays")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "also on Listening per artist" })
+    ).toBeInTheDocument();
+  });
+
+  it("writes a shared knob to the one value every step reads", () => {
+    const update = renderCard(makeNode({ usesParams: [topArtistsParam] }));
+
+    fireEvent.change(screen.getByLabelText("Top artists"), {
+      target: { value: "9" },
+    });
+
+    expect(update).toHaveBeenCalledWith("topArtistsCount", 9);
+  });
+
+  it("offers the way to the step that owns a shared knob", () => {
+    const openFlow = vi.fn();
+    render(
+      <RecommenderParamsContext.Provider
+        value={{
+          config: DEFAULT_PROMOTED_ALBUM,
+          update: vi.fn(),
+          openFlow,
+          arrivedAt: null,
+        }}
+      >
+        <NodeCard node={makeNode({ usesParams: [topArtistsParam] })} />
+      </RecommenderParamsContext.Provider>
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "also on Top artists" })
+    );
+
+    expect(openFlow).toHaveBeenCalledWith("ranking", "topArtists");
+  });
+
+  it("flags a node that spends the shared lookup budget", () => {
+    renderCard(makeNode({ spendsBudget: true }));
+
+    expect(screen.getByText("budget")).toBeInTheDocument();
+  });
+
+  it("says what every node is, including the plain ones", () => {
+    renderCard(makeNode({ kind: "step" }));
+
+    const badge = screen.getByText("step");
+
+    expect(badge).toHaveAttribute("title", NODE_KIND_MEANING.step);
+    expect(badge.closest("[data-kind]")).toHaveAttribute("data-kind", "step");
+  });
+
+  it("tints a kind that does not read as a single pass", () => {
+    renderCard(makeNode({ kind: "fallback" }));
+
+    expect(screen.getByText("in order").className).toContain("amber");
+  });
+
+  it("leaves a plain step's kind neutral", () => {
+    renderCard(makeNode({ kind: "step" }));
+
+    expect(screen.getByText("step").className).not.toContain("amber");
+  });
+
+  it("marks a repeat node rather than letting it read as one pass", () => {
+    renderCard(
+      makeNode({
+        kind: "repeat",
+        does: ["Runs once per slot, plus three spare attempts"],
+        params: [],
+      })
+    );
+
+    expect(screen.getByText("repeats")).toBeInTheDocument();
+    expect(
+      screen.getByText("Runs once per slot, plus three spare attempts")
+    ).toBeInTheDocument();
+  });
+
+  it("renders a checkbox knob by its label", () => {
+    const update = renderCard(
+      makeNode({
+        params: [
+          {
+            key: "ratingsBackupEnabled",
+            kind: "boolean",
+            label: "Back up Plex ratings and play counts daily",
+            description: "Once a day.",
+          },
+        ],
+      })
+    );
+
+    const checkbox = screen.getByRole("checkbox", {
+      name: /back up plex ratings/i,
+    });
+    expect(checkbox).toBeChecked();
+
+    fireEvent.click(checkbox);
+    expect(update).toHaveBeenCalledWith("ratingsBackupEnabled", false);
+  });
+
+  it("renders an enum knob as a choice per option", () => {
+    const update = renderCard(
+      makeNode({
+        params: [
+          {
+            key: "libraryPreference",
+            kind: "enum",
+            label: "Library preference",
+            options: [
+              { value: "prefer_new", label: "Prefer new" },
+              { value: "prefer_library", label: "Prefer library" },
+            ],
+            description: "Which side to try first.",
+          },
+        ],
+      })
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Prefer library" }));
+
+    expect(update).toHaveBeenCalledWith("libraryPreference", "prefer_library");
+  });
+
+  it("marks a node whose body is written but not yet wired up", () => {
+    renderCard(
+      makeNode({ status: "ported", module: "server/services/profile/x.ts" })
+    );
+
+    expect(screen.getByText("not live")).toBeInTheDocument();
+  });
+
+  it("says nothing about wiring for a node the recommender runs", () => {
+    renderCard(makeNode());
+
+    expect(screen.queryByText("not live")).not.toBeInTheDocument();
+  });
+
+  it("lays the step out as what it takes, does and gives", () => {
+    renderCard(
+      makeNode({
+        takes: ["The window's rows"],
+        does: ["Groups by artist", "Counts distinct tracks played"],
+        gives: "Each artist's weight",
+      })
+    );
+
+    expect(screen.getByText("Takes")).toBeInTheDocument();
+    expect(screen.getByText("Groups by artist")).toBeInTheDocument();
+    expect(
+      screen.getByText("Counts distinct tracks played")
+    ).toBeInTheDocument();
+    expect(screen.getByText("Each artist's weight")).toBeInTheDocument();
+  });
+
+  it("marks the node a reference was followed into", () => {
+    render(
+      <RecommenderParamsContext.Provider
+        value={{
+          config: DEFAULT_PROMOTED_ALBUM,
+          update: vi.fn(),
+          openFlow: vi.fn(),
+          arrivedAt: "ratingMultiplier",
+        }}
+      >
+        <NodeCard node={makeNode()} />
+      </RecommenderParamsContext.Provider>
+    );
+
+    expect(
+      screen.getByText("Rating boost").closest("[data-arrived]")
+    ).not.toBeNull();
+  });
+
+  it("marks nothing when the flow was opened from the toolbar", () => {
+    renderCard(makeNode());
+
+    expect(document.querySelector("[data-arrived]")).toBeNull();
+  });
+});

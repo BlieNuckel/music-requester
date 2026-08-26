@@ -272,7 +272,7 @@ function dedupeOther(tags: ClassifiedOtherTag[]): ClassifiedOtherTag[] {
  * one it replaces.
  *
  * An artist with no album rows, or none carrying listening, keeps one entry holding its whole
- * weight under its own tags. That covers the legacy artist-level series, which records no album.
+ * weight under its own tags. That covers listening Plex reports without an album at all.
  */
 function artistAlbumTags(
   artist: ArtistAlbums,

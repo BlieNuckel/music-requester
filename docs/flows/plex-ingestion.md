@@ -58,14 +58,19 @@ pollers are gated on `promotedAlbum.ratingsBackupEnabled` and assume a single in
 
 Everything is a delta. Nothing is ever updated in place.
 
-| Kind                   | Written by                | Payload                               | Semantics                                                                    |
-| ---------------------- | ------------------------- | ------------------------------------- | ---------------------------------------------------------------------------- |
-| `plex_rating`          | `ingestUserRatings`       | one rated item                        | new, changed, key-backfilled, or a confirmed clear (`rating: 0`)             |
-| `plex_track_plays`     | `ingestUserTrackPlays`    | tracks whose count grew               | monotonic; also re-emitted to backfill `durationMs`                          |
-| `plex_album_tracks`    | `ingestUserAlbumTracks`   | albums whose count or genres changed  | not monotonic, any difference is recorded                                    |
-| `plex_listen_history`  | `ingestUserListenHistory` | episodes, keyed `ratingKey:viewedAt`  | one row per committed play, with `startedAt` back-derived                    |
-| `plex_listen_sessions` | `recordMeasuredEpisodes`  | episodes, keyed `ratingKey@startedAt` | observed listening, including plays that never committed                     |
-| `plex_plays`           | nothing, read only        | artist-level counts                   | the legacy series, kept because it is the only record of pre-cutover history |
+| Kind                   | Written by                | Payload                               | Semantics                                                        |
+| ---------------------- | ------------------------- | ------------------------------------- | ---------------------------------------------------------------- |
+| `plex_rating`          | `ingestUserRatings`       | one rated item                        | new, changed, key-backfilled, or a confirmed clear (`rating: 0`) |
+| `plex_track_plays`     | `ingestUserTrackPlays`    | tracks whose count grew               | monotonic; also re-emitted to backfill `durationMs`              |
+| `plex_album_tracks`    | `ingestUserAlbumTracks`   | albums whose count or genres changed  | not monotonic, any difference is recorded                        |
+| `plex_listen_history`  | `ingestUserListenHistory` | episodes, keyed `ratingKey:viewedAt`  | one row per committed play, with `startedAt` back-derived        |
+| `plex_listen_sessions` | `recordMeasuredEpisodes`  | episodes, keyed `ratingKey@startedAt` | observed listening, including plays that never committed         |
+
+`plex_plays` was the artist-level series `plex_track_plays` replaced. It carried no
+per-track detail, so nothing downstream could roll it up by album or measure how an artist's
+listening spread across their tracks — it only ever entered as a per-artist total taken as
+the higher of the two series. It stopped being written long before it stopped being read,
+and is now neither. Rows may still exist in the table; nothing folds them.
 
 Large captures are chunked at 2000 items per event. The fold is last-write-wins in written
 order, so N ordered chunks reconstruct identically to one oversized event.

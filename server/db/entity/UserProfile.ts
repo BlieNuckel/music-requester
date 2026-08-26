@@ -82,8 +82,8 @@ export type ClassifiedOtherTag = {
  * by how much each was actually listened to — so an acoustic record pulls only its own
  * share into the wrong tag instead of the artist's whole catalogue.
  *
- * An artist whose listening lands on no album at all (the legacy artist-level series carries
- * no album) gets one entry with an empty `albumKey` holding its whole weight.
+ * An artist whose listening lands on no album at all gets one entry with an empty `albumKey`
+ * holding its whole weight.
  */
 export type ProfileAlbumTags = {
   albumKey: string;

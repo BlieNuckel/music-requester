@@ -14,7 +14,7 @@ Code: `server/promotedAlbum/profileService.ts`, `artistWeights.ts`, `artistSerie
 flowchart TB
   ev[("user_signal_events")]
 
-  bundle["loadSignalBundle<br/>track + legacy + rating + album events,<br/>plus the merged episode series"]
+  bundle["loadSignalBundle<br/>track + rating + album events,<br/>plus the merged episode series"]
 
   weights["deriveArtistWeights"]
   series["loadArtistSeries<br/>deriveArtistSeries"]

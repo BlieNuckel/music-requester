@@ -103,7 +103,6 @@ describe("deriveArtistSeries from episodes", () => {
   it("places each episode in the bucket it was played in", () => {
     const series = deriveArtistSeries(
       [],
-      [],
       episodes([
         episode("Parcels", 0.5),
         episode("Parcels", 0.6),
@@ -120,7 +119,6 @@ describe("deriveArtistSeries from episodes", () => {
   it("keeps buckets with no listening rather than dropping them", () => {
     const series = deriveArtistSeries(
       [],
-      [],
       episodes([episode("Parcels", 0.5)]),
       OPTIONS
     );
@@ -136,7 +134,6 @@ describe("deriveArtistSeries from episodes", () => {
   it("ignores episodes outside the span", () => {
     const series = deriveArtistSeries(
       [],
-      [],
       episodes([episode("Parcels", 9), episode("Parcels", 0.5)]),
       OPTIONS
     );
@@ -150,7 +147,7 @@ describe("deriveArtistSeries from episodes", () => {
 
   it("caps what one play contributes when a cap is set", () => {
     const long = episode("Andromedik", 0.5, { listenedMs: 90 * 60 * 1000 });
-    const series = deriveArtistSeries([], [], episodes([long]), {
+    const series = deriveArtistSeries([], episodes([long]), {
       ...OPTIONS,
       capMs: 15 * 60 * 1000,
     });
@@ -172,7 +169,7 @@ describe("deriveArtistSeries reconciliation", () => {
       ]),
     ];
 
-    const series = deriveArtistSeries(events, [], new Map(), OPTIONS);
+    const series = deriveArtistSeries(events, new Map(), OPTIONS);
 
     expect(seriesFor(series, "Mac Miller").buckets.map((b) => b.plays)).toEqual(
       [0, 4, 0, 0]
@@ -194,7 +191,7 @@ describe("deriveArtistSeries reconciliation", () => {
       episode("Jesse Welles", 1.6),
     ]);
 
-    const series = deriveArtistSeries(events, [], covered, OPTIONS);
+    const series = deriveArtistSeries(events, covered, OPTIONS);
 
     const total = seriesFor(series, "Jesse Welles").buckets.reduce(
       (sum, b) => sum + b.plays,
@@ -215,7 +212,7 @@ describe("deriveArtistSeries reconciliation", () => {
     // Coverage starts inside bucket 2, so buckets 0 and 1 come from the counts.
     const partial = episodes([episode("Durry", 1.5), episode("Durry", 0.5)]);
 
-    const series = deriveArtistSeries(events, [], partial, OPTIONS);
+    const series = deriveArtistSeries(events, partial, OPTIONS);
 
     expect(seriesFor(series, "Durry").buckets.map((b) => b.plays)).toEqual([
       3, 0, 1, 1,
@@ -245,7 +242,7 @@ describe("momentum, emergence and decay", () => {
     ]);
 
     expect(
-      seriesFor(deriveArtistSeries([], [], steady, OPTIONS), "Steady").momentum
+      seriesFor(deriveArtistSeries([], steady, OPTIONS), "Steady").momentum
     ).toBe(1);
   });
 
@@ -258,10 +255,7 @@ describe("momentum, emergence and decay", () => {
       episode("Rising", 0.4),
     ]);
 
-    const series = seriesFor(
-      deriveArtistSeries([], [], rising, OPTIONS),
-      "Rising"
-    );
+    const series = seriesFor(deriveArtistSeries([], rising, OPTIONS), "Rising");
     expect(series.momentum).toBeGreaterThan(1);
   });
 
@@ -274,10 +268,7 @@ describe("momentum, emergence and decay", () => {
       episode("New", 0.4),
     ]);
 
-    const series = seriesFor(
-      deriveArtistSeries([], [], brandNew, OPTIONS),
-      "New"
-    );
+    const series = seriesFor(deriveArtistSeries([], brandNew, OPTIONS), "New");
     expect(series.momentum).toBe(MOMENTUM_MAX);
     expect(series.emerging).toBe(true);
   });
@@ -292,7 +283,7 @@ describe("momentum, emergence and decay", () => {
     ]);
 
     const series = seriesFor(
-      deriveArtistSeries([], [], late, { ...OPTIONS, recentBuckets: 1 }),
+      deriveArtistSeries([], late, { ...OPTIONS, recentBuckets: 1 }),
       "Late"
     );
     expect(series.momentum).toBe(1);
@@ -307,7 +298,7 @@ describe("momentum, emergence and decay", () => {
     ]);
 
     const series = seriesFor(
-      deriveArtistSeries([], [], fromTheStart, OPTIONS),
+      deriveArtistSeries([], fromTheStart, OPTIONS),
       "Existing"
     );
     expect(series.emerging).toBe(false);
@@ -317,7 +308,7 @@ describe("momentum, emergence and decay", () => {
   it("flags an artist that has gone quiet as decaying", () => {
     const gone = episodes([episode("Gone", 3.5), episode("Gone", 2.5)]);
 
-    const series = seriesFor(deriveArtistSeries([], [], gone, OPTIONS), "Gone");
+    const series = seriesFor(deriveArtistSeries([], gone, OPTIONS), "Gone");
     expect(series.decaying).toBe(true);
     expect(series.momentum).toBe(0);
   });
@@ -327,7 +318,7 @@ describe("momentum, emergence and decay", () => {
     const any = episodes([episode("Any", 0.5)]);
 
     expect(
-      seriesFor(deriveArtistSeries([], [], any, wideRecent), "Any").momentum
+      seriesFor(deriveArtistSeries([], any, wideRecent), "Any").momentum
     ).toBe(1);
   });
 
@@ -338,11 +329,11 @@ describe("momentum, emergence and decay", () => {
     ]);
 
     const byTime = seriesFor(
-      deriveArtistSeries([], [], longRecent, OPTIONS),
+      deriveArtistSeries([], longRecent, OPTIONS),
       "Sets"
     );
     const byPlays = seriesFor(
-      deriveArtistSeries([], [], longRecent, {
+      deriveArtistSeries([], longRecent, {
         ...OPTIONS,
         listeningWeight: 0,
       }),

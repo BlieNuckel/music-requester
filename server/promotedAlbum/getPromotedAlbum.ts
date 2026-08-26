@@ -24,6 +24,7 @@ import { getMonitoredAlbums } from "../services/lidarr/albums";
 import { getArtistList } from "../services/lidarr/artists";
 import { isAllowedReleaseType } from "../services/discover/typeFilter";
 import { createLogger } from "../logger";
+import { RESOLUTION_BUDGET } from "./budget";
 import { buildExploreResult } from "./explore";
 import { buildPersonalResult } from "./personal";
 import { preferenceRule, orderByPreference } from "./preference";
@@ -149,9 +150,6 @@ export const SPOTLIGHT_COUNT = 5;
 const PICK_ATTEMPT_SLACK = 3;
 
 const RECENT_SHOWN_LIMIT = 25;
-
-/** Paced MusicBrainz lookups one carousel build may spend across all of its picks. */
-const RESOLUTION_BUDGET = 30;
 
 const log = createLogger("promoted-album");
 

@@ -37,9 +37,9 @@ export type { ArtistListenTotals } from "../services/profile/signalIngestion";
 
 /**
  * An artist with the effective weight (windowed listening × rating boost × distribution
- * factor) the recommender ranks by. The distribution fields are absent for artists known
- * only from the legacy artist-level series, which carries no per-track detail; the rating
- * fields are absent for artists with nothing rated.
+ * factor) the recommender ranks by. The distribution fields are absent for artists the
+ * windowed track fold holds no rows for, which happens when the weights were measured from
+ * the episode series; the rating fields are absent for artists with nothing rated.
  *
  * `viewCount` is denominated in **play-equivalents**, not plays: one play of a nominal-length
  * track is `1`, one play of a 90-minute set is ~26. The name predates listening time and is
@@ -125,7 +125,6 @@ export type PlayWeightResult = {
 /** Every raw signal series one load pulls, so several derivations can share the fold. */
 export type SignalBundle = {
   trackEvents: UserSignalEvent[];
-  legacyEvents: UserSignalEvent[];
   ratingEvents: UserSignalEvent[];
   albumEvents: UserSignalEvent[];
   episodes: Map<string, ListenEpisode>;
@@ -163,13 +162,10 @@ function allTimeWeights(
   }));
 }
 
-/** Oldest `recorded_at` across both plays series, or null when neither has any events. */
-function earliestRecordedAt(...series: UserSignalEvent[][]): number | null {
-  const starts = series
-    .map((events) => events[0])
-    .filter((event): event is UserSignalEvent => event !== undefined)
-    .map((event) => Date.parse(event.recorded_at));
-  return starts.length === 0 ? null : Math.min(...starts);
+/** `recorded_at` of the oldest event in the series, or null when it has none. */
+function earliestRecordedAt(events: UserSignalEvent[]): number | null {
+  const first = events[0];
+  return first === undefined ? null : Date.parse(first.recorded_at);
 }
 
 /**
@@ -210,17 +206,11 @@ function episodeTotals(
 /** The window's totals per artist, as the difference between two cumulative snapshots. */
 function countDeltaTotals(
   trackEvents: UserSignalEvent[],
-  legacyEvents: UserSignalEvent[],
   windowStart: number,
   latest: Map<string, ArtistListenTotals>,
   capMs: number
 ): Map<string, ArtistListenTotals> {
-  const baseline = reconstructArtistTotals(
-    trackEvents,
-    legacyEvents,
-    windowStart,
-    capMs
-  );
+  const baseline = reconstructArtistTotals(trackEvents, windowStart, capMs);
 
   const deltas = new Map<string, ArtistListenTotals>();
   for (const [name, totals] of latest) {
@@ -245,20 +235,14 @@ function countDeltaTotals(
  */
 export function derivePlayWeights(
   trackEvents: UserSignalEvent[],
-  legacyEvents: UserSignalEvent[],
   episodes: Map<string, ListenEpisode>,
   options: PlayWeightOptions
 ): PlayWeightResult {
   const { now, windowMs, capMs, listeningWeight } = options;
-  const earliest = earliestRecordedAt(trackEvents, legacyEvents);
+  const earliest = earliestRecordedAt(trackEvents);
   if (earliest === null) return { weights: [], windowStart: null };
 
-  const latest = reconstructArtistTotals(
-    trackEvents,
-    legacyEvents,
-    Infinity,
-    capMs
-  );
+  const latest = reconstructArtistTotals(trackEvents, Infinity, capMs);
   const windowStart = now - windowMs;
   const allTime = {
     weights: allTimeWeights(latest, listeningWeight),
@@ -269,8 +253,7 @@ export function derivePlayWeights(
   if (!covered && earliest > windowStart) return allTime;
 
   const deltas =
-    covered ??
-    countDeltaTotals(trackEvents, legacyEvents, windowStart, latest, capMs);
+    covered ?? countDeltaTotals(trackEvents, windowStart, latest, capMs);
 
   const windowed: ArtistWeight[] = [];
   let total = 0;
@@ -348,19 +331,14 @@ export function deriveAlbumWeights(
 ): AlbumPlayRollup[] {
   const now = options.now ?? Date.now();
   const capMs = Math.max(0, options.maxTrackMinutesForWeight) * 60_000;
-  const { trackEvents, legacyEvents, episodes } = bundle;
+  const { trackEvents, episodes } = bundle;
 
-  const { windowStart } = derivePlayWeights(
-    trackEvents,
-    legacyEvents,
-    episodes,
-    {
-      now,
-      windowMs: options.windowMs,
-      capMs,
-      listeningWeight: options.listeningWeight,
-    }
-  );
+  const { windowStart } = derivePlayWeights(trackEvents, episodes, {
+    now,
+    windowMs: options.windowMs,
+    capMs,
+    listeningWeight: options.listeningWeight,
+  });
 
   if (windowStart !== null && historyCovers(episodes, windowStart)) {
     return rollupEpisodesToAlbums(episodes, windowStart, now, capMs);
@@ -624,15 +602,13 @@ export async function loadSignalBundle(
   plexToken: string
 ): Promise<SignalBundle> {
   let trackEvents = await getSignalEvents(userId, "plex_track_plays");
-  const legacyEvents = await getSignalEvents(userId, "plex_plays");
-  if (trackEvents.length === 0 && legacyEvents.length === 0) {
+  if (trackEvents.length === 0) {
     await ingestUserTrackPlays(userId, plexToken);
     trackEvents = await getSignalEvents(userId, "plex_track_plays");
   }
 
   return {
     trackEvents,
-    legacyEvents,
     ratingEvents: await getSignalEvents(userId, "plex_rating"),
     albumEvents: await getSignalEvents(userId, "plex_album_tracks"),
     episodes: await loadEpisodeSeries(userId),
@@ -654,10 +630,9 @@ export function deriveArtistWeights(
   } = options;
   const now = options.now ?? Date.now();
   const capMs = Math.max(0, maxTrackMinutesForWeight) * 60_000;
-  const { trackEvents, legacyEvents, ratingEvents, albumEvents, episodes } =
-    bundle;
+  const { trackEvents, ratingEvents, albumEvents, episodes } = bundle;
 
-  const plays = derivePlayWeights(trackEvents, legacyEvents, episodes, {
+  const plays = derivePlayWeights(trackEvents, episodes, {
     now,
     windowMs,
     capMs,
