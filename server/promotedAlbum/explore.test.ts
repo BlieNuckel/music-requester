@@ -263,6 +263,71 @@ describe("buildExploreResult", () => {
     expect(mockFetchReleaseGroupsForArtist).not.toHaveBeenCalled();
   });
 
+  /**
+   * Explore used to take `primary-type === "Album"` and nothing else, while the personal and
+   * tag paths both took the shared type filter — so the same artist could yield a record from
+   * one source and nothing from another. An EP by a genre-distant artist demonstrates that
+   * genre as well as an album does.
+   */
+  it("surfaces an EP, which the album-only rule used to drop", async () => {
+    mockFetchReleaseGroupsForArtist.mockImplementation((mbid: string) =>
+      Promise.resolve(
+        mbid === "mbid-jazz"
+          ? [
+              {
+                id: "rg-jazz-ep",
+                score: 1,
+                title: "Blue EP",
+                "primary-type": "EP",
+                "first-release-date": "1965-03-01",
+                "artist-credit": [],
+              },
+            ]
+          : []
+      )
+    );
+
+    const result = await buildExploreResult({
+      similarGraph: [seed],
+      config,
+      recentlyShown: new Set(),
+      artistInLibrary: notInLibrary,
+      albumLibrary: noLibraryAlbum,
+    });
+
+    expect(result!.rememberKey).toBe("rg-jazz-ep");
+  });
+
+  it("still refuses a live record, whatever its primary type says", async () => {
+    mockFetchReleaseGroupsForArtist.mockImplementation((mbid: string) =>
+      Promise.resolve(
+        mbid === "mbid-jazz"
+          ? [
+              {
+                id: "rg-jazz-live",
+                score: 1,
+                title: "Blue Album (Live)",
+                "primary-type": "Album",
+                "secondary-types": ["Live"],
+                "first-release-date": "1966-03-01",
+                "artist-credit": [],
+              },
+            ]
+          : []
+      )
+    );
+
+    const result = await buildExploreResult({
+      similarGraph: [seed],
+      config,
+      recentlyShown: new Set(),
+      artistInLibrary: notInLibrary,
+      albumLibrary: noLibraryAlbum,
+    });
+
+    expect(result).toBeNull();
+  });
+
   it("picks the genre-distant candidate and surfaces an album", async () => {
     mockFetchReleaseGroupsForArtist.mockImplementation((mbid: string) =>
       Promise.resolve(
