@@ -63,7 +63,7 @@ stdenv.mkDerivation (finalAttrs: {
   pnpmDeps = fetchPnpmDeps {
     inherit (finalAttrs) pname version src;
     fetcherVersion = 4;
-    hash = "sha256-D7kg+SGqxjG3iHIF6VVpdQidX/blEn8s/E0Qot7LgG4=";
+    hash = "sha256-K9REg1ly3XGZ8gEOZiqr4CPsBGdu1cj5ZNq/+yKE618=";
   };
 
   # pnpmConfigHook installs with --ignore-scripts, so the native better-sqlite3
