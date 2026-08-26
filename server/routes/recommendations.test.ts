@@ -70,16 +70,12 @@ describe("GET /graph", () => {
     expect(res.body.retiredParams).toEqual([]);
   });
 
-  it("says which nodes the recommender does not run yet", async () => {
+  it("says the recommender runs every node it draws", async () => {
     const res = await request(app).get("/graph");
-    const ported = res.body.nodes.filter(
-      (n: { status: string }) => n.status === "ported"
-    );
 
-    expect(ported.length).toBeGreaterThan(0);
-    for (const node of ported) {
-      expect(node.module).toEqual(expect.any(String));
-    }
+    expect(
+      res.body.nodes.filter((n: { status: string }) => n.status === "ported")
+    ).toEqual([]);
   });
 
   it("carries no settings values, which the client already holds", async () => {
